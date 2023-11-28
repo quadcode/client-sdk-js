@@ -1,0 +1,30 @@
+{
+  "name": "@quadcode-tech/client-sdk-js",
+  "version": "0.1.1",
+  "description": "Quadcode system client SDK for TypeScript and JavaScript applications.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "npx tsc",
+    "lint": "npx eslint ."
+  },
+  "repository": "https://github.com/quadcode/client-sdk-js.git",
+  "author": "Quadcode",
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/quadcode/client-sdk-js/issues"
+  },
+  "homepage": "https://github.com/quadcode/client-sdk-js#readme",
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^6.12.0",
+    "@typescript-eslint/parser": "^6.12.0",
+    "eslint": "^8.54.0",
+    "typedoc": "^0.25.4",
+    "typescript": "^5.3.2"
+  },
+  "dependencies": {
+    "isomorphic-ws": "^5.0.0",
+    "ws": "^8.14.2"
+  }
+}
