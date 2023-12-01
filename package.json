@@ -7,7 +7,8 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "npx tsc",
-    "lint": "npx eslint ."
+    "lint": "npx eslint .",
+    "docs": "npx typedoc"
   },
   "repository": "https://github.com/quadcode/client-sdk-js.git",
   "author": "Quadcode",
