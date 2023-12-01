@@ -2833,7 +2833,7 @@ class WsApiClient {
         this.connection = new WebSocket(this.apiUrl, {
             headers: {
                 'cookie': `platform=${this.platformId}`,
-                'user-agent': 'quadcode-client-sdk-js/0.1.1'
+                'user-agent': 'quadcode-client-sdk-js/0.1.3'
             }
         })
 
