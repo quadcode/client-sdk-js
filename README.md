@@ -205,3 +205,13 @@ console.log(digitalOptionsPositions.getAllPositions())
 
 digitalOptionsPositions.subscribeOnUpdatePosition((position) => console.log(position))
 ```
+
+## For SDK maintainers
+
+### Release process
+
+1) Change `version` field in file `package.json`.
+2) Change user agent version in file `src/index.ts`
+3) Commit and push the changes.
+4) Create a new release on GitHub.
+5) Check workflows runs on [Actions](https://github.com/quadcode/client-sdk-js/actions) page.
