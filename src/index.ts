@@ -163,7 +163,7 @@ export class SsidAuthMethod implements AuthMethod {
     /**
      * Accepts SSID for authentication.
      *
-     * B2B-client's application can retrieve SSID over b2b-gateway API: [/v1/b2b-gateway/users/{user_id}/sessions](https://github.com/qc-b2b/api-b2b-gateway/blob/f1e09ad4bb7e68efdd4a9b2105bdd123b0e64c4d/qc-internal-balance-openapi.yaml#L104).
+     * B2B-client's application can retrieve SSID over b2b-gateway API: [/v1/b2b-gateway/users/{user_id}/sessions](https://github.com/quadcode/b2b-gateway-api/blob/ec176e29fcf8a60e94398ce9a0120a23802a83dd/quadcode-internal-balance-openapi.yaml#L104).
      *
      * @param ssid - User's session ID.
      */
