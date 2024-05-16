@@ -2889,6 +2889,11 @@ class WsApiClient {
     private readonly platformId: number
     private readonly authMethod: AuthMethod
 
+    private readonly initialReconnectTimeout: number = 100
+    private readonly reconnectMultiplier: number = 2
+    private readonly maxReconnectTimeout: number = 10000
+    private reconnectTimeout: number = 100
+
     private connection: WebSocket
     private lastRequestId: number = 0
     private requests: Map<string, RequestMetaData> = new Map<string, RequestMetaData>()
@@ -2972,7 +2977,11 @@ class WsApiClient {
             })
 
             this.connection.on('close', () => {
-                reject(new Error('authentication is failed'))
+                this.reconnect()
+            })
+
+            this.connection.on('error', () => {
+                this.reconnect()
             })
         })
     }
@@ -2983,6 +2992,29 @@ class WsApiClient {
         this.lastRequestId = 0
         this.requests.clear()
         this.subscriptions.clear()
+    }
+
+    reconnect() {
+        if (this.connection) {
+            this.connection = undefined
+        }
+
+        const attemptReconnect = () => {
+            this.connect().then(() => {
+                this.reconnectTimeout = this.initialReconnectTimeout;
+                this.resubscribeAll().then(() => {
+                })
+            }).catch(() => {
+                this.reconnectTimeout = Math.min(this.reconnectTimeout * this.reconnectMultiplier, this.maxReconnectTimeout) + this.getJitter();
+                setTimeout(attemptReconnect, this.reconnectTimeout);
+            });
+        };
+
+        attemptReconnect();
+    }
+
+    getJitter() {
+        return Math.floor(Math.random() * 1000);
     }
 
     doRequest<T>(request: Request<T>): Promise<T> {
@@ -2996,6 +3028,22 @@ class WsApiClient {
 
         return new Promise<T>((resolve, reject) => {
             this.requests.set(requestId, new RequestMetaData(request, resolve, reject))
+        })
+    }
+
+    resubscribeAll(): Promise<Result[]> {
+        return new Promise((resolve, reject) => {
+            const promises: Promise<Result>[] = [];
+            if (this.subscriptions.size > 0) {
+                for (const [, value] of this.subscriptions) {
+                    for (const index in value) {
+                        const subscriptionMetaData = value[index]
+                        promises.push(this.doRequest<Result>(new SubscribeMessage(subscriptionMetaData.request.messageBody())))
+                    }
+                }
+            }
+
+            Promise.all(promises).then(resolve).catch(reject)
         })
     }
 
