@@ -204,8 +204,8 @@ export class LoginPasswordAuthMethod implements AuthMethod {
     public async authenticateWsApiClient(wsApiClient: WsApiClient): Promise<boolean> {
         const response = await this.httpApiClient.doRequest(new HttpLoginRequest(this.login, this.password))
 
-        if (response.code === 'success') {
-            const authResponse = await wsApiClient.doRequest<Authenticated>(new Authenticate(response.ssid))
+        if (response.status === 200 && response.data.code === 'success') {
+            const authResponse = await wsApiClient.doRequest<Authenticated>(new Authenticate(response.data.ssid))
             return authResponse.isSuccessful
         }
 
@@ -2851,7 +2851,7 @@ class HttpApiClient {
     doRequest<T>(request: HttpRequest<T>): Promise<T> {
         return new Promise((resolve, reject) => {
             const options = {
-                method: 'POST',
+                method: request.method(),
                 headers: {
                     'Content-Type': 'application/json',
                     'User-Agent': 'quadcode-client-sdk-js/0.1.3'
@@ -2860,14 +2860,13 @@ class HttpApiClient {
             }
 
             fetch(`${this.apiUrl}${request.path()}`, options)
-                .then((response) => {
+                .then(async (response) => {
                     if (!response.ok) {
                         reject(new Error(`HTTP error: ${response.status}`))
                     }
-                    return response.json()
-                })
-                .then((data) => {
-                    resolve(request.createResponse(data))
+
+                    const data = await response.json()
+                    resolve(request.createResponse(response.status, data))
                 })
                 .catch((error) => {
                     reject(error)
@@ -3036,11 +3035,13 @@ interface Request<ResponseType> {
 }
 
 interface HttpRequest<ResponseType> {
+    method(): string
+
     path(): string
 
     messageBody(): any
 
-    createResponse(data: any): ResponseType
+    createResponse(status: number, data: any): ResponseType
 }
 
 interface SubscribeRequest<EventType> {
@@ -3064,6 +3065,16 @@ class Authenticated {
 
     constructor(isSuccessful: boolean) {
         this.isSuccessful = isSuccessful
+    }
+}
+
+class HttpResponse<ResponseDataType> {
+    status: number
+    data: ResponseDataType
+
+    constructor(status: number, data: ResponseDataType) {
+        this.status = status
+        this.data = data
     }
 }
 
@@ -3650,8 +3661,12 @@ class QuoteGenerated {
 
 // Outbound messages
 
-class HttpLoginRequest implements HttpRequest<HttpLoginResponse> {
+class HttpLoginRequest implements HttpRequest<HttpResponse<HttpLoginResponse>> {
     constructor(private readonly login: string, private readonly password: string) {
+    }
+
+    method(): string {
+        return 'POST'
     }
 
     path() {
@@ -3665,8 +3680,8 @@ class HttpLoginRequest implements HttpRequest<HttpLoginResponse> {
         }
     }
 
-    createResponse(data: any): HttpLoginResponse {
-        return new HttpLoginResponse(data)
+    createResponse(status: number, data: any): HttpResponse<HttpLoginResponse> {
+        return new HttpResponse(status, new HttpLoginResponse(data))
     }
 }
 
