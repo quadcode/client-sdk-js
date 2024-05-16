@@ -3001,8 +3001,8 @@ class WsApiClient {
 
         const attemptReconnect = () => {
             this.connect().then(() => {
-                this.reconnectTimeout = this.initialReconnectTimeout;
                 this.resubscribeAll().then(() => {
+                    this.reconnectTimeout = this.initialReconnectTimeout;
                 })
             }).catch(() => {
                 this.reconnectTimeout = Math.min(this.reconnectTimeout * this.reconnectMultiplier, this.maxReconnectTimeout) + this.getJitter();
