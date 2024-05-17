@@ -2996,6 +2996,7 @@ class WsApiClient {
 
     reconnect() {
         if (this.connection) {
+            this.connection.terminate()
             this.connection = undefined
         }
 
