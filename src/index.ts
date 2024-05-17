@@ -2964,6 +2964,7 @@ class WsApiClient {
 
                     resolve()
                 } catch (e) {
+                    this.connection.terminate()
                     reject(e)
                 }
             })
