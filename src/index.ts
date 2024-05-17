@@ -2954,11 +2954,13 @@ class WsApiClient {
                 try {
                     const isSuccessful = await this.authMethod.authenticateWsApiClient(this)
                     if (!isSuccessful) {
+                        this.connection.terminate()
                         reject(new Error('authentication is failed'))
                     }
 
                     const setOptionsResponse = await this.doRequest<Result>(new SetOptions(true))
                     if (!setOptionsResponse.success) {
+                        this.connection.terminate()
                         reject(new Error('setOptions operation is failed'))
                     }
 
