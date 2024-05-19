@@ -1612,6 +1612,28 @@ export class TurboOptionsActiveInstrument {
     }
 
     /**
+     * Returns the time until which it is possible to open trades that will fall into the current expiration.
+     * @returns {Date}
+     */
+    public purchaseEndTime(): Date {
+        const purchaseEndTime = new Date(this.expiredAt);
+        purchaseEndTime.setSeconds(purchaseEndTime.getSeconds() - this.deadtime);
+
+        return purchaseEndTime;
+    }
+
+    /**
+     * Returns the remaining duration in milliseconds for which it is possible to purchase options.
+     * @param {Date} currentTime - The current time.
+     * @returns {number} - The remaining duration in milliseconds.
+     */
+    public durationRemainingForPurchase(currentTime: Date): number {
+        const purchaseEndTime = this.purchaseEndTime();
+
+        return purchaseEndTime.getTime() - currentTime.getTime();
+    }
+
+    /**
      * Updates the instance from DTO.
      * @param deadtime - How many seconds before expiration time the ability to purchase options for this instrument will not be allowed.
      * @private
@@ -2121,6 +2143,28 @@ export class BinaryOptionsActiveInstrument {
      */
     public isAvailableForBuyAt(at: Date): boolean {
         return this.expiredAt.getTime() - this.deadtime * 1000 > at.getTime()
+    }
+
+    /**
+     * Returns the time until which it is possible to open trades that will fall into the current expiration.
+     * @returns {Date}
+     */
+    public purchaseEndTime(): Date {
+        const purchaseEndTime = new Date(this.expiredAt);
+        purchaseEndTime.setSeconds(purchaseEndTime.getSeconds() - this.deadtime);
+
+        return purchaseEndTime;
+    }
+
+    /**
+     * Returns the remaining duration in milliseconds for which it is possible to purchase options.
+     * @param {Date} currentTime - The current time.
+     * @returns {number} - The remaining duration in milliseconds.
+     */
+    public durationRemainingForPurchase(currentTime: Date): number {
+        const purchaseEndTime = this.purchaseEndTime();
+
+        return purchaseEndTime.getTime() - currentTime.getTime();
     }
 
     /**
@@ -2734,6 +2778,28 @@ export class DigitalOptionsUnderlyingInstrument {
         }
 
         throw new Error(`Strike with price '${price}' and direction '${direction}' is not found`)
+    }
+
+    /**
+     * Returns the time until which it is possible to open trades that will fall into the current expiration.
+     * @returns {Date}
+     */
+    public purchaseEndTime(): Date {
+        const purchaseEndTime = new Date(this.expiration);
+        purchaseEndTime.setSeconds(purchaseEndTime.getSeconds() - this.deadtime);
+
+        return purchaseEndTime;
+    }
+
+    /**
+     * Returns the remaining duration in milliseconds for which it is possible to purchase options.
+     * @param {Date} currentTime - The current time.
+     * @returns {number} - The remaining duration in milliseconds.
+     */
+    public durationRemainingForPurchase(currentTime: Date): number {
+        const purchaseEndTime = this.purchaseEndTime();
+
+        return purchaseEndTime.getTime() - currentTime.getTime();
     }
 
     /**
