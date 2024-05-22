@@ -11,8 +11,9 @@ export class QuadcodeClientSdk {
 
     /**
      * Instance of WebSocket API client.
+     * @private
      */
-    public readonly wsApiClient: WsApiClient
+    private readonly wsApiClient: WsApiClient
 
     /**
      * Balances facade cache.
@@ -141,6 +142,13 @@ export class QuadcodeClientSdk {
             this.digitalOptionsFacade = await DigitalOptions.create(this.wsApiClient)
         }
         return this.digitalOptionsFacade
+    }
+
+    /**
+     * Returns ws current time.
+     */
+    public currentTime(): Date {
+        return new Date(this.wsApiClient.currentTime.unixMilliTime)
     }
 }
 
