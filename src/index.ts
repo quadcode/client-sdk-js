@@ -11,9 +11,8 @@ export class QuadcodeClientSdk {
 
     /**
      * Instance of WebSocket API client.
-     * @private
      */
-    private readonly wsApiClient: WsApiClient
+    public readonly wsApiClient: WsApiClient
 
     /**
      * Balances facade cache.
