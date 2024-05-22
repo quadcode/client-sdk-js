@@ -1616,10 +1616,7 @@ export class TurboOptionsActiveInstrument {
      * @returns {Date}
      */
     public purchaseEndTime(): Date {
-        const purchaseEndTime = new Date(this.expiredAt);
-        purchaseEndTime.setTime(purchaseEndTime.getTime() - this.deadtime * 1000);
-
-        return purchaseEndTime;
+        return new Date(this.expiredAt.getTime() - this.deadtime * 1000);
     }
 
     /**
@@ -1628,9 +1625,7 @@ export class TurboOptionsActiveInstrument {
      * @returns {number} - The remaining duration in milliseconds.
      */
     public durationRemainingForPurchase(currentTime: Date): number {
-        const purchaseEndTime = this.purchaseEndTime();
-
-        return purchaseEndTime.getTime() - currentTime.getTime();
+        return this.purchaseEndTime().getTime() - currentTime.getTime();
     }
 
     /**
@@ -2150,10 +2145,7 @@ export class BinaryOptionsActiveInstrument {
      * @returns {Date}
      */
     public purchaseEndTime(): Date {
-        const purchaseEndTime = new Date(this.expiredAt);
-        purchaseEndTime.setTime(purchaseEndTime.getTime() - this.deadtime * 1000);
-
-        return purchaseEndTime;
+        return new Date(this.expiredAt.getTime() - this.deadtime * 1000);
     }
 
     /**
@@ -2162,9 +2154,7 @@ export class BinaryOptionsActiveInstrument {
      * @returns {number} - The remaining duration in milliseconds.
      */
     public durationRemainingForPurchase(currentTime: Date): number {
-        const purchaseEndTime = this.purchaseEndTime();
-
-        return purchaseEndTime.getTime() - currentTime.getTime();
+        return this.purchaseEndTime().getTime() - currentTime.getTime();
     }
 
     /**
@@ -2785,10 +2775,7 @@ export class DigitalOptionsUnderlyingInstrument {
      * @returns {Date}
      */
     public purchaseEndTime(): Date {
-        const purchaseEndTime = new Date(this.expiration);
-        purchaseEndTime.setTime(purchaseEndTime.getTime() - this.deadtime * 1000);
-
-        return purchaseEndTime;
+        return new Date(this.expiration.getTime() - this.deadtime * 1000);
     }
 
     /**
@@ -2797,9 +2784,7 @@ export class DigitalOptionsUnderlyingInstrument {
      * @returns {number} - The remaining duration in milliseconds.
      */
     public durationRemainingForPurchase(currentTime: Date): number {
-        const purchaseEndTime = this.purchaseEndTime();
-
-        return purchaseEndTime.getTime() - currentTime.getTime();
+        return this.purchaseEndTime().getTime() - currentTime.getTime();
     }
 
     /**
