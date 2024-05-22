@@ -2901,6 +2901,7 @@ class WsApiClient {
     private readonly maxReconnectTimeout: number = 10000
     private reconnectTimeout: number = 100
 
+    private disconnecting = false
     private connection: WebSocket
     private lastRequestId: number = 0
     private requests: Map<string, RequestMetaData> = new Map<string, RequestMetaData>()
@@ -2994,6 +2995,7 @@ class WsApiClient {
     }
 
     disconnect() {
+        this.disconnecting = true
         this.connection.terminate()
         this.connection = undefined
         this.lastRequestId = 0
@@ -3002,6 +3004,10 @@ class WsApiClient {
     }
 
     reconnect() {
+        if (this.disconnecting) {
+            return
+        }
+
         if (this.connection) {
             this.connection.terminate()
             this.connection = undefined
