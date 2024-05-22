@@ -27,6 +27,24 @@ const sdk = await QuadcodeClientSdk.create(
     new SsidAuthMethod('c1xxxxxxxxxxxxxxxxxxxxxxxxxxxx97') // B2B-client's application can retrieve SSID over b2b-gateway API: [/v1/b2b-gateway/users/{user_id}/sessions](https://github.com/quadcode/b2b-gateway-api/blob/ec176e29fcf8a60e94398ce9a0120a23802a83dd/quadcode-internal-balance-openapi.yaml#L104).
 )
 ```
+or authorize with login and password
+```js
+import {
+    QuadcodeClientSdk,
+    BalanceType,
+    BinaryOptionsDirection,
+    BlitzOptionsDirection,
+    DigitalOptionsDirection,
+    SsidAuthMethod,
+    TurboOptionsDirection
+} from '@quadcode-tech/client-sdk-js'
+
+const sdk = await QuadcodeClientSdk.create(
+    'wss://ws.trade.example.com/echo/websocket',
+    82,
+    new LoginPasswordAuthMethod('https://api.trade.example.com', "login", "password")
+)
+```
 
 ### Get user's first real balance
 

@@ -181,6 +181,39 @@ export class SsidAuthMethod implements AuthMethod {
 }
 
 /**
+ * Implements login/password authentication flow.
+ */
+export class LoginPasswordAuthMethod implements AuthMethod {
+    private readonly httpApiClient: HttpApiClient
+
+    /**
+     * Accepts login and password for authentication.
+     *
+     * @param httpApiUrl
+     * @param login
+     * @param password
+     */
+    public constructor(private readonly httpApiUrl: string, private readonly login: string, private readonly password: string) {
+        this.httpApiClient = new HttpApiClient(this.httpApiUrl)
+    }
+
+    /**
+     * Authenticates client in WebSocket API.
+     * @param wsApiClient
+     */
+    public async authenticateWsApiClient(wsApiClient: WsApiClient): Promise<boolean> {
+        const response = await this.httpApiClient.doRequest(new HttpLoginRequest(this.login, this.password))
+
+        if (response.status === 200 && response.data.code === 'success') {
+            const authResponse = await wsApiClient.doRequest<Authenticated>(new Authenticate(response.data.ssid))
+            return authResponse.isSuccessful
+        }
+
+        return false
+    }
+}
+
+/**
  * Don't use this class directly from your code. Use {@link QuadcodeClientSdk.userProfile} field instead.
  *
  * User profile facade class. Stores information about the user on whose behalf your application is working.
@@ -2803,6 +2836,45 @@ class Observable<T> {
     }
 }
 
+/**
+ * HttpApiClient class.
+ * @ignore
+ * @internal
+ */
+class HttpApiClient {
+    private readonly apiUrl: string
+
+    constructor(apiUrl: string) {
+        this.apiUrl = apiUrl
+    }
+
+    doRequest<T>(request: HttpRequest<T>): Promise<T> {
+        return new Promise((resolve, reject) => {
+            const options = {
+                method: request.method(),
+                headers: {
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'quadcode-client-sdk-js/0.1.3'
+                },
+                body: JSON.stringify(request.messageBody())
+            }
+
+            fetch(`${this.apiUrl}${request.path()}`, options)
+                .then(async (response) => {
+                    if (!response.ok) {
+                        reject(new Error(`HTTP error: ${response.status}`))
+                    }
+
+                    const data = await response.json()
+                    resolve(request.createResponse(response.status, data))
+                })
+                .catch((error) => {
+                    reject(error)
+                })
+        })
+    }
+}
+
 // WS API client
 
 /**
@@ -2882,16 +2954,19 @@ class WsApiClient {
                 try {
                     const isSuccessful = await this.authMethod.authenticateWsApiClient(this)
                     if (!isSuccessful) {
+                        this.connection.terminate()
                         reject(new Error('authentication is failed'))
                     }
 
                     const setOptionsResponse = await this.doRequest<Result>(new SetOptions(true))
                     if (!setOptionsResponse.success) {
+                        this.connection.terminate()
                         reject(new Error('setOptions operation is failed'))
                     }
 
                     resolve()
                 } catch (e) {
+                    this.connection.terminate()
                     reject(e)
                 }
             })
@@ -2962,6 +3037,16 @@ interface Request<ResponseType> {
     createResponse(data: any): ResponseType
 }
 
+interface HttpRequest<ResponseType> {
+    method(): string
+
+    path(): string
+
+    messageBody(): any
+
+    createResponse(status: number, data: any): ResponseType
+}
+
 interface SubscribeRequest<EventType> {
     messageName(): string
 
@@ -2983,6 +3068,26 @@ class Authenticated {
 
     constructor(isSuccessful: boolean) {
         this.isSuccessful = isSuccessful
+    }
+}
+
+class HttpResponse<ResponseDataType> {
+    status: number
+    data: ResponseDataType
+
+    constructor(status: number, data: ResponseDataType) {
+        this.status = status
+        this.data = data
+    }
+}
+
+class HttpLoginResponse {
+    code: string
+    ssid: string
+
+    constructor(data: { code: string, ssid: string }) {
+        this.code = data.code
+        this.ssid = data.ssid
     }
 }
 
@@ -3558,6 +3663,30 @@ class QuoteGenerated {
 }
 
 // Outbound messages
+
+class HttpLoginRequest implements HttpRequest<HttpResponse<HttpLoginResponse>> {
+    constructor(private readonly login: string, private readonly password: string) {
+    }
+
+    method(): string {
+        return 'POST'
+    }
+
+    path() {
+        return '/v2/login'
+    }
+
+    messageBody() {
+        return {
+            identifier: this.login,
+            password: this.password
+        }
+    }
+
+    createResponse(status: number, data: any): HttpResponse<HttpLoginResponse> {
+        return new HttpResponse(status, new HttpLoginResponse(data))
+    }
+}
 
 class Authenticate implements Request<Authenticated> {
     constructor(private readonly ssid: string) {
