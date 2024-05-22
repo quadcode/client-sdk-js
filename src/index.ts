@@ -1617,7 +1617,7 @@ export class TurboOptionsActiveInstrument {
      */
     public purchaseEndTime(): Date {
         const purchaseEndTime = new Date(this.expiredAt);
-        purchaseEndTime.setSeconds(purchaseEndTime.getSeconds() - this.deadtime);
+        purchaseEndTime.setTime(purchaseEndTime.getTime() - this.deadtime * 1000);
 
         return purchaseEndTime;
     }
@@ -2151,7 +2151,7 @@ export class BinaryOptionsActiveInstrument {
      */
     public purchaseEndTime(): Date {
         const purchaseEndTime = new Date(this.expiredAt);
-        purchaseEndTime.setSeconds(purchaseEndTime.getSeconds() - this.deadtime);
+        purchaseEndTime.setTime(purchaseEndTime.getTime() - this.deadtime * 1000);
 
         return purchaseEndTime;
     }
@@ -2786,7 +2786,7 @@ export class DigitalOptionsUnderlyingInstrument {
      */
     public purchaseEndTime(): Date {
         const purchaseEndTime = new Date(this.expiration);
-        purchaseEndTime.setSeconds(purchaseEndTime.getSeconds() - this.deadtime);
+        purchaseEndTime.setTime(purchaseEndTime.getTime() - this.deadtime * 1000);
 
         return purchaseEndTime;
     }
