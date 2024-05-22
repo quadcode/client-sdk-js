@@ -1608,7 +1608,7 @@ export class TurboOptionsActiveInstrument {
      * @param at - Time for which the check is performed.
      */
     public isAvailableForBuyAt(at: Date): boolean {
-        return this.expiredAt.getTime() - this.deadtime * 1000 > at.getTime()
+        return this.purchaseEndTime().getTime() > at.getTime()
     }
 
     /**
@@ -2142,7 +2142,7 @@ export class BinaryOptionsActiveInstrument {
      * @param at - Time for which the check is performed.
      */
     public isAvailableForBuyAt(at: Date): boolean {
-        return this.expiredAt.getTime() - this.deadtime * 1000 > at.getTime()
+        return this.purchaseEndTime().getTime() > at.getTime()
     }
 
     /**
@@ -2758,7 +2758,7 @@ export class DigitalOptionsUnderlyingInstrument {
      * @param at - Time for which the check is performed.
      */
     public isAvailableForBuyAt(at: Date): boolean {
-        return at.getTime() < this.expiration.getTime() - this.deadtime * 1000
+        return this.purchaseEndTime().getTime() > at.getTime()
     }
 
     /**
