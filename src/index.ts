@@ -3018,19 +3018,19 @@ class WsApiClient {
                 try {
                     const isSuccessful = await this.authMethod.authenticateWsApiClient(this)
                     if (!isSuccessful) {
-                        this.connection.terminate()
+                        this.disconnect()
                         reject(new Error('authentication is failed'))
                     }
 
                     const setOptionsResponse = await this.doRequest<Result>(new SetOptions(true))
                     if (!setOptionsResponse.success) {
-                        this.connection.terminate()
+                        this.disconnect()
                         reject(new Error('setOptions operation is failed'))
                     }
 
                     resolve()
                 } catch (e) {
-                    this.connection.terminate()
+                    this.disconnect()
                     reject(e)
                 }
             })
