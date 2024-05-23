@@ -4,7 +4,8 @@
 name: Tests
 
 on:
-  workflow_dispatch:
+  push:
+  workflow_call: # workflow can be called by another workflow
 
 jobs:
   test:
