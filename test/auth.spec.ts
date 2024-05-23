@@ -25,6 +25,6 @@ describe('Authentication with login and password', () => {
             wsURL,
             82,
             new LoginPasswordAuthMethod(apiUrl, user.email, "invalid_password")))
-            .to.eventually.be.rejectedWith("HTTP error: 401")
+            .to.eventually.be.rejectedWith("authentication is failed")
     });
 });
