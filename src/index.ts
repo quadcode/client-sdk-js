@@ -3142,23 +3142,22 @@ class WsApiClient {
 
                     const setOptionsResponse = await this.doRequest<Result>(new SetOptions(true))
                     if (!setOptionsResponse.success) {
-                        this.connection.terminate()
+                        this.disconnect()
                         return reject(new Error('setOptions operation is failed'))
                     }
 
+                    this.connection.on('close', () => {
+                        this.reconnect()
+                    })
+
+                    this.connection.on('error', () => {
+                        this.reconnect()
+                    })
+
                     return resolve()
                 } catch (e) {
-                    this.connection.terminate()
-                    reject(e)
+                    return reject(e)
                 }
-            })
-
-            this.connection.on('close', () => {
-                this.reconnect()
-            })
-
-            this.connection.on('error', () => {
-                this.reconnect()
             })
         })
     }
@@ -3175,11 +3174,6 @@ class WsApiClient {
     reconnect() {
         if (this.disconnecting) {
             return
-        }
-
-        if (this.connection) {
-            this.connection.terminate()
-            this.connection = undefined
         }
 
         const attemptReconnect = () => {
