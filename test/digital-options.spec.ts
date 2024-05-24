@@ -51,6 +51,22 @@ describe('Digital-options', () => {
                 expect(firstInstrument.durationRemainingForPurchase(currentTime), 'Invalid duration remaining for purchase')
                     .to.eq(firstInstrument.purchaseEndTime().getTime() - currentTime.getTime())
             });
+
+            it('should return ask/bid prices if subscribed', async () => {
+                const instrument = availableInstruments.find(instr => instr.period === 300);
+                if (!instrument)
+                    throw new Error("Instrument with 5min expiration wasn't found");
+                const strikes = Array.from(instrument.strikes.values());
+                expect(strikes.filter(value => value.bid !== undefined || value.ask !== undefined),
+                    'Strikes should not have ask/bid prices').lengthOf(0)
+
+                await instrument.subscribeOnStrikesAskBidPrices();
+                await new Promise(resolve => setTimeout(resolve, 1000)) // wait 1 sec
+
+                const strikesWithPrices = Array.from(instrument.strikes.values())
+                    .filter(value => value.bid !== undefined || value.ask !== undefined);
+                expect(strikesWithPrices.length, 'Strikes must have ask/bid prices').eq(strikes.length)
+            });
         });
     });
 });
