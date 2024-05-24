@@ -94,6 +94,10 @@ export class QuadcodeClientSdk {
         if (this.binaryOptionsFacade) {
             this.binaryOptionsFacade.close()
         }
+
+        if (this.digitalOptionsFacade) {
+            this.digitalOptionsFacade.close()
+        }
     }
 
     /**
@@ -2506,6 +2510,15 @@ export class DigitalOptions {
             }
         }
     }
+
+    /**
+     * Closes the instance.
+     */
+    public close() {
+        this.underlyings.forEach((underlying) => {
+            underlying.close()
+        })
+    }
 }
 
 /**
@@ -2618,6 +2631,15 @@ export class DigitalOptionsUnderlying {
         for (const index in msg.schedule) {
             const session = msg.schedule[index];
             this.schedule.push(new DigitalOptionsUnderlyingTradingSession(session.open, session.close))
+        }
+    }
+
+    /**
+     * Closes the instance.
+     */
+    public close() {
+        if (this.instrumentsFacade) {
+            this.instrumentsFacade.close()
         }
     }
 }
@@ -2754,6 +2776,15 @@ export class DigitalOptionsUnderlyingInstruments {
             this.instruments.get(msg.index)!.sync(msg)
         }
     }
+
+    /**
+     * Closes the instance.
+     */
+    public close() {
+        this.instruments.forEach((instrument) => {
+            instrument.close()
+        })
+    }
 }
 
 /**
@@ -2801,6 +2832,12 @@ export class DigitalOptionsUnderlyingInstrument {
      * @private
      */
     private readonly wsApiClient: WsApiClient
+
+    /**
+     * Timer for periodical actives list update.
+     * @private
+     */
+    private intervalId: NodeJS.Timeout | undefined
 
     /**
      * Creates instance from DTO.
@@ -2912,10 +2949,10 @@ export class DigitalOptionsUnderlyingInstrument {
             this.syncAskBidPricesFromEvent(event)
         })
 
-        const checkInterval = setInterval(() => {
+        this.intervalId = setInterval(() => {
             if (this.wsApiClient.currentTime.unixMilliTime >= this.expiration.getTime()) {
                 this.wsApiClient.unsubscribe<DigitalOptionClientPriceGeneratedV1>(request)
-                clearInterval(checkInterval);
+                clearInterval(this.intervalId);
             }
         }, 1000);
     }
@@ -2959,6 +2996,15 @@ export class DigitalOptionsUnderlyingInstrument {
                 putSymbol.bid = price.put.bid
             }
         })
+    }
+
+    /**
+     * Closes the instance.
+     */
+    public close() {
+        if (this.intervalId) {
+            clearInterval(this.intervalId)
+        }
     }
 }
 
