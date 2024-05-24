@@ -642,10 +642,22 @@ export class Positions {
     private positions: Map<number, Position> = new Map<number, Position>()
 
     /**
+     * Positions' IDs cache.
+     * @private
+     */
+    private positionsIds: Map<string, number> = new Map<string, number>()
+
+    /**
      * Positions updates observer.
      * @private
      */
     private onUpdatePositionObserver: Observable<Position> = new Observable<Position>()
+
+    /**
+     * Timer for periodical actives list update.
+     * @private
+     */
+    private intervalId: NodeJS.Timeout | undefined
 
     /**
      * Just private constructor. Just private constructor. Use {@link Positions.create create} instead.
@@ -675,6 +687,14 @@ export class Positions {
 
             positionsFacade.syncPositionFromEvent(event)
         })
+
+        positionsFacade.intervalId = setInterval(async () => {
+            await wsApiClient.unsubscribe<PortfolioPositionsStateV1>(new SubscribePortfolioPositionsStateV1())
+            await wsApiClient.subscribe<PortfolioPositionsStateV1>(new SubscribePortfolioPositionsStateV1(),
+                (event: PortfolioPositionsStateV1) => {
+                    positionsFacade.syncPositionsStateFromEvent(event)
+                })
+        }, 60000)
 
         let offset = 0
         for (; ;) {
@@ -750,11 +770,25 @@ export class Positions {
             const position = new Position()
             position.id = msg.externalId
             this.positions.set(msg.externalId, position)
+            this.positionsIds.set(msg.internalId, msg.externalId)
         }
 
         const position = this.positions.get(msg.externalId)!
         position.syncFromResponse(msg)
         this.onUpdatePositionObserver.notify(position)
+    }
+
+    private syncPositionsStateFromEvent(msg: PortfolioPositionsStateV1): void {
+        for (const index in msg.positions) {
+            const externalId = this.positionsIds.get(msg.positions[index].internalId)
+            if (!externalId) {
+                continue
+            }
+
+            const position = this.positions.get(externalId)!
+            position.syncFromStateEvent(msg.positions[index])
+            this.onUpdatePositionObserver.notify(position)
+        }
     }
 
     /**
@@ -767,11 +801,21 @@ export class Positions {
             const position = new Position()
             position.id = msg.externalId
             this.positions.set(msg.externalId, position)
+            this.positionsIds.set(msg.internalId, msg.externalId)
         }
 
         const position = this.positions.get(msg.externalId)!
         position.syncFromEvent(msg)
         this.onUpdatePositionObserver.notify(position)
+    }
+
+    /**
+     * Closes the instance.
+     */
+    public close() {
+        if (this.intervalId) {
+            clearInterval(this.intervalId)
+        }
     }
 }
 
@@ -785,9 +829,14 @@ export type CallbackForPositionUpdate = (position: Position) => void
  */
 export class Position {
     /**
-     * Position's identification number.
+     * Position's identification number ( position external ID ).
      */
     public id: number | undefined
+
+    /**
+     * Position's internal ID.
+     */
+    public internalId: string | undefined
 
     /**
      * Position's active ID.
@@ -813,6 +862,11 @@ export class Position {
      * Position's close reason.
      */
     public closeReason: string | undefined
+
+    /**
+     * Current quote price.
+     */
+    public currentQuote: number | undefined
 
     /**
      * The time at which the position was closed.
@@ -860,6 +914,11 @@ export class Position {
     public quoteTimestamp: Date | undefined
 
     /**
+     * Current quote time.
+     */
+    public currentQuoteTimestamp: Date | undefined
+
+    /**
      * Position's status.
      */
     public status: string | undefined
@@ -868,6 +927,11 @@ export class Position {
      * Position's user ID.
      */
     public userId: number | undefined
+
+    /**
+     * Realized profit from selling the position at this moment.
+     */
+    public sellProfit: number | undefined
 
     /**
      * Version of position. Used for filter old versions of position's state.
@@ -882,6 +946,7 @@ export class Position {
      */
     syncFromResponse(msg: PortfolioPositionsV4Position): void {
         this.id = msg.externalId
+        this.internalId = msg.internalId
         this.activeId = msg.activeId
         this.balanceId = msg.userBalanceId
         this.expectedProfit = msg.expectedProfit
@@ -921,6 +986,18 @@ export class Position {
         this.quoteTimestamp = msg.quoteTimestamp !== undefined ? new Date(msg.quoteTimestamp) : undefined
         this.status = msg.status
         this.userId = msg.userId
+    }
+
+    /**
+     * Synchronises position from DTO.
+     * @param msg - Position state data transfer object.
+     */
+    syncFromStateEvent(msg: PortfolioPositionsStateV1Position): void {
+        this.sellProfit = msg.sellProfit
+        this.currentQuote = msg.currentPrice
+        this.currentQuoteTimestamp = msg.quoteTimestamp !== undefined ? new Date(msg.quoteTimestamp) : undefined
+        this.pnl = msg.pnl
+        this.expectedProfit = msg.expectedProfit
     }
 }
 
@@ -1068,6 +1145,12 @@ export class BlitzOptions {
     public close() {
         if (this.intervalId) {
             clearInterval(this.intervalId)
+        }
+
+        for (const [, promise] of this.positions) {
+            promise.then((positions) => {
+                positions.close()
+            })
         }
     }
 }
@@ -1420,6 +1503,12 @@ export class TurboOptions {
         this.actives.forEach((active) => {
             active.close()
         })
+
+        for (const [, promise] of this.positions) {
+            promise.then((positions) => {
+                positions.close()
+            })
+        }
     }
 }
 
@@ -1986,6 +2075,12 @@ export class BinaryOptions {
         this.actives.forEach((active) => {
             active.close()
         })
+
+        for (const [, promise] of this.positions) {
+            promise.then((positions) => {
+                positions.close()
+            })
+        }
     }
 }
 
@@ -2617,6 +2712,12 @@ export class DigitalOptions {
      * Closes the instance.
      */
     public close() {
+        for (const [, promise] of this.positions) {
+            promise.then((positions) => {
+                positions.close()
+            })
+        }
+
         this.underlyings.forEach((underlying) => {
             underlying.close()
         })
@@ -4070,6 +4171,7 @@ class PortfolioPositionChangedV3 {
     closeTime: number | undefined
     expectedProfit: number
     externalId: number
+    internalId: string
     instrumentType: string
     invest: number
     openQuote: number
@@ -4091,6 +4193,7 @@ class PortfolioPositionChangedV3 {
         expected_profit: number
         instrument_type: string
         external_id: number
+        id: string
         invest: number
         open_quote: number
         open_time: number
@@ -4110,6 +4213,7 @@ class PortfolioPositionChangedV3 {
         this.expectedProfit = data.expected_profit
         this.instrumentType = data.instrument_type
         this.externalId = data.external_id
+        this.internalId = data.id
         this.invest = data.invest
         this.openQuote = data.open_quote
         this.openTime = data.open_time
@@ -4138,10 +4242,72 @@ class PortfolioPositionsV4 {
     }
 }
 
+class PortfolioPositionsStateV1 {
+    positions: PortfolioPositionsStateV1Position[] = []
+    expiresIn: number
+    userId: number
+    subscriptionId: number
+
+    constructor(data: {
+        positions: any[],
+        expires_in: number,
+        user_id: number,
+        subscription_id: number
+    }) {
+        this.expiresIn = data.expires_in
+        this.userId = data.user_id
+        this.subscriptionId = data.subscription_id
+        for (const index in data.positions) {
+            this.positions.push(new PortfolioPositionsStateV1Position(data.positions[index]))
+        }
+    }
+}
+
+class PortfolioPositionsStateV1Position {
+    internalId: string
+    instrumentType: string
+    sellProfit: number
+    margin: number
+    currentPrice: number
+    quoteTimestamp: number | undefined
+    pnl: number
+    pnlNet: number
+    openPrice: number
+    expectedProfit: number
+    currencyConversion: number
+
+    constructor(data: {
+        id: string
+        instrument_type: string
+        sell_profit: number
+        margin: number
+        current_price: number
+        quote_timestamp: number | undefined
+        pnl: number
+        pnl_net: number
+        open_price: number
+        expected_profit: number
+        currency_conversion: number
+    }) {
+        this.internalId = data.id
+        this.instrumentType = data.instrument_type
+        this.sellProfit = data.sell_profit
+        this.margin = data.margin
+        this.currentPrice = data.current_price
+        this.quoteTimestamp = data.quote_timestamp
+        this.pnl = data.pnl
+        this.pnlNet = data.pnl_net
+        this.openPrice = data.open_price
+        this.expectedProfit = data.expected_profit
+        this.currencyConversion = data.currency_conversion
+    }
+}
+
 class PortfolioPositionsV4Position {
     activeId: number
     expectedProfit: number
     externalId: number
+    internalId: string
     instrumentType: string
     invest: number
     openQuote: number
@@ -4156,6 +4322,7 @@ class PortfolioPositionsV4Position {
         active_id: number
         expected_profit: number
         external_id: number
+        id: string
         instrument_type: string
         invest: number
         open_quote: number
@@ -4169,6 +4336,7 @@ class PortfolioPositionsV4Position {
         this.activeId = data.active_id
         this.expectedProfit = data.expected_profit
         this.externalId = data.external_id
+        this.internalId = data.id
         this.instrumentType = data.instrument_type
         this.invest = data.invest
         this.openQuote = data.open_quote
@@ -4583,6 +4751,30 @@ class SetOptions implements Request<Result> {
 
     createResponse(data: any): Result {
         return new Result(data)
+    }
+}
+
+class SubscribePortfolioPositionsStateV1 implements SubscribeRequest<PortfolioPositionsStateV1> {
+    messageName() {
+        return 'subscribeMessage'
+    }
+
+    messageBody() {
+        return {
+            name: `${this.eventName()}`,
+        }
+    }
+
+    eventMicroserviceName() {
+        return 'portfolio'
+    }
+
+    eventName() {
+        return 'positions-state'
+    }
+
+    createEvent(data: any): PortfolioPositionsStateV1 {
+        return new PortfolioPositionsStateV1(data)
     }
 }
 
