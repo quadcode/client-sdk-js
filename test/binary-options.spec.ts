@@ -46,8 +46,8 @@ describe('Binary-options', () => {
                     .to.closeTo(firstInstrument.expiredAt.getTime() - firstInstrument.deadtime * 1000, 0)
             });
 
-            it('should return valid purchaseEndTime for End of Day expiration', () => {
-                const instrument = instruments.find(value => value.expirationSize === 'front.End of day');
+            it('should return valid purchaseEndTime for End of Week expiration', () => {
+                const instrument = instruments.find(value => value.expirationSize === 'front.End of week');
                 if (instrument) {
                     expect(instrument.purchaseEndTime().getTime(), "Invalid purchase end time").to.be.eq(instrument.expiredAt.getTime() - instrument.deadtime * 1000)
                 } else throw new Error("Instrument with 'End of Day' expiration must be present")
