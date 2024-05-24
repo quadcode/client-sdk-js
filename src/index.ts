@@ -713,6 +713,18 @@ export class Positions {
     }
 
     /**
+     * Returns position by ID.
+     * @param positionId - Position ID.
+     */
+    public getPositionById(positionId: number): Position {
+        if (!this.positions.has(positionId)) {
+            throw new Error(`position with id '${positionId}' is not found`)
+        }
+
+        return this.positions.get(positionId)!
+    }
+
+    /**
      * Adds specified callback to position update subscribers' list.
      * @param callback - Callback will be called for every change of position.
      */
@@ -937,6 +949,12 @@ export class BlitzOptions {
     private intervalId: NodeJS.Timeout | undefined
 
     /**
+     * Instance of positions facade promise by balance.
+     * @private
+     */
+    private positions: Map<string, Promise<Positions>> = new Map<string, Promise<Positions>>()
+
+    /**
      * Creates instance from DTO.
      * @param activesMsg - actives data transfer object.
      * @param wsApiClient - Instance of WebSocket API client.
@@ -1012,7 +1030,8 @@ export class BlitzOptions {
             balance.id
         )
         const response = await this.wsApiClient.doRequest<BinaryOptionsOptionV1>(request)
-        return new BlitzOptionsOption(response)
+        const positions = await this.positionsByBalance(balance)
+        return new BlitzOptionsOption(response, positions)
     }
 
     /**
@@ -1020,7 +1039,11 @@ export class BlitzOptions {
      * @param balance - User's balance for which the positions are being requested.
      */
     public positionsByBalance(balance: Balance): Promise<Positions> {
-        return Positions.create(this.wsApiClient, 'blitz-option', balance)
+        const key = `blitz-option-${balance.id}`
+        if (!this.positions.has(key)) {
+            this.positions.set(key, Positions.create(this.wsApiClient, 'blitz-option', balance))
+        }
+        return this.positions.get(key)!
     }
 
     /**
@@ -1218,12 +1241,19 @@ export class BlitzOptionsOption {
     public openQuoteValue: number
 
     /**
+     * Instance of positions facade.
+     * @private
+     */
+    private readonly positions: Positions
+
+    /**
      * Creates class instance from DTO.
      * @param msg - Option's data transfer object.
+     * @param positions - Instance of positions facade.
      * @internal
      * @private
      */
-    public constructor(msg: BinaryOptionsOptionV1) {
+    public constructor(msg: BinaryOptionsOptionV1, positions: Positions) {
         this.id = msg.id
         this.activeId = msg.activeId
         this.direction = <BlitzOptionsDirection>msg.direction
@@ -1232,6 +1262,14 @@ export class BlitzOptionsOption {
         this.profitIncomePercent = msg.profitIncome
         this.openedAt = new Date(msg.timeRate * 1000)
         this.openQuoteValue = msg.value
+        this.positions = positions
+    }
+
+    /**
+     * Returns current option position.
+     */
+    public position(): Position {
+        return this.positions.getPositionById(this.id)
     }
 }
 
@@ -1258,6 +1296,12 @@ export class TurboOptions {
      * @private
      */
     private intervalId: NodeJS.Timeout | undefined
+
+    /**
+     * Instance of positions facade promise by balance.
+     * @private
+     */
+    private positions: Map<string, Promise<Positions>> = new Map<string, Promise<Positions>>()
 
     /**
      * Creates class instance.
@@ -1333,7 +1377,8 @@ export class TurboOptions {
             balance.id
         )
         const response = await this.wsApiClient.doRequest<BinaryOptionsOptionV1>(request)
-        return new TurboOptionsOption(response)
+        const positions = await this.positionsByBalance(balance)
+        return new TurboOptionsOption(response, positions)
     }
 
     /**
@@ -1341,7 +1386,11 @@ export class TurboOptions {
      * @param balance - User's balance for which the positions are being requested.
      */
     public positionsByBalance(balance: Balance): Promise<Positions> {
-        return Positions.create(this.wsApiClient, 'turbo-option', balance)
+        const key = `turbo-option-${balance.id}`
+        if (!this.positions.has(key)) {
+            this.positions.set(key, Positions.create(this.wsApiClient, 'turbo-option', balance))
+        }
+        return this.positions.get(key)!
     }
 
     /**
@@ -1756,13 +1805,21 @@ export class TurboOptionsOption {
      */
     public openQuoteValue: number
 
+
+    /**
+     * Instance of positions facade.
+     * @private
+     */
+    private readonly positions: Positions
+
     /**
      * Create instance from DTO.
      * @param msg - Option's data transfer object.
+     * @param positions - Instance of positions facade.
      * @internal
      * @private
      */
-    public constructor(msg: BinaryOptionsOptionV1) {
+    public constructor(msg: BinaryOptionsOptionV1, positions: Positions) {
         this.id = msg.id
         this.activeId = msg.activeId
         this.direction = <TurboOptionsDirection>msg.direction
@@ -1771,6 +1828,14 @@ export class TurboOptionsOption {
         this.expiredAt = new Date(msg.expired * 1000)
         this.openedAt = new Date(msg.timeRate * 1000)
         this.openQuoteValue = msg.value
+        this.positions = positions
+    }
+
+    /**
+     * Returns current option position.
+     */
+    public position(): Position {
+        return this.positions.getPositionById(this.id)
     }
 }
 
@@ -1797,6 +1862,12 @@ export class BinaryOptions {
      * @private
      */
     private intervalId: NodeJS.Timeout | undefined
+
+    /**
+     * Instance of positions facade promise by balance.
+     * @private
+     */
+    private positions: Map<string, Promise<Positions>> = new Map<string, Promise<Positions>>()
 
     /**
      * Creates instance from DTO.
@@ -1872,7 +1943,8 @@ export class BinaryOptions {
             balance.id
         )
         const response = await this.wsApiClient.doRequest<BinaryOptionsOptionV1>(request)
-        return new BinaryOptionsOption(response)
+        const positions = await this.positionsByBalance(balance)
+        return new BinaryOptionsOption(response, positions)
     }
 
     /**
@@ -1880,7 +1952,11 @@ export class BinaryOptions {
      * @param balance - User's balance for which the positions are being requested.
      */
     public positionsByBalance(balance: Balance): Promise<Positions> {
-        return Positions.create(this.wsApiClient, 'binary-option', balance)
+        const key = `binary-option-${balance.id}`
+        if (!this.positions.has(key)) {
+            this.positions.set(key, Positions.create(this.wsApiClient, 'binary-option', balance))
+        }
+        return this.positions.get(key)!
     }
 
     /**
@@ -2361,12 +2437,19 @@ export class BinaryOptionsOption {
     public openQuoteValue: number
 
     /**
+     * Instance of positions facade.
+     * @private
+     */
+    private readonly positions: Positions
+
+    /**
      * Create instance from DTO.
      * @param msg - Option's data transfer object.
+     * @param positions - Instance of positions facade.
      * @internal
      * @private
      */
-    public constructor(msg: BinaryOptionsOptionV1) {
+    public constructor(msg: BinaryOptionsOptionV1, positions: Positions) {
         this.id = msg.id
         this.activeId = msg.activeId
         this.direction = <BinaryOptionsDirection>msg.direction
@@ -2375,6 +2458,14 @@ export class BinaryOptionsOption {
         this.profitIncomePercent = msg.profitIncome
         this.openedAt = new Date(msg.timeRate * 1000)
         this.openQuoteValue = msg.value
+        this.positions = positions
+    }
+
+    /**
+     * Returns current option position.
+     */
+    public position(): Position {
+        return this.positions.getPositionById(this.id)
     }
 }
 
@@ -2395,6 +2486,12 @@ export class DigitalOptions {
      * @private
      */
     private underlyings: Map<number, DigitalOptionsUnderlying> = new Map<number, DigitalOptionsUnderlying>()
+
+    /**
+     * Instance of positions facade promise by balance.
+     * @private
+     */
+    private positions: Map<string, Promise<Positions>> = new Map<string, Promise<Positions>>()
 
     /**
      * Creates instance from DTO.
@@ -2467,7 +2564,8 @@ export class DigitalOptions {
             balance.id
         )
         const response = await this.wsApiClient.doRequest<DigitalOptionPlacedV2>(request)
-        return new DigitalOptionsOrder(response)
+        const positions = await this.positionsByBalance(balance)
+        return new DigitalOptionsOrder(response, positions)
     }
 
     /**
@@ -2490,7 +2588,11 @@ export class DigitalOptions {
      * @param balance - User's balance for which the positions are being requested.
      */
     public positionsByBalance(balance: Balance): Promise<Positions> {
-        return Positions.create(this.wsApiClient, 'digital-option', balance)
+        const key = `digital-option-${balance.id}`
+        if (!this.positions.has(key)) {
+            this.positions.set(key, Positions.create(this.wsApiClient, 'digital-option', balance))
+        }
+        return this.positions.get(key)!
     }
 
     /**
@@ -3075,13 +3177,28 @@ export class DigitalOptionsOrder {
     public id: number
 
     /**
+     * Instance of positions facade.
+     * @private
+     */
+    private readonly positions: Positions
+
+    /**
      * Creates instance from DTO.
      * @param msg - Order data transfer object.
+     * @param positions - Instance of positions facade.
      * @internal
      * @private
      */
-    public constructor(msg: DigitalOptionPlacedV2) {
+    public constructor(msg: DigitalOptionPlacedV2, positions: Positions) {
         this.id = msg.id
+        this.positions = positions
+    }
+
+    /**
+     * Returns current option position.
+     */
+    public position(): Position {
+        return this.positions.getPositionById(this.id)
     }
 }
 
