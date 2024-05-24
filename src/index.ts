@@ -3405,7 +3405,7 @@ class WsApiClient {
             });
         };
 
-        attemptReconnect();
+        setTimeout(attemptReconnect, this.reconnectTimeout);
     }
 
     getJitter() {
