@@ -82,6 +82,18 @@ export class QuadcodeClientSdk {
      */
     public async shutdown(): Promise<void> {
         this.wsApiClient.disconnect()
+
+        if (this.blitzOptionsFacade) {
+            this.blitzOptionsFacade.close()
+        }
+
+        if (this.turboOptionsFacade) {
+            this.turboOptionsFacade.close()
+        }
+
+        if (this.binaryOptionsFacade) {
+            this.binaryOptionsFacade.close()
+        }
     }
 
     /**
@@ -915,6 +927,12 @@ export class BlitzOptions {
     private readonly wsApiClient: WsApiClient
 
     /**
+     * Timer for periodical actives list update.
+     * @private
+     */
+    private intervalId: NodeJS.Timeout | undefined
+
+    /**
      * Creates instance from DTO.
      * @param activesMsg - actives data transfer object.
      * @param wsApiClient - Instance of WebSocket API client.
@@ -936,7 +954,7 @@ export class BlitzOptions {
 
         const blitzOptions = new BlitzOptions(initializationData.blitzActives, wsApiClient)
 
-        setInterval(async () => {
+        blitzOptions.intervalId = setInterval(async () => {
             const response = await wsApiClient.doRequest<InitializationDataV3>(new CallGetInitializationDataV3())
             blitzOptions.updateActives(response.blitzActives)
         }, 600000)
@@ -1014,6 +1032,15 @@ export class BlitzOptions {
                 this.actives.set(activesMsg[index].id, new BlitzOptionsActive(activesMsg[index]))
             }
             // @todo mark absent actives as deleted.
+        }
+    }
+
+    /**
+     * Closes the instance.
+     */
+    public close() {
+        if (this.intervalId) {
+            clearInterval(this.intervalId)
         }
     }
 }
@@ -1223,6 +1250,12 @@ export class TurboOptions {
     private readonly wsApiClient: WsApiClient
 
     /**
+     * Timer for periodical actives list update.
+     * @private
+     */
+    private intervalId: NodeJS.Timeout | undefined
+
+    /**
      * Creates class instance.
      * @param activesMsg - Actives data transfer object.
      * @param wsApiClient - Instance of WebSocket API client.
@@ -1244,7 +1277,7 @@ export class TurboOptions {
 
         const turboOptions = new TurboOptions(initializationData.turboActives, wsApiClient)
 
-        setInterval(async () => {
+        turboOptions.intervalId = setInterval(async () => {
             const response = await wsApiClient.doRequest<InitializationDataV3>(new CallGetInitializationDataV3())
             turboOptions.updateActives(response.turboActives)
         }, 600000)
@@ -1321,6 +1354,19 @@ export class TurboOptions {
             }
             // @todo mark absent actives as deleted.
         }
+    }
+
+    /**
+     * Closes the instance.
+     */
+    public close() {
+        if (this.intervalId) {
+            clearInterval(this.intervalId)
+        }
+
+        this.actives.forEach((active) => {
+            active.close()
+        })
     }
 }
 
@@ -1458,6 +1504,15 @@ export class TurboOptionsActive {
             this.schedule.push(new TurboOptionsActiveTradingSession(msg.schedule[index][0], msg.schedule[index][1]))
         }
     }
+
+    /**
+     * Closes the instance.
+     */
+    public close() {
+        if (this.instrumentsFacade) {
+            this.instrumentsFacade.close()
+        }
+    }
 }
 
 /**
@@ -1496,6 +1551,12 @@ export class TurboOptionsActiveInstruments {
     private instruments: Map<string, TurboOptionsActiveInstrument> = new Map<string, TurboOptionsActiveInstrument>()
 
     /**
+     * Timer for periodical actives list update.
+     * @private
+     */
+    private intervalId: NodeJS.Timeout | undefined
+
+    /**
      * Creates class instance.
      * @param activeId - Active ID.
      * @param deadtime - Deadtime.
@@ -1530,7 +1591,7 @@ export class TurboOptionsActiveInstruments {
 
         instrumentsFacade.generateInstruments()
 
-        setInterval((): void => {
+        instrumentsFacade.intervalId = setInterval((): void => {
             instrumentsFacade.generateInstruments()
         }, 30000)
 
@@ -1580,6 +1641,15 @@ export class TurboOptionsActiveInstruments {
             }
         }
     }
+
+    /**
+     * Closes the instance.
+     */
+    public close() {
+        if (this.intervalId) {
+            clearInterval(this.intervalId)
+        }
+    }
 }
 
 /**
@@ -1608,7 +1678,24 @@ export class TurboOptionsActiveInstrument {
      * @param at - Time for which the check is performed.
      */
     public isAvailableForBuyAt(at: Date): boolean {
-        return this.expiredAt.getTime() - this.deadtime * 1000 > at.getTime()
+        return this.purchaseEndTime().getTime() > at.getTime()
+    }
+
+    /**
+     * Returns the time until which it is possible to open trades that will fall into the current expiration.
+     * @returns {Date}
+     */
+    public purchaseEndTime(): Date {
+        return new Date(this.expiredAt.getTime() - this.deadtime * 1000);
+    }
+
+    /**
+     * Returns the remaining duration in milliseconds for which it is possible to purchase options.
+     * @param {Date} currentTime - The current time.
+     * @returns {number} - The remaining duration in milliseconds.
+     */
+    public durationRemainingForPurchase(currentTime: Date): number {
+        return this.purchaseEndTime().getTime() - currentTime.getTime();
     }
 
     /**
@@ -1702,6 +1789,12 @@ export class BinaryOptions {
     private readonly wsApiClient: WsApiClient
 
     /**
+     * Timer for periodical actives list update.
+     * @private
+     */
+    private intervalId: NodeJS.Timeout | undefined
+
+    /**
      * Creates instance from DTO.
      * @param activesMsg - actives data transfer object.
      * @param wsApiClient - Instance of WebSocket API client.
@@ -1723,7 +1816,7 @@ export class BinaryOptions {
 
         const binaryOptions = new BinaryOptions(initializationData.binaryActives, wsApiClient)
 
-        setInterval(async () => {
+        binaryOptions.intervalId = setInterval(async () => {
             const response = await wsApiClient.doRequest<InitializationDataV3>(new CallGetInitializationDataV3())
             binaryOptions.updateActives(response.binaryActives)
         }, 600000)
@@ -1800,6 +1893,19 @@ export class BinaryOptions {
             }
             // @todo mark absent actives as deleted.
         }
+    }
+
+    /**
+     * Closes the instance.
+     */
+    public close() {
+        if (this.intervalId) {
+            clearInterval(this.intervalId)
+        }
+
+        this.actives.forEach((active) => {
+            active.close()
+        })
     }
 }
 
@@ -1954,6 +2060,15 @@ export class BinaryOptionsActive {
             this.optionSpecial.push(new BinaryOptionsActiveSpecialInstrument(msg.optionSpecial[index]))
         }
     }
+
+    /**
+     * Closes the instance.
+     */
+    public close() {
+        if (this.instrumentsFacade) {
+            this.instrumentsFacade.close()
+        }
+    }
 }
 
 /**
@@ -1990,6 +2105,12 @@ export class BinaryOptionsActiveInstruments {
      * @private
      */
     private instruments: Map<string, BinaryOptionsActiveInstrument> = new Map<string, BinaryOptionsActiveInstrument>()
+
+    /**
+     * Timer for periodical actives list update.
+     * @private
+     */
+    private intervalId: NodeJS.Timeout | undefined
 
     /**
      * Creates class instance.
@@ -2029,7 +2150,7 @@ export class BinaryOptionsActiveInstruments {
 
         instrumentsFacade.generateInstruments()
 
-        setInterval(() => {
+        instrumentsFacade.intervalId = setInterval(() => {
             instrumentsFacade.generateInstruments()
         }, 30000)
 
@@ -2092,6 +2213,15 @@ export class BinaryOptionsActiveInstruments {
             }
         }
     }
+
+    /**
+     * Closes the instance.
+     */
+    public close() {
+        if (this.intervalId) {
+            clearInterval(this.intervalId)
+        }
+    }
 }
 
 /**
@@ -2120,7 +2250,24 @@ export class BinaryOptionsActiveInstrument {
      * @param at - Time for which the check is performed.
      */
     public isAvailableForBuyAt(at: Date): boolean {
-        return this.expiredAt.getTime() - this.deadtime * 1000 > at.getTime()
+        return this.purchaseEndTime().getTime() > at.getTime()
+    }
+
+    /**
+     * Returns the time until which it is possible to open trades that will fall into the current expiration.
+     * @returns {Date}
+     */
+    public purchaseEndTime(): Date {
+        return new Date(this.expiredAt.getTime() - this.deadtime * 1000);
+    }
+
+    /**
+     * Returns the remaining duration in milliseconds for which it is possible to purchase options.
+     * @param {Date} currentTime - The current time.
+     * @returns {number} - The remaining duration in milliseconds.
+     */
+    public durationRemainingForPurchase(currentTime: Date): number {
+        return this.purchaseEndTime().getTime() - currentTime.getTime();
     }
 
     /**
@@ -2714,7 +2861,7 @@ export class DigitalOptionsUnderlyingInstrument {
      * @param at - Time for which the check is performed.
      */
     public isAvailableForBuyAt(at: Date): boolean {
-        return at.getTime() < this.expiration.getTime() - this.deadtime * 1000
+        return this.purchaseEndTime().getTime() > at.getTime()
     }
 
     /**
@@ -2734,6 +2881,23 @@ export class DigitalOptionsUnderlyingInstrument {
         }
 
         throw new Error(`Strike with price '${price}' and direction '${direction}' is not found`)
+    }
+
+    /**
+     * Returns the time until which it is possible to open trades that will fall into the current expiration.
+     * @returns {Date}
+     */
+    public purchaseEndTime(): Date {
+        return new Date(this.expiration.getTime() - this.deadtime * 1000);
+    }
+
+    /**
+     * Returns the remaining duration in milliseconds for which it is possible to purchase options.
+     * @param {Date} currentTime - The current time.
+     * @returns {number} - The remaining duration in milliseconds.
+     */
+    public durationRemainingForPurchase(currentTime: Date): number {
+        return this.purchaseEndTime().getTime() - currentTime.getTime();
     }
 
     /**
@@ -2869,6 +3033,11 @@ class HttpApiClient {
             fetch(`${this.apiUrl}${request.path()}`, options)
                 .then(async (response) => {
                     if (!response.ok) {
+                        if (response.status >= 400 && response.status < 500) {
+                            const data = await response.json()
+                            resolve(request.createResponse(response.status, data))
+                        }
+
                         reject(new Error(`HTTP error: ${response.status}`))
                     }
 
@@ -2967,29 +3136,28 @@ class WsApiClient {
                 try {
                     const isSuccessful = await this.authMethod.authenticateWsApiClient(this)
                     if (!isSuccessful) {
-                        this.connection.terminate()
-                        reject(new Error('authentication is failed'))
+                        this.disconnect()
+                        return reject(new Error('authentication is failed'))
                     }
 
                     const setOptionsResponse = await this.doRequest<Result>(new SetOptions(true))
                     if (!setOptionsResponse.success) {
-                        this.connection.terminate()
-                        reject(new Error('setOptions operation is failed'))
+                        this.disconnect()
+                        return reject(new Error('setOptions operation is failed'))
                     }
 
-                    resolve()
+                    this.connection.on('close', () => {
+                        this.reconnect()
+                    })
+
+                    this.connection.on('error', () => {
+                        this.reconnect()
+                    })
+
+                    return resolve()
                 } catch (e) {
-                    this.connection.terminate()
-                    reject(e)
+                    return reject(e)
                 }
-            })
-
-            this.connection.on('close', () => {
-                this.reconnect()
-            })
-
-            this.connection.on('error', () => {
-                this.reconnect()
             })
         })
     }
@@ -3006,11 +3174,6 @@ class WsApiClient {
     reconnect() {
         if (this.disconnecting) {
             return
-        }
-
-        if (this.connection) {
-            this.connection.terminate()
-            this.connection = undefined
         }
 
         const attemptReconnect = () => {
