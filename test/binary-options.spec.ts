@@ -1,9 +1,9 @@
-import {LoginPasswordAuthMethod, QuadcodeClientSdk, TurboOptionsActiveInstrument} from "../src";
+import {BinaryOptionsActiveInstrument, LoginPasswordAuthMethod, QuadcodeClientSdk} from "../src";
 import {getUserByTitle} from "./setup/userUtils";
 import {User} from "./data/types";
 import {expect} from "chai";
 
-describe('Turbo-options', () => {
+describe('Binary-options', () => {
     let sdk: QuadcodeClientSdk;
 
     before(async () => {
@@ -17,33 +17,40 @@ describe('Turbo-options', () => {
         await sdk.shutdown();
     });
 
-    it('should return turbo option actives', async () => {
-        const turboOptions = await sdk.turboOptions();
-        expect(turboOptions.getActives().length).to.be.above(0);
+    it('should return binary option actives', async () => {
+        const binaryOptions = await sdk.binaryOptions();
+        expect(binaryOptions.getActives().length).to.be.above(0);
     });
 
-    describe('Getting turbo-option instruments', async () => {
-        let instruments: TurboOptionsActiveInstrument[];
+    describe('Getting binary-option instruments', async () => {
+        let instruments: BinaryOptionsActiveInstrument[];
 
         before(async () => {
-            const turboOptions = await sdk.turboOptions();
-            const actives = turboOptions.getActives();
+            const binaryOptions = await sdk.binaryOptions();
+            const actives = binaryOptions.getActives();
             const first = actives[0];
-            const turboOptionsActiveInstruments = await first.instruments();
+            const binaryOptionsActiveInstruments = await first.instruments();
             const currentTime = sdk.currentTime()
-            instruments = turboOptionsActiveInstruments.getAvailableForBuyAt(currentTime);
+            instruments = binaryOptionsActiveInstruments.getAvailableForBuyAt(currentTime);
         });
 
         it('should return instruments array', () => {
-            expect(instruments, 'Invalid turbo-option instruments count').to.be.a('array').with.length.above(0);
+            expect(instruments, 'Invalid binary-option instruments count').to.be.a('array').with.length.above(0);
         });
 
-        describe('Checking turbo-option instrument params', () => {
+        describe('Checking binary-option instrument params', () => {
 
             it('should return valid purchaseEndTime', () => {
                 const firstInstrument = instruments[0];
                 expect(firstInstrument.purchaseEndTime().getTime(), 'Invalid purchase end time')
                     .to.closeTo(firstInstrument.expiredAt.getTime() - firstInstrument.deadtime * 1000, 0)
+            });
+
+            it('should return valid purchaseEndTime for End of Day expiration', () => {
+                const instrument = instruments.find(value => value.expirationSize === 'front.End of day');
+                if (instrument) {
+                    expect(instrument.purchaseEndTime().getTime(), "Invalid purchase end time").to.be.eq(instrument.expiredAt.getTime() - instrument.deadtime * 1000)
+                } else throw new Error("Instrument with 'End of Day' expiration must be present")
             });
 
             it('should return valid durationRemainingForPurchase', () => {
