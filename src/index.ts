@@ -2660,6 +2660,12 @@ export class DigitalOptionsUnderlyingInstruments {
     private instruments: Map<number, DigitalOptionsUnderlyingInstrument> = new Map<number, DigitalOptionsUnderlyingInstrument>()
 
     /**
+     * Instance of WebSocket API client.
+     * @private
+     */
+    private wsApiClient: WsApiClient | undefined
+
+    /**
      * Just private constructor. Use {@link DigitalOptionsUnderlyingInstruments.create create} instead.
      * @internal
      * @private
@@ -2674,6 +2680,7 @@ export class DigitalOptionsUnderlyingInstruments {
      */
     public static async create(assetId: number, wsApiClient: WsApiClient): Promise<DigitalOptionsUnderlyingInstruments> {
         const instrumentsFacade = new DigitalOptionsUnderlyingInstruments()
+        instrumentsFacade.wsApiClient = wsApiClient
 
         await wsApiClient.subscribe<DigitalOptionInstrumentsInstrumentGeneratedV1>(new SubscribeDigitalOptionInstrumentsInstrumentGeneratedV1('digital-option', assetId), (event) => {
             if (event.instrumentType !== 'digital-option' || event.assetId !== assetId) {
@@ -2709,7 +2716,7 @@ export class DigitalOptionsUnderlyingInstruments {
      */
     private syncInstrumentFromEvent(msg: DigitalOptionInstrumentsInstrumentGeneratedV1) {
         if (!this.instruments.has(msg.index)) {
-            this.instruments.set(msg.index, new DigitalOptionsUnderlyingInstrument(msg))
+            this.instruments.set(msg.index, new DigitalOptionsUnderlyingInstrument(msg, this.wsApiClient!))
         } else {
             this.instruments.get(msg.index)!.sync(msg)
         }
@@ -2742,7 +2749,7 @@ export class DigitalOptionsUnderlyingInstruments {
      */
     private syncInstrumentFromResponse(msg: DigitalOptionInstrumentsInstrumentsV1Instrument) {
         if (!this.instruments.has(msg.index)) {
-            this.instruments.set(msg.index, new DigitalOptionsUnderlyingInstrument(msg))
+            this.instruments.set(msg.index, new DigitalOptionsUnderlyingInstrument(msg, this.wsApiClient!))
         } else {
             this.instruments.get(msg.index)!.sync(msg)
         }
@@ -2786,11 +2793,19 @@ export class DigitalOptionsUnderlyingInstrument {
     /**
      * Instrument's strikes.
      */
-    public strikes: DigitalOptionsUnderlyingInstrumentStrike[] = []
+    public strikes: Map<string, DigitalOptionsUnderlyingInstrumentStrike> = new Map<string, DigitalOptionsUnderlyingInstrumentStrike>()
+
+
+    /**
+     * Instance of WebSocket API client.
+     * @private
+     */
+    private readonly wsApiClient: WsApiClient
 
     /**
      * Creates instance from DTO.
      * @param msg - Instrument data transfer object.
+     * @param wsApiClient
      * @internal
      * @private
      */
@@ -2844,7 +2859,8 @@ export class DigitalOptionsUnderlyingInstrument {
              */
             symbol: string,
         }[],
-    }) {
+    }, wsApiClient: WsApiClient) {
+        this.wsApiClient = wsApiClient
         this.assetId = msg.assetId
         this.deadtime = msg.deadtime
         this.expiration = new Date(msg.expiration * 1000)
@@ -2852,7 +2868,7 @@ export class DigitalOptionsUnderlyingInstrument {
         this.instrumentType = msg.instrumentType
         this.period = msg.period
         for (const index in msg.data) {
-            this.strikes.push(new DigitalOptionsUnderlyingInstrumentStrike(msg.data[index]))
+            this.strikes.set(msg.data[index].symbol, new DigitalOptionsUnderlyingInstrumentStrike(msg.data[index]))
         }
     }
 
@@ -2873,10 +2889,9 @@ export class DigitalOptionsUnderlyingInstrument {
         price: string,
         direction: DigitalOptionsDirection,
     ): DigitalOptionsUnderlyingInstrumentStrike {
-        for (const index in this.strikes) {
-            const strike = this.strikes[index]
+        for (const strike of this.strikes.values()) {
             if (strike.price === price && strike.direction === direction) {
-                return strike
+                return strike;
             }
         }
 
@@ -2889,6 +2904,20 @@ export class DigitalOptionsUnderlyingInstrument {
      */
     public purchaseEndTime(): Date {
         return new Date(this.expiration.getTime() - this.deadtime * 1000);
+    }
+
+    public async subscribeOnStrikesAskBidPrices() {
+        const request = new SubscribeTradingSettingsDigitalOptionClientPriceGeneratedV1('digital-option', this.assetId, this.index)
+        await this.wsApiClient.subscribe<DigitalOptionClientPriceGeneratedV1>(request, (event) => {
+            this.syncAskBidPricesFromEvent(event)
+        })
+
+        const checkInterval = setInterval(() => {
+            if (this.wsApiClient.currentTime.unixMilliTime >= this.expiration.getTime()) {
+                this.wsApiClient.unsubscribe<DigitalOptionClientPriceGeneratedV1>(request)
+                clearInterval(checkInterval);
+            }
+        }, 1000);
     }
 
     /**
@@ -2910,10 +2939,26 @@ export class DigitalOptionsUnderlyingInstrument {
         this.expiration = new Date(msg.expiration * 1000)
         this.instrumentType = msg.instrumentType
         this.period = msg.period
-        this.strikes = []
+        this.strikes = new Map<string, DigitalOptionsUnderlyingInstrumentStrike>()
         for (const index in msg.data) {
-            this.strikes.push(new DigitalOptionsUnderlyingInstrumentStrike(msg.data[index]))
+            this.strikes.set(msg.data[index].symbol, new DigitalOptionsUnderlyingInstrumentStrike(msg.data[index]))
         }
+    }
+
+    private syncAskBidPricesFromEvent(msg: DigitalOptionClientPriceGeneratedV1): void {
+        msg.prices.map((price) => {
+            const callSymbol = this.strikes.get(price.call.symbol)
+            if (callSymbol) {
+                callSymbol.ask = price.call.ask
+                callSymbol.bid = price.call.bid
+            }
+
+            const putSymbol = this.strikes.get(price.put.symbol)
+            if (putSymbol) {
+                putSymbol.ask = price.put.ask
+                putSymbol.bid = price.put.bid
+            }
+        })
     }
 }
 
@@ -2935,6 +2980,16 @@ export class DigitalOptionsUnderlyingInstrumentStrike {
      * Strike's symbol.
      */
     public symbol: string
+
+    /**
+     * Ask price.
+     */
+    public ask?: number
+
+    /**
+     * Bid price.
+     */
+    public bid?: number
 
     /**
      * Creates instance from DTO.
@@ -3233,6 +3288,24 @@ class WsApiClient {
             this.subscriptions.get(subscriptionKey)!.push(new SubscriptionMetaData(request, callback))
 
             this.doRequest<Result>(new SubscribeMessage(request.messageBody())).then(resolve).catch(reject)
+        })
+    }
+
+    unsubscribe<T>(request: SubscribeRequest<T>) {
+        return new Promise((resolve, reject) => {
+            const subscriptionKey = `${request.eventMicroserviceName()},${request.eventName()}`
+            if (this.subscriptions.has(subscriptionKey)) {
+                const subscriptions = this.subscriptions.get(subscriptionKey)!
+                for (const index in subscriptions) {
+                    const subscriptionMetaData = subscriptions[index]
+                    if (subscriptionMetaData.request === request) {
+                        subscriptions.splice(parseInt(index), 1)
+                        break
+                    }
+                }
+            }
+
+            this.doRequest<Result>(new UnsubscribeMessage(request.messageBody())).then(resolve).catch(reject)
         })
     }
 }
@@ -3721,6 +3794,82 @@ class InternalBillingBalanceChangedV1 {
         this.amount = data.current_balance.amount
         this.currency = data.current_balance.currency
         this.userId = data.user_id
+    }
+}
+
+class DigitalOptionClientPriceGeneratedV1 {
+    instrumentIndex: number
+    assetId: number
+    digitalOptionTradingGroupId: string
+    quoteTime: number
+    prices: DigitalOptionClientPriceGeneratedV1Price[] = []
+
+    constructor(data: {
+        instrument_index: number
+        asset_id: number
+        digital_option_trading_group_id: string
+        quote_time: number
+        prices: {
+            strike: string
+            call: {
+                symbol: string
+                ask?: number
+                bid?: number
+            },
+            put: {
+                symbol: string
+                ask?: number
+                bid?: number
+            }
+        }[]
+    }) {
+        this.instrumentIndex = data.instrument_index
+        this.assetId = data.asset_id
+        this.digitalOptionTradingGroupId = data.digital_option_trading_group_id
+        this.quoteTime = data.quote_time
+        for (const index in data.prices) {
+            this.prices.push(new DigitalOptionClientPriceGeneratedV1Price(data.prices[index]))
+        }
+    }
+}
+
+class DigitalOptionClientPriceGeneratedV1Price {
+    strike: string
+    call: DigitalOptionClientPriceGeneratedV1CallOrPutPrice
+    put: DigitalOptionClientPriceGeneratedV1CallOrPutPrice
+
+    constructor(data: {
+        strike: string
+        call: {
+            symbol: string
+            ask?: number
+            bid?: number
+        },
+        put: {
+            symbol: string
+            ask?: number
+            bid?: number
+        }
+    }) {
+        this.strike = data.strike
+        this.call = new DigitalOptionClientPriceGeneratedV1CallOrPutPrice(data.call)
+        this.put = new DigitalOptionClientPriceGeneratedV1CallOrPutPrice(data.put)
+    }
+}
+
+class DigitalOptionClientPriceGeneratedV1CallOrPutPrice {
+    symbol: string
+    ask?: number
+    bid?: number
+
+    constructor(data: {
+        symbol: string
+        ask?: number
+        bid?: number
+    }) {
+        this.symbol = data.symbol
+        this.ask = data.ask
+        this.bid = data.bid
     }
 }
 
@@ -4311,6 +4460,45 @@ class SubscribeDigitalOptionInstrumentsInstrumentGeneratedV1 implements Subscrib
     }
 }
 
+class SubscribeTradingSettingsDigitalOptionClientPriceGeneratedV1 implements SubscribeRequest<DigitalOptionClientPriceGeneratedV1> {
+    constructor(
+        private instrumentType: string,
+        private assetId: number,
+        private instrumentIndex: number,
+    ) {
+    }
+
+    messageName() {
+        return 'subscribeMessage'
+    }
+
+    messageBody() {
+        return {
+            name: `${this.eventMicroserviceName()}.${this.eventName()}`,
+            version: '1.0',
+            params: {
+                routingFilters: {
+                    asset_id: this.assetId,
+                    instrument_index: this.instrumentIndex,
+                    instrument_type: this.instrumentType
+                }
+            }
+        }
+    }
+
+    eventMicroserviceName() {
+        return 'trading-settings'
+    }
+
+    eventName() {
+        return 'digital-option-client-price-generated'
+    }
+
+    createEvent(data: any): DigitalOptionClientPriceGeneratedV1 {
+        return new DigitalOptionClientPriceGeneratedV1(data)
+    }
+}
+
 class SubscribeDigitalOptionInstrumentsUnderlyingListChangedV1 implements SubscribeRequest<DigitalOptionInstrumentsUnderlyingListChangedV1> {
     messageName() {
         return 'subscribeMessage'
@@ -4342,6 +4530,27 @@ class SubscribeMessage implements Request<Result> {
 
     messageName() {
         return 'subscribeMessage'
+    }
+
+    messageBody() {
+        return this.body
+    }
+
+    resultOnly(): boolean {
+        return true
+    }
+
+    createResponse(data: any): Result {
+        return new Result(data)
+    }
+}
+
+class UnsubscribeMessage implements Request<Result> {
+    constructor(private readonly body: any) {
+    }
+
+    messageName() {
+        return 'unsubscribeMessage'
     }
 
     messageBody() {
