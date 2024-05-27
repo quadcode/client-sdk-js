@@ -903,6 +903,12 @@ export class Position {
      */
     public pnl: number | undefined
 
+
+    /**
+     * Expected PnL Net for the position.
+     */
+    public pnlNet: number | undefined
+
     /**
      * PnL with which the position was closed.
      */
@@ -997,6 +1003,7 @@ export class Position {
         this.currentQuote = msg.currentPrice
         this.currentQuoteTimestamp = msg.quoteTimestamp !== undefined ? new Date(msg.quoteTimestamp) : undefined
         this.pnl = msg.pnl
+        this.pnlNet = msg.pnlNet
         this.expectedProfit = msg.expectedProfit
     }
 }
