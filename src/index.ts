@@ -997,6 +997,7 @@ export class Position {
     /**
      * Synchronises position from DTO.
      * @param msg - Position state data transfer object.
+     * @private
      */
     syncFromStateEvent(msg: PortfolioPositionsStateV1Position): void {
         this.sellProfit = msg.sellProfit
