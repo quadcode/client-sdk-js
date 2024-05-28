@@ -8,7 +8,7 @@
   "timeout": 5000,
   "recursive": true,
   "reporter": "spec",
-  "require": "./test/setup/setup.js",
+  "require": "./test/utils/setup.js",
   "spec": [
     "test/**/*.spec.ts"
   ],
