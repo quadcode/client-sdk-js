@@ -660,6 +660,12 @@ export class Positions {
     private intervalId: NodeJS.Timeout | undefined
 
     /**
+     * Instance of WebSocket API client.
+     * @private
+     */
+    private wsApiClient: WsApiClient | undefined
+
+    /**
      * Just private constructor. Just private constructor. Use {@link Positions.create create} instead.
      * @internal
      * @private
@@ -675,6 +681,7 @@ export class Positions {
      */
     public static async create(wsApiClient: WsApiClient, instrumentType: string, balance: Balance): Promise<Positions> {
         const positionsFacade = new Positions()
+        positionsFacade.wsApiClient = wsApiClient
 
         await wsApiClient.subscribe<PortfolioPositionChangedV3>(new SubscribePortfolioPositionChangedV3(
             balance.userId,
@@ -686,6 +693,12 @@ export class Positions {
             }
 
             positionsFacade.syncPositionFromEvent(event)
+        })
+
+        wsApiClient.subscribe<PortfolioPositionsStateV1>(new SubscribePortfolioPositionsStateV1(),
+            (event: PortfolioPositionsStateV1) => {
+                positionsFacade.syncPositionsStateFromEvent(event)
+            }).then(() => {
         })
 
         positionsFacade.intervalId = setInterval(async () => {
@@ -733,18 +746,6 @@ export class Positions {
     }
 
     /**
-     * Returns position by ID.
-     * @param positionId - Position ID.
-     */
-    public getPositionById(positionId: number): Position {
-        if (!this.positions.has(positionId)) {
-            throw new Error(`position with id '${positionId}' is not found`)
-        }
-
-        return this.positions.get(positionId)!
-    }
-
-    /**
      * Adds specified callback to position update subscribers' list.
      * @param callback - Callback will be called for every change of position.
      */
@@ -771,6 +772,7 @@ export class Positions {
             position.id = msg.externalId
             this.positions.set(msg.externalId, position)
             this.positionsIds.set(msg.internalId, msg.externalId)
+            this.subscribePositions()
         }
 
         const position = this.positions.get(msg.externalId)!
@@ -802,11 +804,24 @@ export class Positions {
             position.id = msg.externalId
             this.positions.set(msg.externalId, position)
             this.positionsIds.set(msg.internalId, msg.externalId)
+            this.subscribePositions()
         }
 
         const position = this.positions.get(msg.externalId)!
         position.syncFromEvent(msg)
         this.onUpdatePositionObserver.notify(position)
+    }
+
+    private subscribePositions(): void {
+        const internalIds: string[] = [];
+        for (const position of this.positions.values()) {
+            if (position.status === "open") {
+                internalIds.push(position.internalId!)
+            }
+        }
+
+        this.wsApiClient!.doRequest<Result>(new CallSubscribePositions("frequent", internalIds)).then(() => {
+        })
     }
 
     /**
@@ -940,6 +955,11 @@ export class Position {
     public sellProfit: number | undefined
 
     /**
+     * List of order IDs.
+     */
+    public orderIds: number[] = []
+
+    /**
      * Version of position. Used for filter old versions of position's state.
      * @private
      */
@@ -964,6 +984,7 @@ export class Position {
         this.quoteTimestamp = msg.quoteTimestamp !== undefined ? new Date(msg.quoteTimestamp) : undefined
         this.status = msg.status
         this.userId = msg.userId
+        this.orderIds = msg.orderIds
     }
 
     /**
@@ -992,6 +1013,7 @@ export class Position {
         this.quoteTimestamp = msg.quoteTimestamp !== undefined ? new Date(msg.quoteTimestamp) : undefined
         this.status = msg.status
         this.userId = msg.userId
+        this.orderIds = msg.orderIds
     }
 
     /**
@@ -1115,8 +1137,7 @@ export class BlitzOptions {
             balance.id
         )
         const response = await this.wsApiClient.doRequest<BinaryOptionsOptionV1>(request)
-        const positions = await this.positionsByBalance(balance)
-        return new BlitzOptionsOption(response, positions)
+        return new BlitzOptionsOption(response)
     }
 
     /**
@@ -1332,19 +1353,12 @@ export class BlitzOptionsOption {
     public openQuoteValue: number
 
     /**
-     * Instance of positions facade.
-     * @private
-     */
-    private readonly positions: Positions
-
-    /**
      * Creates class instance from DTO.
      * @param msg - Option's data transfer object.
-     * @param positions - Instance of positions facade.
      * @internal
      * @private
      */
-    public constructor(msg: BinaryOptionsOptionV1, positions: Positions) {
+    public constructor(msg: BinaryOptionsOptionV1) {
         this.id = msg.id
         this.activeId = msg.activeId
         this.direction = <BlitzOptionsDirection>msg.direction
@@ -1353,14 +1367,6 @@ export class BlitzOptionsOption {
         this.profitIncomePercent = msg.profitIncome
         this.openedAt = new Date(msg.timeRate * 1000)
         this.openQuoteValue = msg.value
-        this.positions = positions
-    }
-
-    /**
-     * Returns current option position.
-     */
-    public position(): Position {
-        return this.positions.getPositionById(this.id)
     }
 }
 
@@ -1468,8 +1474,7 @@ export class TurboOptions {
             balance.id
         )
         const response = await this.wsApiClient.doRequest<BinaryOptionsOptionV1>(request)
-        const positions = await this.positionsByBalance(balance)
-        return new TurboOptionsOption(response, positions)
+        return new TurboOptionsOption(response)
     }
 
     /**
@@ -1902,21 +1907,13 @@ export class TurboOptionsOption {
      */
     public openQuoteValue: number
 
-
-    /**
-     * Instance of positions facade.
-     * @private
-     */
-    private readonly positions: Positions
-
     /**
      * Create instance from DTO.
      * @param msg - Option's data transfer object.
-     * @param positions - Instance of positions facade.
      * @internal
      * @private
      */
-    public constructor(msg: BinaryOptionsOptionV1, positions: Positions) {
+    public constructor(msg: BinaryOptionsOptionV1) {
         this.id = msg.id
         this.activeId = msg.activeId
         this.direction = <TurboOptionsDirection>msg.direction
@@ -1925,14 +1922,6 @@ export class TurboOptionsOption {
         this.expiredAt = new Date(msg.expired * 1000)
         this.openedAt = new Date(msg.timeRate * 1000)
         this.openQuoteValue = msg.value
-        this.positions = positions
-    }
-
-    /**
-     * Returns current option position.
-     */
-    public position(): Position {
-        return this.positions.getPositionById(this.id)
     }
 }
 
@@ -2040,8 +2029,7 @@ export class BinaryOptions {
             balance.id
         )
         const response = await this.wsApiClient.doRequest<BinaryOptionsOptionV1>(request)
-        const positions = await this.positionsByBalance(balance)
-        return new BinaryOptionsOption(response, positions)
+        return new BinaryOptionsOption(response)
     }
 
     /**
@@ -2540,19 +2528,12 @@ export class BinaryOptionsOption {
     public openQuoteValue: number
 
     /**
-     * Instance of positions facade.
-     * @private
-     */
-    private readonly positions: Positions
-
-    /**
      * Create instance from DTO.
      * @param msg - Option's data transfer object.
-     * @param positions - Instance of positions facade.
      * @internal
      * @private
      */
-    public constructor(msg: BinaryOptionsOptionV1, positions: Positions) {
+    public constructor(msg: BinaryOptionsOptionV1) {
         this.id = msg.id
         this.activeId = msg.activeId
         this.direction = <BinaryOptionsDirection>msg.direction
@@ -2561,14 +2542,6 @@ export class BinaryOptionsOption {
         this.profitIncomePercent = msg.profitIncome
         this.openedAt = new Date(msg.timeRate * 1000)
         this.openQuoteValue = msg.value
-        this.positions = positions
-    }
-
-    /**
-     * Returns current option position.
-     */
-    public position(): Position {
-        return this.positions.getPositionById(this.id)
     }
 }
 
@@ -2667,8 +2640,7 @@ export class DigitalOptions {
             balance.id
         )
         const response = await this.wsApiClient.doRequest<DigitalOptionPlacedV2>(request)
-        const positions = await this.positionsByBalance(balance)
-        return new DigitalOptionsOrder(response, positions)
+        return new DigitalOptionsOrder(response)
     }
 
     /**
@@ -3286,28 +3258,13 @@ export class DigitalOptionsOrder {
     public id: number
 
     /**
-     * Instance of positions facade.
-     * @private
-     */
-    private readonly positions: Positions
-
-    /**
      * Creates instance from DTO.
      * @param msg - Order data transfer object.
-     * @param positions - Instance of positions facade.
      * @internal
      * @private
      */
-    public constructor(msg: DigitalOptionPlacedV2, positions: Positions) {
+    public constructor(msg: DigitalOptionPlacedV2) {
         this.id = msg.id
-        this.positions = positions
-    }
-
-    /**
-     * Returns current option position.
-     */
-    public position(): Position {
-        return this.positions.getPositionById(this.id)
     }
 }
 
@@ -4191,6 +4148,7 @@ class PortfolioPositionChangedV3 {
     userId: number
     userBalanceId: number
     version: number
+    orderIds: number[]
 
     constructor(data: {
         active_id: number
@@ -4212,6 +4170,7 @@ class PortfolioPositionChangedV3 {
         user_id: number
         user_balance_id: number
         version: number
+        raw_event: any | undefined
     }) {
         this.activeId = data.active_id
         this.closeProfit = data.close_profit
@@ -4232,6 +4191,18 @@ class PortfolioPositionChangedV3 {
         this.userId = data.user_id
         this.userBalanceId = data.user_balance_id
         this.version = data.version
+
+        if (data.raw_event) {
+            const {order_ids} = data.raw_event
+
+            if (order_ids) {
+                this.orderIds = order_ids
+            } else {
+                this.orderIds = [data.external_id]
+            }
+        } else {
+            this.orderIds = [data.external_id]
+        }
     }
 }
 
@@ -4325,6 +4296,7 @@ class PortfolioPositionsV4Position {
     status: string
     userId: number
     userBalanceId: number
+    orderIds: number[]
 
     constructor(data: {
         active_id: number
@@ -4340,6 +4312,7 @@ class PortfolioPositionsV4Position {
         status: string
         user_id: number
         user_balance_id: number
+        raw_event: any | undefined
     }) {
         this.activeId = data.active_id
         this.expectedProfit = data.expected_profit
@@ -4354,6 +4327,18 @@ class PortfolioPositionsV4Position {
         this.status = data.status
         this.userId = data.user_id
         this.userBalanceId = data.user_balance_id
+
+        if (data.raw_event) {
+            const {order_ids} = data.raw_event
+
+            if (order_ids) {
+                this.orderIds = order_ids
+            } else {
+                this.orderIds = [data.external_id]
+            }
+        } else {
+            this.orderIds = [data.external_id]
+        }
     }
 }
 
@@ -4462,6 +4447,34 @@ class CallBinaryOptionsOpenBinaryOptionV1 implements Request<BinaryOptionsOption
 
     resultOnly(): boolean {
         return false
+    }
+}
+
+class CallSubscribePositions implements Request<Result> {
+    constructor(private frequency: string, private positionIds: string[]) {
+    }
+
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: 'subscribe-positions',
+            version: '1.0',
+            body: {
+                frequency: this.frequency,
+                ids: this.positionIds
+            }
+        }
+    }
+
+    createResponse(data: any): Result {
+        return new Result(data)
+    }
+
+    resultOnly(): boolean {
+        return true
     }
 }
 
@@ -4769,7 +4782,8 @@ class SubscribePortfolioPositionsStateV1 implements SubscribeRequest<PortfolioPo
 
     messageBody() {
         return {
-            name: `${this.eventName()}`,
+            name: `${this.eventMicroserviceName()}.${this.eventName()}`,
+            version: '1.0',
         }
     }
 
