@@ -22,6 +22,12 @@ export class QuadcodeClientSdk {
     private balancesFacade: Balances | undefined
 
     /**
+     * Positions facade cache.
+     * @private
+     */
+    private positionsFacade: Positions | undefined
+
+    /**
      * Quotes facade cache.
      * @private
      */
@@ -98,6 +104,10 @@ export class QuadcodeClientSdk {
         if (this.digitalOptionsFacade) {
             this.digitalOptionsFacade.close()
         }
+
+        if (this.positionsFacade) {
+            this.positionsFacade.close()
+        }
     }
 
     /**
@@ -108,6 +118,14 @@ export class QuadcodeClientSdk {
             this.balancesFacade = await Balances.create(this.wsApiClient)
         }
         return this.balancesFacade
+    }
+
+    public async positions(): Promise<Positions> {
+        if (!this.positionsFacade) {
+            const balances = await this.balances()
+            this.positionsFacade = await Positions.create(this.wsApiClient, balances.getBalances())
+        }
+        return this.positionsFacade
     }
 
     /**
@@ -627,10 +645,7 @@ export type CallbackForCurrentQuoteUpdate = (currentQuote: CurrentQuote) => void
 /**
  * Don't use this class directly from your code. Use the following methods instead:
  *
- * * {@link BlitzOptions.positionsByBalance}
- * * {@link TurboOptions.positionsByBalance}
- * * {@link BinaryOptions.positionsByBalance}
- * * {@link DigitalOptions.positionsByBalance}
+ * * {@link QuadcodeClientSdk.positions}
  *
  * Positions facade class. Stores information about opened positions. Keeps positions' information up to date.
  */
@@ -666,6 +681,12 @@ export class Positions {
     private wsApiClient: WsApiClient | undefined
 
     /**
+     * List of supported instrument types.
+     * @private
+     */
+    private instrumentTypes: string[] = ["digital-option", "binary-option", "turbo-option", "blitz-option"]
+
+    /**
      * Just private constructor. Just private constructor. Use {@link Positions.create create} instead.
      * @internal
      * @private
@@ -676,50 +697,76 @@ export class Positions {
     /**
      * Subscribes on opened positions' updates, requests current state of opened positions, puts the current state to instance of class Positions and returns it.
      * @param wsApiClient - Instance of WebSocket API client.
-     * @param instrumentType - Type of trading instrument.
-     * @param balance - Balance for which the positions are being requested.
+     * @param balances
      */
-    public static async create(wsApiClient: WsApiClient, instrumentType: string, balance: Balance): Promise<Positions> {
+    public static async create(wsApiClient: WsApiClient, balances: Balance[]): Promise<Positions> {
         const positionsFacade = new Positions()
         positionsFacade.wsApiClient = wsApiClient
 
-        await wsApiClient.subscribe<PortfolioPositionChangedV3>(new SubscribePortfolioPositionChangedV3(
-            balance.userId,
-            balance.id,
-            instrumentType
-        ), (event: PortfolioPositionChangedV3) => {
-            if (event.instrumentType !== instrumentType || event.userBalanceId !== balance.id) {
-                return
+        for (const balance of balances) {
+            await positionsFacade.syncOldActivePositions(balance)
+            await positionsFacade.subscribePositionChanged(balance)
+        }
+
+        await positionsFacade.subscribePositionsState()
+        positionsFacade.subscribePositions()
+
+        return positionsFacade
+    }
+
+    /**
+     * Subscribes on position's updates.
+     *
+     * @param balance
+     * @private
+     */
+    private async subscribePositionChanged(balance: Balance): Promise<void> {
+        if (!balance || !balance.userId || !balance.id) {
+            throw new Error("Invalid balance or instrument type");
+        }
+
+        await this.wsApiClient!.subscribe<PortfolioPositionChangedV3>(
+            new SubscribePortfolioPositionChangedV3(balance.userId, balance.id),
+            (event: PortfolioPositionChangedV3) => {
+                this.syncPositionFromEvent(event);
             }
+        );
+    }
 
-            positionsFacade.syncPositionFromEvent(event)
-        })
-
-        wsApiClient.subscribe<PortfolioPositionsStateV1>(new SubscribePortfolioPositionsStateV1(),
+    /**
+     * Subscribes on positions states updates.
+     * @private
+     */
+    private async subscribePositionsState(): Promise<void> {
+        this.wsApiClient!.subscribe<PortfolioPositionsStateV1>(new SubscribePortfolioPositionsStateV1(),
             (event: PortfolioPositionsStateV1) => {
-                positionsFacade.syncPositionsStateFromEvent(event)
+                this.syncPositionsStateFromEvent(event)
             }).then(() => {
         })
 
-        positionsFacade.intervalId = setInterval(async () => {
-            await wsApiClient.unsubscribe<PortfolioPositionsStateV1>(new SubscribePortfolioPositionsStateV1())
-            await wsApiClient.subscribe<PortfolioPositionsStateV1>(new SubscribePortfolioPositionsStateV1(),
+        this.intervalId = setInterval(async () => {
+            await this.wsApiClient!.unsubscribe<PortfolioPositionsStateV1>(new SubscribePortfolioPositionsStateV1())
+            await this.wsApiClient!.subscribe<PortfolioPositionsStateV1>(new SubscribePortfolioPositionsStateV1(),
                 (event: PortfolioPositionsStateV1) => {
-                    positionsFacade.syncPositionsStateFromEvent(event)
+                    this.syncPositionsStateFromEvent(event)
                 })
         }, 60000)
+    }
 
+    /**
+     * Synchronizes old active positions.
+     * @param balance
+     * @private
+     */
+    private async syncOldActivePositions(balance: Balance): Promise<void> {
         let offset = 0
         for (; ;) {
-            const positionsPage = await wsApiClient.doRequest<PortfolioPositionsV4>(new CallPortfolioGetPositionsV4(
-                [instrumentType],
-                balance.id,
-                30,
-                offset
-            ))
+            const positionsPage = await this.wsApiClient!.doRequest<PortfolioPositionsV4>(
+                new CallPortfolioGetPositionsV4(this.instrumentTypes, balance.id, 30, offset)
+            )
 
             for (const index in positionsPage.positions) {
-                positionsFacade.syncPositionFromResponse(positionsPage.positions[index])
+                this.syncPositionFromResponse(positionsPage.positions[index])
             }
 
             if (positionsPage.positions.length < positionsPage.limit) {
@@ -728,8 +775,6 @@ export class Positions {
 
             offset++
         }
-
-        return positionsFacade
     }
 
     /**
@@ -763,26 +808,13 @@ export class Positions {
 
     /**
      * Updates instance from DTO.
-     * @param msg - Position data transfer object.
+     * @param msg - Positions state data transfer object.
      * @private
      */
-    private syncPositionFromResponse(msg: PortfolioPositionsV4Position): void {
-        if (!this.positions.has(msg.externalId)) {
-            const position = new Position()
-            position.id = msg.externalId
-            this.positions.set(msg.externalId, position)
-            this.positionsIds.set(msg.internalId, msg.externalId)
-            this.subscribePositions()
-        }
-
-        const position = this.positions.get(msg.externalId)!
-        position.syncFromResponse(msg)
-        this.onUpdatePositionObserver.notify(position)
-    }
-
     private syncPositionsStateFromEvent(msg: PortfolioPositionsStateV1): void {
         for (const index in msg.positions) {
-            const externalId = this.positionsIds.get(msg.positions[index].internalId)
+            const key = `${msg.positions[index].instrumentType}-${msg.positions[index].internalId}`
+            const externalId = this.positionsIds.get(key)
             if (!externalId) {
                 continue
             }
@@ -798,18 +830,47 @@ export class Positions {
      * @param msg - Position data transfer object.
      * @private
      */
-    private syncPositionFromEvent(msg: PortfolioPositionChangedV3): void {
-        if (!this.positions.has(msg.externalId)) {
+    private syncPositionFromResponse(msg: PortfolioPositionsV4Position): void {
+        const isNewPosition = !this.positions.has(msg.externalId)
+        if (isNewPosition) {
             const position = new Position()
             position.id = msg.externalId
             this.positions.set(msg.externalId, position)
-            this.positionsIds.set(msg.internalId, msg.externalId)
+            const key = `${msg.instrumentType}-${msg.internalId}`
+            this.positionsIds.set(key, msg.externalId)
+        }
+
+        const position = this.positions.get(msg.externalId)!
+        position.syncFromResponse(msg)
+        this.onUpdatePositionObserver.notify(position)
+
+        if (isNewPosition) {
             this.subscribePositions()
+        }
+    }
+
+    /**
+     * Updates instance from DTO.
+     * @param msg - Position data transfer object.
+     * @private
+     */
+    private syncPositionFromEvent(msg: PortfolioPositionChangedV3): void {
+        const isNewPosition = !this.positions.has(msg.externalId)
+        if (isNewPosition) {
+            const position = new Position()
+            position.id = msg.externalId
+            this.positions.set(msg.externalId, position)
+            const key = `${msg.instrumentType}-${msg.internalId}`
+            this.positionsIds.set(key, msg.externalId)
         }
 
         const position = this.positions.get(msg.externalId)!
         position.syncFromEvent(msg)
         this.onUpdatePositionObserver.notify(position)
+
+        if (isNewPosition) {
+            this.subscribePositions()
+        }
     }
 
     private subscribePositions(): void {
@@ -849,7 +910,7 @@ export class Position {
     public id: number | undefined
 
     /**
-     * Position's internal ID.
+     * Position's internal ID. ( Positions across different instrument types can have the same internal_id )
      */
     public internalId: string | undefined
 
@@ -996,6 +1057,7 @@ export class Position {
         if (this.version !== undefined && msg.version !== undefined && this.version >= msg.version) {
             return
         }
+        this.internalId = msg.internalId
         this.activeId = msg.activeId
         this.balanceId = msg.userBalanceId
         this.closeProfit = msg.closeProfit
@@ -1054,12 +1116,6 @@ export class BlitzOptions {
      * @private
      */
     private intervalId: NodeJS.Timeout | undefined
-
-    /**
-     * Instance of positions facade promise by balance.
-     * @private
-     */
-    private positions: Map<string, Promise<Positions>> = new Map<string, Promise<Positions>>()
 
     /**
      * Creates instance from DTO.
@@ -1141,18 +1197,6 @@ export class BlitzOptions {
     }
 
     /**
-     * Returns blitz options positions facade class for specified balance.
-     * @param balance - User's balance for which the positions are being requested.
-     */
-    public positionsByBalance(balance: Balance): Promise<Positions> {
-        const key = `blitz-option-${balance.id}`
-        if (!this.positions.has(key)) {
-            this.positions.set(key, Positions.create(this.wsApiClient, 'blitz-option', balance))
-        }
-        return this.positions.get(key)!
-    }
-
-    /**
      * Update instance from DTO.
      * @param activesMsg - Actives data transfer object.
      * @private
@@ -1175,13 +1219,17 @@ export class BlitzOptions {
         if (this.intervalId) {
             clearInterval(this.intervalId)
         }
-
-        for (const [, promise] of this.positions) {
-            promise.then((positions) => {
-                positions.close()
-            })
-        }
     }
+}
+
+/**
+ * Instrument types.
+ */
+export enum InstrumentType {
+    BinaryOption = "binary-option",
+    DigitalOption = "digital-option",
+    TurboOption = "turbo-option",
+    BlitzOption = "blitz-option",
 }
 
 /**
@@ -1395,12 +1443,6 @@ export class TurboOptions {
     private intervalId: NodeJS.Timeout | undefined
 
     /**
-     * Instance of positions facade promise by balance.
-     * @private
-     */
-    private positions: Map<string, Promise<Positions>> = new Map<string, Promise<Positions>>()
-
-    /**
      * Creates class instance.
      * @param activesMsg - Actives data transfer object.
      * @param wsApiClient - Instance of WebSocket API client.
@@ -1478,18 +1520,6 @@ export class TurboOptions {
     }
 
     /**
-     * Returns turbo options positions facade class for specified balance.
-     * @param balance - User's balance for which the positions are being requested.
-     */
-    public positionsByBalance(balance: Balance): Promise<Positions> {
-        const key = `turbo-option-${balance.id}`
-        if (!this.positions.has(key)) {
-            this.positions.set(key, Positions.create(this.wsApiClient, 'turbo-option', balance))
-        }
-        return this.positions.get(key)!
-    }
-
-    /**
      * Updates instance from DTO.
      * @param activesMsg - Actives data transfer object.
      * @private
@@ -1516,12 +1546,6 @@ export class TurboOptions {
         this.actives.forEach((active) => {
             active.close()
         })
-
-        for (const [, promise] of this.positions) {
-            promise.then((positions) => {
-                positions.close()
-            })
-        }
     }
 }
 
@@ -1950,12 +1974,6 @@ export class BinaryOptions {
     private intervalId: NodeJS.Timeout | undefined
 
     /**
-     * Instance of positions facade promise by balance.
-     * @private
-     */
-    private positions: Map<string, Promise<Positions>> = new Map<string, Promise<Positions>>()
-
-    /**
      * Creates instance from DTO.
      * @param activesMsg - actives data transfer object.
      * @param wsApiClient - Instance of WebSocket API client.
@@ -2033,18 +2051,6 @@ export class BinaryOptions {
     }
 
     /**
-     * Returns binary options positions facade class for specified balance.
-     * @param balance - User's balance for which the positions are being requested.
-     */
-    public positionsByBalance(balance: Balance): Promise<Positions> {
-        const key = `binary-option-${balance.id}`
-        if (!this.positions.has(key)) {
-            this.positions.set(key, Positions.create(this.wsApiClient, 'binary-option', balance))
-        }
-        return this.positions.get(key)!
-    }
-
-    /**
      * Updates actives from DTO.
      * @param activesMsg - Actives data transfer object.
      * @private
@@ -2071,12 +2077,6 @@ export class BinaryOptions {
         this.actives.forEach((active) => {
             active.close()
         })
-
-        for (const [, promise] of this.positions) {
-            promise.then((positions) => {
-                positions.close()
-            })
-        }
     }
 }
 
@@ -2564,12 +2564,6 @@ export class DigitalOptions {
     private underlyings: Map<number, DigitalOptionsUnderlying> = new Map<number, DigitalOptionsUnderlying>()
 
     /**
-     * Instance of positions facade promise by balance.
-     * @private
-     */
-    private positions: Map<string, Promise<Positions>> = new Map<string, Promise<Positions>>()
-
-    /**
      * Creates instance from DTO.
      * @param underlyingList - Underlyings data transfer object.
      * @param wsApiClient - Instance of WebSocket API client.
@@ -2659,18 +2653,6 @@ export class DigitalOptions {
     }
 
     /**
-     * Returns digital options positions facade class for specified balance.
-     * @param balance - User's balance for which the positions are being requested.
-     */
-    public positionsByBalance(balance: Balance): Promise<Positions> {
-        const key = `digital-option-${balance.id}`
-        if (!this.positions.has(key)) {
-            this.positions.set(key, Positions.create(this.wsApiClient, 'digital-option', balance))
-        }
-        return this.positions.get(key)!
-    }
-
-    /**
      * Updates instance from DTO.
      * @param msg - Underlyings data transfer object.
      * @private
@@ -2692,12 +2674,6 @@ export class DigitalOptions {
      * Closes the instance.
      */
     public close() {
-        for (const [, promise] of this.positions) {
-            promise.then((positions) => {
-                positions.close()
-            })
-        }
-
         this.underlyings.forEach((underlying) => {
             underlying.close()
         })
@@ -4170,7 +4146,7 @@ class PortfolioPositionChangedV3 {
         user_id: number
         user_balance_id: number
         version: number
-        raw_event: any | undefined
+        raw_event: RawEvent | undefined
     }) {
         this.activeId = data.active_id
         this.closeProfit = data.close_profit
@@ -4193,7 +4169,21 @@ class PortfolioPositionChangedV3 {
         this.version = data.version
 
         if (data.raw_event) {
-            const {order_ids} = data.raw_event
+            let order_ids: number[] | undefined
+            switch (data.instrument_type) {
+                case InstrumentType.BinaryOption:
+                    order_ids = data.raw_event.binary_options_option_changed1!.order_ids
+                    break;
+                case InstrumentType.TurboOption:
+                    order_ids = data.raw_event.turbo_options_position_changed1!.order_ids
+                    break;
+                case InstrumentType.BlitzOption:
+                    order_ids = data.raw_event.blitz_options_position_changed1!.order_ids
+                    break;
+                case InstrumentType.DigitalOption:
+                    order_ids = data.raw_event.digital_options_position_changed1!.order_ids
+                    break;
+            }
 
             if (order_ids) {
                 this.orderIds = order_ids
@@ -4312,7 +4302,7 @@ class PortfolioPositionsV4Position {
         status: string
         user_id: number
         user_balance_id: number
-        raw_event: any | undefined
+        raw_event: RawEvent | undefined
     }) {
         this.activeId = data.active_id
         this.expectedProfit = data.expected_profit
@@ -4329,7 +4319,21 @@ class PortfolioPositionsV4Position {
         this.userBalanceId = data.user_balance_id
 
         if (data.raw_event) {
-            const {order_ids} = data.raw_event
+            let order_ids: number[] | undefined
+            switch (data.instrument_type) {
+                case InstrumentType.BinaryOption:
+                    order_ids = data.raw_event.binary_options_option_changed1!.order_ids
+                    break;
+                case InstrumentType.TurboOption:
+                    order_ids = data.raw_event.turbo_options_position_changed1!.order_ids
+                    break;
+                case InstrumentType.BlitzOption:
+                    order_ids = data.raw_event.blitz_options_position_changed1!.order_ids
+                    break;
+                case InstrumentType.DigitalOption:
+                    order_ids = data.raw_event.digital_options_position_changed1!.order_ids
+                    break;
+            }
 
             if (order_ids) {
                 this.orderIds = order_ids
@@ -4340,6 +4344,17 @@ class PortfolioPositionsV4Position {
             this.orderIds = [data.external_id]
         }
     }
+}
+
+class RawEvent {
+    turbo_options_position_changed1: RawEventItem | undefined
+    blitz_options_position_changed1: RawEventItem | undefined
+    binary_options_option_changed1: RawEventItem | undefined
+    digital_options_position_changed1: RawEventItem | undefined
+}
+
+class RawEventItem {
+    order_ids: number[] | undefined
 }
 
 class QuoteGenerated {
@@ -4969,7 +4984,7 @@ class SubscribeInternalBillingBalanceChangedV1 implements SubscribeRequest<Inter
 }
 
 class SubscribePortfolioPositionChangedV3 implements SubscribeRequest<PortfolioPositionChangedV3> {
-    constructor(private readonly userId: number, private readonly userBalanceId: number, private readonly instrumentType: string) {
+    constructor(private readonly userId: number, private readonly userBalanceId: number) {
     }
 
     messageName() {
@@ -4984,7 +4999,6 @@ class SubscribePortfolioPositionChangedV3 implements SubscribeRequest<PortfolioP
                 routingFilters: {
                     user_id: this.userId,
                     user_balance_id: this.userBalanceId,
-                    instrument_type: this.instrumentType
                 }
             }
         }
