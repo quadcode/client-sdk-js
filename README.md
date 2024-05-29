@@ -112,12 +112,15 @@ console.log(putOption)
 
 ```js
 const blitzOptions = await sdk.blitzOptions()
+const positions = await sdk.positions()
 
-const blitzOptionsPositions = await blitzOptions.positionsByBalance(balance)
+console.log(positions.getAllPositions().filter((position) => position.instrumentType === InstrumentType.BlitzOption))
 
-console.log(blitzOptionsPositions.getAllPositions())
-
-blitzOptionsPositions.subscribeOnUpdatePosition((position) => console.log(position))
+positions.subscribeOnUpdatePosition((position) => {
+    if (position.instrumentType === InstrumentType.BlitzOption) {
+        console.log(position)
+    }
+})
 ```
 
 ### Buy turbo options
@@ -146,12 +149,15 @@ console.log(putOption)
 
 ```js
 const turboOptions = await sdk.turboOptions()
+const positions = await sdk.positions()
 
-const turboOptionsPositions = await turboOptions.positionsByBalance(balance)
+console.log(positions.getAllPositions().filter((position) => position.instrumentType === InstrumentType.TurboOption))
 
-console.log(turboOptionsPositions.getAllPositions())
-
-turboOptionsPositions.subscribeOnUpdatePosition((position) => console.log(position))
+positions.subscribeOnUpdatePosition((position) => {
+    if (position.instrumentType === InstrumentType.TurboOption) {
+        console.log(position)
+    }
+})
 ```
 
 ### Buy binary options
@@ -180,12 +186,15 @@ console.log(putOption)
 
 ```js
 const binaryOptions = await sdk.binaryOptions()
+const positions = await sdk.positions()
 
-const binaryOptionsPositions = await binaryOptions.positionsByBalance(balance)
+console.log(positions.getAllPositions().filter((position) => position.instrumentType === InstrumentType.BinaryOption))
 
-console.log(binaryOptionsPositions.getAllPositions())
-
-binaryOptionsPositions.subscribeOnUpdatePosition((position) => console.log(position))
+binaryOptionsPositions.subscribeOnUpdatePosition((position) => {
+    if (position.instrumentType === InstrumentType.BinaryOption) {
+        console.log(position)
+    }
+})
 ```
 
 ### Buy digital spot options
@@ -216,12 +225,15 @@ console.log(putOption)
 
 ```js
 const digitalOptions = await sdk.digitalOptions()
+const positions = await sdk.positions()
 
-const digitalOptionsPositions = await digitalOptions.positionsByBalance(balance)
+console.log(digitalOptionsPositions.getAllPositions().filter((position) => position.instrumentType === InstrumentType.DigitalOption))
 
-console.log(digitalOptionsPositions.getAllPositions())
-
-digitalOptionsPositions.subscribeOnUpdatePosition((position) => console.log(position))
+digitalOptionsPositions.subscribeOnUpdatePosition((position) => {
+    if (position.instrumentType === InstrumentType.DigitalOption) {
+        console.log(position)
+    }
+})
 ```
 
 ## For SDK maintainers
