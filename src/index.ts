@@ -760,9 +760,10 @@ export class Positions {
      */
     private async syncOldActivePositions(balance: Balance): Promise<void> {
         let offset = 0
+        const limit = 30
         for (; ;) {
             const positionsPage = await this.wsApiClient!.doRequest<PortfolioPositionsV4>(
-                new CallPortfolioGetPositionsV4(this.instrumentTypes, balance.id, 30, offset)
+                new CallPortfolioGetPositionsV4(this.instrumentTypes, balance.id, limit, offset)
             )
 
             for (const index in positionsPage.positions) {
@@ -773,7 +774,7 @@ export class Positions {
                 break
             }
 
-            offset++
+            offset += limit
         }
     }
 
@@ -788,6 +789,15 @@ export class Positions {
         }
 
         return list
+    }
+
+    /**
+     * Checks if a given order ID matches any of the order IDs associated with a position.
+     * @param orderId
+     * @param position
+     */
+    public isOrderMatchingPosition(orderId: number, position: Position): boolean {
+        return position.orderIds.includes(orderId)
     }
 
     /**
@@ -3357,10 +3367,16 @@ class WsApiClient {
                 name: string
                 msg: any
                 microserviceName: string
+                status: number
             } = JSON.parse(data)
             if (frame.request_id) {
                 if (this.requests.has(frame.request_id)) {
                     const requestMetaData = this.requests.get(frame.request_id)!
+                    if (frame.status >= 4000) {
+                        requestMetaData.reject(new Error(`request is failed with status ${frame.status} and message: ${frame.msg.message}`))
+                        return
+                    }
+
                     if (frame.name === 'result' && !requestMetaData.request.resultOnly()) {
                         const result = new Result(frame.msg)
                         if (!result.success) {
