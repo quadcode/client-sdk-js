@@ -9,7 +9,7 @@ import {
 import {getUserByTitle} from "./utils/userUtils";
 import {User} from "./data/types";
 import {expect} from "chai";
-import {justWait, waitForCondition} from "./utils/waiters";
+import {waitForPosition} from "./utils/positionsHelper";
 
 describe('Turbo-options', () => {
     let sdk: QuadcodeClientSdk;
@@ -75,10 +75,10 @@ describe('Turbo-options', () => {
             it('Option should be open', async () => {
                 const firstInstrument = instruments[0];
                 const turboOption = await turboOptions.buy(firstInstrument, TurboOptionsDirection.Call, 1, demoBalance);
-                await justWait(2000) // TODO: remove it later
-                expect(turboOption.id, 'Option id should be not null').to.not.to.be.null
-                const positions = await turboOptions.positionsByBalance(demoBalance);
-                expect(positions.getPositionById(turboOption.id), 'Position must be present').to.be.not.null
+                expect(turboOption.id, 'Option id should be not null').not.to.be.null
+                const positions = await sdk.positions();
+                const position = await waitForPosition(positions, (position) => position.orderIds.includes(turboOption.id));
+                expect(position.id, 'Position must be present').not.to.be.null
             });
 
             describe('Expiration', () => {
@@ -86,11 +86,13 @@ describe('Turbo-options', () => {
                 it('should expired', async () => {
                     const firstInstrument = instruments[0];
                     const turboOption = await turboOptions.buy(firstInstrument, TurboOptionsDirection.Call, 1, demoBalance);
-                    await justWait(2000) // TODO: remove it later
-                    await waitForCondition(() => turboOption.position().status !== "open", 100000);
-                    expect(turboOption.position().closeReason, 'Invalid close reason').to.be.oneOf(["win", "loose"])
+                    const positions = await sdk.positions();
+                    const position = await waitForPosition(positions, (position) => position.id === turboOption.id && position.status !== "open", 100000);
+                    expect(position.closeReason, 'Invalid close reason').to.be.oneOf(["win", "loose"])
                 }).timeout(100000);
+
             });
         });
     });
-});
+})
+;

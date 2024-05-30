@@ -9,7 +9,7 @@ import {
 import {getUserByTitle} from "./utils/userUtils";
 import {User} from "./data/types";
 import {expect} from "chai";
-import {justWait} from "./utils/waiters";
+import {waitForPosition} from "./utils/positionsHelper";
 
 describe('Binary-options', () => {
     let sdk: QuadcodeClientSdk;
@@ -85,10 +85,10 @@ describe('Binary-options', () => {
             it('Option should be open', async () => {
                 const firstInstrument = instruments[0];
                 const binaryOption = await binaryOptions.buy(firstInstrument, BinaryOptionsDirection.Call, 10, demoBalance);
-                await justWait(2000) // TODO: remove it later
-                expect(binaryOption.id, 'Option id should be not null').to.not.to.be.null
-                const positions = await binaryOptions.positionsByBalance(demoBalance);
-                expect(positions.getPositionById(binaryOption.id), 'Position must be present').to.be.not.null
+                expect(binaryOption.id, 'Option id should be not null').to.be.not.null
+                const positions = await sdk.positions();
+                const position = await waitForPosition(positions, (position) => position.orderIds.includes(binaryOption.id));
+                expect(position.id, 'Position must be present').to.be.not.null
             });
 
         });

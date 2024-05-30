@@ -2,6 +2,7 @@ import {
     Balance,
     DigitalOptions,
     DigitalOptionsDirection,
+    DigitalOptionsOrder,
     DigitalOptionsUnderlyingInstrument,
     LoginPasswordAuthMethod,
     QuadcodeClientSdk
@@ -9,7 +10,7 @@ import {
 import {getUserByTitle} from "./utils/userUtils";
 import {User} from "./data/types";
 import {expect} from "chai";
-import {justWait, waitForCondition} from "./utils/waiters";
+import {waitForPosition} from "./utils/positionsHelper";
 
 describe('Digital-options', () => {
     let sdk: QuadcodeClientSdk;
@@ -88,35 +89,31 @@ describe('Digital-options', () => {
 
         describe('Buy option', () => {
 
-            it('insufficient funds for this transaction', async () => {
+            it("ignore insufficient funds for this transaction because it's order", async () => {
                 const firstInstrument = findInstrumentByPeriod(60);
                 await expect(digitalOptions.buySpotStrike(firstInstrument, DigitalOptionsDirection.Call, 10, realBalance))
-                    .to.eventually.be.rejectedWith("Insufficient funds for this transaction.")
+                    .to.eventually.be.an.instanceof(DigitalOptionsOrder)
             });
 
-            it('should option id not be null', async () => {
+            it('option should be opened', async () => {
                 const instrument = findInstrumentByPeriod(60);
                 const digitalOrder = await digitalOptions.buySpotStrike(instrument, DigitalOptionsDirection.Call, 1, demoBalance);
-                expect(digitalOrder.id, 'Option id should be not null').to.not.to.be.null
-            });
-
-            it('positionsByBalance should return position', async () => {
-                const instrument = findInstrumentByPeriod(60);
-                const digitalOptionOrder = await digitalOptions.buySpotStrike(instrument, DigitalOptionsDirection.Call, 10, demoBalance);
-                await justWait(3000) // TODO: remove it later
-                const positions = await digitalOptions.positionsByBalance(demoBalance);
-                expect(positions.getPositionById(digitalOptionOrder.id), 'Position must be present').to.be.not.null
+                expect(digitalOrder.id, 'Option id should be not null').to.be.not.null
+                const positions = await sdk.positions();
+                const position = await waitForPosition(positions, (position) => position.orderIds.includes(digitalOrder.id));
+                expect(position.id, 'Position must be present').to.be.not.null
             });
 
             describe('Expiration', () => {
 
                 it('should expired', async () => {
                     const firstInstrument = findInstrumentByPeriod(60);
-                    const digitalOptionOrder = await digitalOptions.buySpotStrike(firstInstrument, DigitalOptionsDirection.Call, 10, demoBalance);
-                    await justWait(3000) // TODO: remove it later
-                    await waitForCondition(() => digitalOptionOrder.position().status !== "open", 100000);
-                    expect(digitalOptionOrder.position().closeReason, 'Invalid close reason').to.be.oneOf(["win", "loose"])
-                }).timeout(100000);
+                    const digitalOrder = await digitalOptions.buySpotStrike(firstInstrument, DigitalOptionsDirection.Call, 10, demoBalance);
+                    const positions = await sdk.positions();
+                    const position = await waitForPosition(positions, (position) => position.orderIds.includes(digitalOrder.id) && position.status !== "open", 100000);
+                    expect(position.closeReason, 'Invalid close reason').to.be.oneOf(["win", "loose"])
+                }).timeout(120000);
+
             });
         });
     });

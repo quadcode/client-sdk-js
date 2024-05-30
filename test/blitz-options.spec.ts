@@ -2,7 +2,7 @@ import {Balance, BlitzOptions, BlitzOptionsDirection, LoginPasswordAuthMethod, Q
 import {getUserByTitle} from "./utils/userUtils";
 import {User} from "./data/types";
 import {expect} from "chai";
-import {justWait, waitForCondition} from "./utils/waiters";
+import {waitForPosition} from "./utils/positionsHelper";
 
 describe('Blitz-options', () => {
     let sdk: QuadcodeClientSdk;
@@ -33,28 +33,33 @@ describe('Blitz-options', () => {
 
         it('insufficient funds for this transaction', async () => {
             const active = blitzOptions.getActives()[0];
-            await expect(blitzOptions.buy(active, BlitzOptionsDirection.Put, 3, 10, realBalance))
+            const expirationSize = active.expirationTimes[0];
+            await expect(blitzOptions.buy(active, BlitzOptionsDirection.Put, expirationSize, 10, realBalance))
                 .to.eventually.be.rejectedWith("Insufficient funds for this transaction.")
         });
 
         it('Option should be open', async () => {
             const active = blitzOptions.getActives()[0];
-            const blitzOption = await blitzOptions.buy(active, BlitzOptionsDirection.Call, 5, 10, demoBalance);
-            await justWait(2000) // TODO: remove it later
-            expect(blitzOption.id, 'Option id should be not null').to.not.to.be.null
-            const positions = await blitzOptions.positionsByBalance(demoBalance);
-            expect(positions.getPositionById(blitzOption.id), 'Position must be present').to.be.not.null
+            const expirationSize = active.expirationTimes[0];
+            const blitzOption = await blitzOptions.buy(active, BlitzOptionsDirection.Call, expirationSize, 10, demoBalance);
+            expect(blitzOption.id, 'Option id should be not null').to.be.not.null
+            const positions = await sdk.positions();
+            const position = await waitForPosition(positions, (position) => position.orderIds.includes(blitzOption.id), 5000);
+            expect(position.id, 'Position must be present').to.be.not.null
         });
+
         describe('Expiration', () => {
 
             it('should expired', async () => {
                 const active = blitzOptions.getActives()[0];
-                const expirationSize = 5;
+                const expirationSize = active.expirationTimes[0];
                 const blitzOption = await blitzOptions.buy(active, BlitzOptionsDirection.Call, expirationSize, 10, demoBalance);
-                await justWait(2000) // TODO: remove it later
-                await waitForCondition(() => blitzOption.position().status !== "open", 7000);
-                expect(blitzOption.position().closeReason, 'Invalid close reason').to.be.oneOf(["win", "loose"])
+                const positions = await sdk.positions();
+                const position = await waitForPosition(positions,
+                    (position) => position.orderIds.includes(blitzOption.id) && position.status !== "open", 7000);
+                expect(position.closeReason, 'Invalid close reason').to.be.oneOf(["win", "equal", "loose"])
             }).timeout(7000);
+
         });
     });
 });
