@@ -4150,6 +4150,7 @@ class PortfolioPositionChangedV3 {
         close_time: number | undefined
         expected_profit: number
         instrument_type: string
+        source: string
         external_id: number
         id: string
         invest: number
@@ -4186,7 +4187,7 @@ class PortfolioPositionChangedV3 {
 
         if (data.raw_event) {
             let order_ids: number[] | undefined
-            switch (data.instrument_type) {
+            switch (data.source) {
                 case InstrumentType.BinaryOption:
                     order_ids = data.raw_event.binary_options_option_changed1!.order_ids
                     break;
@@ -4310,6 +4311,7 @@ class PortfolioPositionsV4Position {
         external_id: number
         id: string
         instrument_type: string
+        source: string
         invest: number
         open_quote: number
         open_time: number
@@ -4336,7 +4338,7 @@ class PortfolioPositionsV4Position {
 
         if (data.raw_event) {
             let order_ids: number[] | undefined
-            switch (data.instrument_type) {
+            switch (data.source) {
                 case InstrumentType.BinaryOption:
                     order_ids = data.raw_event.binary_options_option_changed1!.order_ids
                     break;
