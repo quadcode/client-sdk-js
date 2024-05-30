@@ -843,7 +843,7 @@ export class Positions {
     private syncPositionFromResponse(msg: PortfolioPositionsV4Position): void {
         const isNewPosition = !this.positions.has(msg.externalId)
         if (isNewPosition) {
-            const position = new Position()
+            const position = new Position(this.wsApiClient!)
             position.id = msg.externalId
             this.positions.set(msg.externalId, position)
             const key = `${msg.instrumentType}-${msg.internalId}`
@@ -867,7 +867,7 @@ export class Positions {
     private syncPositionFromEvent(msg: PortfolioPositionChangedV3): void {
         const isNewPosition = !this.positions.has(msg.externalId)
         if (isNewPosition) {
-            const position = new Position()
+            const position = new Position(this.wsApiClient!)
             position.id = msg.externalId
             this.positions.set(msg.externalId, position)
             const key = `${msg.instrumentType}-${msg.internalId}`
@@ -1037,6 +1037,16 @@ export class Position {
     private version: number | undefined
 
     /**
+     * Instance of WebSocket API client.
+     * @private
+     */
+    private wsApiClient: WsApiClient
+
+    constructor(wsApiClient: WsApiClient) {
+        this.wsApiClient = wsApiClient
+    }
+
+    /**
      * Synchronises position from DTO.
      * @param msg - Position data transfer object.
      * @private
@@ -1100,6 +1110,25 @@ export class Position {
         this.pnl = msg.pnl
         this.pnlNet = msg.pnlNet
         this.expectedProfit = msg.expectedProfit
+    }
+
+    public async sell(): Promise<void> {
+        let promise: Promise<Result>
+        switch (this.instrumentType) {
+            case InstrumentType.TurboOption:
+            case InstrumentType.BinaryOption:
+                promise = this.wsApiClient.doRequest(new CallSellOptionsV3([this.id!]))
+                break
+            case InstrumentType.DigitalOption:
+                promise = this.wsApiClient.doRequest(new CallDigitalOptionsClosePositionV1(this.id!))
+                break
+            case InstrumentType.BlitzOption:
+                throw new Error("Blitz options are not supported")
+            default:
+                throw new Error(`Unknown instrument type ${this.instrumentType}`)
+        }
+
+        await promise
     }
 }
 
@@ -4488,6 +4517,60 @@ class CallSubscribePositions implements Request<Result> {
             body: {
                 frequency: this.frequency,
                 ids: this.positionIds
+            }
+        }
+    }
+
+    createResponse(data: any): Result {
+        return new Result(data)
+    }
+
+    resultOnly(): boolean {
+        return true
+    }
+}
+
+class CallDigitalOptionsClosePositionV1 implements Request<Result> {
+    constructor(private positionId: number) {
+    }
+
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: 'digital-options.close-position',
+            version: '1.0',
+            body: {
+                position_id: this.positionId
+            }
+        }
+    }
+
+    createResponse(data: any): Result {
+        return new Result(data)
+    }
+
+    resultOnly(): boolean {
+        return true
+    }
+}
+
+class CallSellOptionsV3 implements Request<Result> {
+    constructor(private optionsIds: number[]) {
+    }
+
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: 'sell-options',
+            version: '3.0',
+            body: {
+                options_ids: this.optionsIds
             }
         }
     }
