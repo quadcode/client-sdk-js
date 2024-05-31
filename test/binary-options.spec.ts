@@ -102,7 +102,7 @@ describe('Binary-options', () => {
 
             it('option should be sold', async () => {
                 const position = await openOption();
-                await justWait(2000);
+                await justWait(3000);
                 await position.sell();
                 await waitForCondition(() => position.status === "closed", 2000);
                 expect(position.closeReason, "Invalid close reason").eq("sold");

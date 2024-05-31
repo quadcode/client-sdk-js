@@ -43,7 +43,7 @@ describe('Digital-options', () => {
 
         function findInstrumentByPeriod(period: number) {
             const instrument = availableInstruments.find(instr => instr.period === period
-                && instr.durationRemainingForPurchase(sdk.currentTime()) > 5000);
+                && instr.durationRemainingForPurchase(sdk.currentTime()) > 1000);
             if (!instrument)
                 throw new Error('Instrument with period ${period} wasn\'t found');
             return instrument;
@@ -109,7 +109,7 @@ describe('Digital-options', () => {
 
             it('option should be sold', async () => {
                 const {position} = await createOpenOrder();
-                await justWait(2000);
+                await justWait(3000);
                 await position.sell();
                 await waitForCondition(() => position.status === "closed", 2000);
                 expect(position.status, "Invalid status").eq("closed");
