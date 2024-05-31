@@ -1,7 +1,7 @@
 import {LoginPasswordAuthMethod, QuadcodeClientSdk} from "../src";
 import {expect} from 'chai'
 import {User} from "./data/types";
-import {getUserByTitle} from "./setup/userUtils";
+import {getUserByTitle} from "./utils/userUtils";
 
 describe('Authentication with login and password', () => {
     let sdk: QuadcodeClientSdk;
