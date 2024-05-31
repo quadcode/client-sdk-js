@@ -4187,12 +4187,10 @@ class PortfolioPositionChangedV3 {
 
         if (data.raw_event) {
             let order_ids: number[] | undefined
-            switch (data.source) {
+            switch (data.instrument_type) {
                 case InstrumentType.BinaryOption:
-                    order_ids = data.raw_event.binary_options_option_changed1!.order_ids
-                    break;
                 case InstrumentType.TurboOption:
-                    order_ids = data.raw_event.turbo_options_position_changed1!.order_ids
+                    order_ids = data.raw_event.binary_options_option_changed1!.order_ids
                     break;
                 case InstrumentType.BlitzOption:
                     order_ids = data.raw_event.blitz_options_position_changed1!.order_ids
@@ -4338,12 +4336,10 @@ class PortfolioPositionsV4Position {
 
         if (data.raw_event) {
             let order_ids: number[] | undefined
-            switch (data.source) {
+            switch (data.instrument_type) {
                 case InstrumentType.BinaryOption:
-                    order_ids = data.raw_event.binary_options_option_changed1!.order_ids
-                    break;
                 case InstrumentType.TurboOption:
-                    order_ids = data.raw_event.turbo_options_position_changed1!.order_ids
+                    order_ids = data.raw_event.binary_options_option_changed1!.order_ids
                     break;
                 case InstrumentType.BlitzOption:
                     order_ids = data.raw_event.blitz_options_position_changed1!.order_ids
@@ -4365,7 +4361,6 @@ class PortfolioPositionsV4Position {
 }
 
 class RawEvent {
-    turbo_options_position_changed1: RawEventItem | undefined
     blitz_options_position_changed1: RawEventItem | undefined
     binary_options_option_changed1: RawEventItem | undefined
     digital_options_position_changed1: RawEventItem | undefined

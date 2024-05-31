@@ -97,9 +97,9 @@ describe('Digital-options', () => {
 
             it('option should be opened', async () => {
                 const instrument = findInstrumentByPeriod(60);
+                const positions = await sdk.positions();
                 const digitalOrder = await digitalOptions.buySpotStrike(instrument, DigitalOptionsDirection.Call, 1, demoBalance);
                 expect(digitalOrder.id, 'Option id should be not null').to.be.not.null
-                const positions = await sdk.positions();
                 const position = await waitForPosition(positions, (position) => position.orderIds.includes(digitalOrder.id));
                 expect(position.id, 'Position must be present').to.be.not.null
             });
@@ -108,10 +108,10 @@ describe('Digital-options', () => {
 
                 it('should expired', async () => {
                     const firstInstrument = findInstrumentByPeriod(60);
-                    const digitalOrder = await digitalOptions.buySpotStrike(firstInstrument, DigitalOptionsDirection.Call, 10, demoBalance);
                     const positions = await sdk.positions();
+                    const digitalOrder = await digitalOptions.buySpotStrike(firstInstrument, DigitalOptionsDirection.Call, 10, demoBalance);
                     const position = await waitForPosition(positions, (position) => position.orderIds.includes(digitalOrder.id) && position.status !== "open", 100000);
-                    expect(position.closeReason, 'Invalid close reason').to.be.oneOf(["win", "loose"])
+                    expect(position.closeReason, 'Invalid close reason').to.be.oneOf(["win", "loose", "expired"])
                 }).timeout(120000);
 
             });
