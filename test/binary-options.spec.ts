@@ -49,13 +49,17 @@ describe('Binary-options', () => {
             instruments = binaryOptionsActiveInstruments.getAvailableForBuyAt(currentTime);
         });
 
+        function getAvailableInstrument() {
+            return instruments.filter(value => value.durationRemainingForPurchase(sdk.currentTime()) > 1000)[0];
+        }
+
         it('should return instruments array', () => {
             expect(instruments, 'Invalid binary-option instruments count').to.be.a('array').with.length.above(0);
         });
 
 
         it('should return valid purchaseEndTime', () => {
-            const firstInstrument = instruments[0];
+            const firstInstrument = getAvailableInstrument();
             expect(firstInstrument.purchaseEndTime().getTime(), 'Invalid purchase end time')
                 .to.closeTo(firstInstrument.expiredAt.getTime() - firstInstrument.deadtime * 1000, 0)
         });
@@ -68,7 +72,7 @@ describe('Binary-options', () => {
         });
 
         it('should return valid durationRemainingForPurchase', () => {
-            const firstInstrument = instruments[0];
+            const firstInstrument = getAvailableInstrument();
             const currentTime = sdk.currentTime();
             expect(firstInstrument.durationRemainingForPurchase(currentTime), 'Invalid duration remaining for purchase')
                 .to.eq(firstInstrument.purchaseEndTime().getTime() - currentTime.getTime())
@@ -77,17 +81,21 @@ describe('Binary-options', () => {
         describe('Buy option', () => {
 
             it('insufficient funds for this transaction', async () => {
-                const firstInstrument = instruments[0];
+                const firstInstrument = getAvailableInstrument();
                 await expect(binaryOptions.buy(firstInstrument, BinaryOptionsDirection.Put, 10, realBalance))
                     .to.eventually.be.rejectedWith("Insufficient funds for this transaction.")
             });
 
-            it('Option should be open', async () => {
-                const firstInstrument = instruments[0];
+            async function openOption() {
+                const firstInstrument = getAvailableInstrument();
                 const binaryOption = await binaryOptions.buy(firstInstrument, BinaryOptionsDirection.Call, 10, demoBalance);
                 expect(binaryOption.id, 'Option id should be not null').to.be.not.null
                 const positions = await sdk.positions();
-                const position = await waitForPosition(positions, (position) => position.orderIds.includes(binaryOption.id));
+                return await waitForPosition(positions, (position) => position.orderIds.includes(binaryOption.id));
+            }
+
+            it('Option should be open', async () => {
+                const position = await openOption();
                 expect(position.id, 'Position must be present').to.be.not.null
             });
 

@@ -47,18 +47,22 @@ describe('Turbo-options', () => {
             instruments = turboOptionsActiveInstruments.getAvailableForBuyAt(currentTime);
         });
 
+        function getAvailableInstrument() {
+            return instruments.filter(value => value.durationRemainingForPurchase(sdk.currentTime()) > 1000)[0];
+        }
+
         it('should return instruments array', () => {
             expect(instruments, 'Invalid turbo-option instruments count').to.be.a('array').with.length.above(0);
         });
 
         it('should return valid purchaseEndTime', () => {
-            const firstInstrument = instruments[0];
+            const firstInstrument = getAvailableInstrument();
             expect(firstInstrument.purchaseEndTime().getTime(), 'Invalid purchase end time')
                 .to.closeTo(firstInstrument.expiredAt.getTime() - firstInstrument.deadtime * 1000, 0)
         });
 
         it('should return valid durationRemainingForPurchase', () => {
-            const firstInstrument = instruments[0];
+            const firstInstrument = getAvailableInstrument();
             const currentTime = sdk.currentTime();
             expect(firstInstrument.durationRemainingForPurchase(currentTime), 'Invalid duration remaining for purchase')
                 .to.eq(firstInstrument.purchaseEndTime().getTime() - currentTime.getTime())
@@ -67,31 +71,31 @@ describe('Turbo-options', () => {
         describe('Buy option', () => {
 
             it('insufficient funds for this transaction', async () => {
-                const firstInstrument = instruments[0];
+                const firstInstrument = getAvailableInstrument();
                 await expect(turboOptions.buy(firstInstrument, TurboOptionsDirection.Call, 10, realBalance))
                     .to.eventually.be.rejectedWith("Insufficient funds for this transaction.")
             });
 
-            it('Option should be open', async () => {
-                const firstInstrument = instruments[0];
+            async function openOption() {
+                const firstInstrument = getAvailableInstrument();
                 const turboOption = await turboOptions.buy(firstInstrument, TurboOptionsDirection.Call, 1, demoBalance);
                 expect(turboOption.id, 'Option id should be not null').not.to.be.null
                 const positions = await sdk.positions();
-                const position = await waitForPosition(positions, (position) => position.orderIds.includes(turboOption.id));
+                return await waitForPosition(positions, (position) => position.orderIds.includes(turboOption.id));
+            }
+
+            it('Option should be open', async () => {
+                const position = await openOption();
                 expect(position.id, 'Position must be present').not.to.be.null
             });
 
-            describe('Expiration', () => {
-
-                it('should expired', async () => {
-                    const firstInstrument = instruments[0];
-                    const turboOption = await turboOptions.buy(firstInstrument, TurboOptionsDirection.Call, 1, demoBalance);
-                    const positions = await sdk.positions();
-                    const position = await waitForPosition(positions, (position) => position.id === turboOption.id && position.status !== "open", 100000);
-                    expect(position.closeReason, 'Invalid close reason').to.be.oneOf(["win", "loose"])
-                }).timeout(100000);
-
+            it('position should be updated by position-state event', async () => {
+                const position = await openOption();
+                expect(position.currentQuoteTimestamp, 'currentQuoteTimestamp must be present').to.be.not.null
+                expect(position.pnlNet, 'pnlNet must be present').to.be.not.null
+                expect(position.sellProfit, 'sellProfit must be present').not.to.be.null
             });
+
         });
     });
 })

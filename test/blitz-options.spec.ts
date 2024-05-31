@@ -3,6 +3,7 @@ import {getUserByTitle} from "./utils/userUtils";
 import {User} from "./data/types";
 import {expect} from "chai";
 import {waitForPosition} from "./utils/positionsHelper";
+import {waitForCondition} from "./utils/waiters";
 
 describe('Blitz-options', () => {
     let sdk: QuadcodeClientSdk;
@@ -38,25 +39,25 @@ describe('Blitz-options', () => {
                 .to.eventually.be.rejectedWith("Insufficient funds for this transaction.")
         });
 
-        it('Option should be open', async () => {
+        async function openOption() {
             const active = blitzOptions.getActives()[0];
             const expirationSize = active.expirationTimes[0];
             const blitzOption = await blitzOptions.buy(active, BlitzOptionsDirection.Call, expirationSize, 10, demoBalance);
             expect(blitzOption.id, 'Option id should be not null').to.be.not.null
             const positions = await sdk.positions();
-            const position = await waitForPosition(positions, (position) => position.orderIds.includes(blitzOption.id), 5000);
+            return await waitForPosition(positions, (position) => position.orderIds.includes(blitzOption.id), 5000);
+        }
+
+        it('Option should be open', async () => {
+            const position = await openOption();
             expect(position.id, 'Position must be present').to.be.not.null
         });
 
         describe('Expiration', () => {
 
             it('should expired', async () => {
-                const active = blitzOptions.getActives()[0];
-                const expirationSize = active.expirationTimes[0];
-                const blitzOption = await blitzOptions.buy(active, BlitzOptionsDirection.Call, expirationSize, 10, demoBalance);
-                const positions = await sdk.positions();
-                const position = await waitForPosition(positions,
-                    (position) => position.orderIds.includes(blitzOption.id) && position.status !== "open", 7000);
+                const position = await openOption();
+                await waitForCondition(() => position.closeReason !== undefined, 7000);
                 expect(position.closeReason, 'Invalid close reason').to.be.oneOf(["win", "equal", "loose"])
             }).timeout(7000);
 

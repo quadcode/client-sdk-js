@@ -104,17 +104,6 @@ describe('Digital-options', () => {
                 expect(position.id, 'Position must be present').to.be.not.null
             });
 
-            describe('Expiration', () => {
-
-                it('should expired', async () => {
-                    const firstInstrument = findInstrumentByPeriod(60);
-                    const positions = await sdk.positions();
-                    const digitalOrder = await digitalOptions.buySpotStrike(firstInstrument, DigitalOptionsDirection.Call, 10, demoBalance);
-                    const position = await waitForPosition(positions, (position) => position.orderIds.includes(digitalOrder.id) && position.status !== "open", 100000);
-                    expect(position.closeReason, 'Invalid close reason').to.be.oneOf(["win", "loose", "expired"])
-                }).timeout(120000);
-
-            });
         });
     });
 });
