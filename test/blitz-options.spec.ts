@@ -3,7 +3,7 @@ import {getUserByTitle} from "./utils/userUtils";
 import {User} from "./data/types";
 import {expect} from "chai";
 import {waitForPosition} from "./utils/positionsHelper";
-import {waitForCondition} from "./utils/waiters";
+import {justWait, waitForCondition} from "./utils/waiters";
 
 describe('Blitz-options', () => {
     let sdk: QuadcodeClientSdk;
@@ -60,6 +60,12 @@ describe('Blitz-options', () => {
                 await waitForCondition(() => position.closeReason !== undefined, 7000);
                 expect(position.closeReason, 'Invalid close reason').to.be.oneOf(["win", "equal", "loose"])
             }).timeout(7000);
+
+            it('should not be sold', async () => {
+                const position = await openOption();
+                await justWait(1000);
+                await expect(position.sell()).to.eventually.be.rejectedWith("Blitz options are not supported")
+            });
 
         });
     });
