@@ -10,6 +10,7 @@ import {getUserByTitle} from "./utils/userUtils";
 import {User} from "./data/types";
 import {expect} from "chai";
 import {waitForPosition} from "./utils/positionsHelper";
+import {justWait, waitForCondition} from "./utils/waiters";
 
 describe('Binary-options', () => {
     let sdk: QuadcodeClientSdk;
@@ -94,11 +95,19 @@ describe('Binary-options', () => {
                 return await waitForPosition(positions, (position) => position.orderIds.includes(binaryOption.id));
             }
 
-            it('Option should be open', async () => {
+            it('option should be opened', async () => {
                 const position = await openOption();
                 expect(position.id, 'Position must be present').to.be.not.null
             });
 
+            it('option should be sold', async () => {
+                const position = await openOption();
+                await justWait(2000);
+                await position.sell();
+                await waitForCondition(() => position.status === "closed", 2000);
+                expect(position.closeReason, "Invalid close reason").eq("sold");
+                expect(position.sellProfit, "Sell profit must be present").not.be.null;
+            });
         });
     });
 });
