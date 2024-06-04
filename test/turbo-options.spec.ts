@@ -8,8 +8,8 @@ import {
 } from "../src";
 import {getUserByTitle} from "./utils/userUtils";
 import {User} from "./data/types";
+import {PositionsHelper} from "./utils/positionsHelper";
 import {expect} from "chai";
-import {waitForPosition} from "./utils/positionsHelper";
 import {justWait, waitForCondition} from "./utils/waiters";
 
 describe('Turbo-options', () => {
@@ -39,6 +39,7 @@ describe('Turbo-options', () => {
 
     describe('Getting turbo-option instruments', async () => {
         let instruments: TurboOptionsActiveInstrument[];
+        let positionsHelper: PositionsHelper;
 
         before(async () => {
             const actives = turboOptions.getActives();
@@ -46,6 +47,7 @@ describe('Turbo-options', () => {
             const turboOptionsActiveInstruments = await first.instruments();
             const currentTime = sdk.currentTime()
             instruments = turboOptionsActiveInstruments.getAvailableForBuyAt(currentTime);
+            positionsHelper = await PositionsHelper.create(sdk);
         });
 
         function getAvailableInstrument() {
@@ -81,11 +83,10 @@ describe('Turbo-options', () => {
                 const firstInstrument = getAvailableInstrument();
                 const turboOption = await turboOptions.buy(firstInstrument, TurboOptionsDirection.Call, 1, demoBalance);
                 expect(turboOption.id, 'Option id should be not null').not.to.be.null
-                const positions = await sdk.positions();
-                return await waitForPosition(positions, (position) => position.orderIds.includes(turboOption.id));
+                return await positionsHelper.waitForPosition((position) => position.orderIds.includes(turboOption.id));
             }
 
-            it('option should be open', async () => {
+            it('should be opened', async () => {
                 const position = await openOption();
                 expect(position.id, 'Position must be present').not.to.be.null
             });
@@ -97,13 +98,16 @@ describe('Turbo-options', () => {
                 expect(position.sellProfit, 'sellProfit must be present').not.to.be.null
             });
 
-            it('option should be sold', async () => {
+            it('should be sold', async () => {
                 const position = await openOption();
+                expect(positionsHelper.findPosition(position.id), 'Position must be present in all positions').not.to.be.undefined
                 await justWait(3000);
                 await position.sell();
                 await waitForCondition(() => position.status === "closed", 2000);
                 expect(position.closeReason, "Invalid close reason").eq("sold");
                 expect(position.sellProfit, "Sell profit must be present").not.be.null;
+                expect(positionsHelper.findHistoryPosition(position.id), 'Position must be present in history positions').not.to.be.undefined
+                expect(positionsHelper.findPosition(position.id), 'Position must be not present in all positions').to.be.undefined
             }).timeout(7000);
         });
     });
