@@ -122,8 +122,7 @@ export class QuadcodeClientSdk {
 
     public async positions(): Promise<Positions> {
         if (!this.positionsFacade) {
-            const balances = await this.balances()
-            this.positionsFacade = await Positions.create(this.wsApiClient, balances.getBalances())
+            this.positionsFacade = await Positions.create(this.wsApiClient, this.userProfile.userId)
         }
         return this.positionsFacade
     }
@@ -657,6 +656,18 @@ export class Positions {
     private positions: Map<number, Position> = new Map<number, Position>()
 
     /**
+     * Positions history.
+     * @private
+     */
+    private positionsHistoryFacade: PositionsHistory | undefined
+
+    /**
+     * Positions' history array.
+     * @private
+     */
+    private positionsHistory: Position[] = []
+
+    /**
      * Positions' IDs cache.
      * @private
      */
@@ -697,17 +708,14 @@ export class Positions {
     /**
      * Subscribes on opened positions' updates, requests current state of opened positions, puts the current state to instance of class Positions and returns it.
      * @param wsApiClient - Instance of WebSocket API client.
-     * @param balances
+     * @param userId
      */
-    public static async create(wsApiClient: WsApiClient, balances: Balance[]): Promise<Positions> {
+    public static async create(wsApiClient: WsApiClient, userId: number): Promise<Positions> {
         const positionsFacade = new Positions()
         positionsFacade.wsApiClient = wsApiClient
-
-        for (const balance of balances) {
-            await positionsFacade.syncOldActivePositions(balance)
-            await positionsFacade.subscribePositionChanged(balance)
-        }
-
+        positionsFacade.positionsHistoryFacade = new PositionsHistory(wsApiClient, userId, positionsFacade.positionsHistory)
+        await positionsFacade.syncOldActivePositions()
+        await positionsFacade.subscribePositionChanged(userId)
         await positionsFacade.subscribePositionsState()
         positionsFacade.subscribePositions()
 
@@ -717,16 +725,11 @@ export class Positions {
     /**
      * Subscribes on position's updates.
      *
-     * @param balance
      * @private
      */
-    private async subscribePositionChanged(balance: Balance): Promise<void> {
-        if (!balance || !balance.userId || !balance.id) {
-            throw new Error("Invalid balance or instrument type");
-        }
-
+    private async subscribePositionChanged(userId: number): Promise<void> {
         await this.wsApiClient!.subscribe<PortfolioPositionChangedV3>(
-            new SubscribePortfolioPositionChangedV3(balance.userId, balance.id),
+            new SubscribePortfolioPositionChangedV3(userId),
             (event: PortfolioPositionChangedV3) => {
                 this.syncPositionFromEvent(event);
             }
@@ -755,15 +758,14 @@ export class Positions {
 
     /**
      * Synchronizes old active positions.
-     * @param balance
      * @private
      */
-    private async syncOldActivePositions(balance: Balance): Promise<void> {
+    private async syncOldActivePositions(): Promise<void> {
         let offset = 0
         const limit = 30
         for (; ;) {
             const positionsPage = await this.wsApiClient!.doRequest<PortfolioPositionsV4>(
-                new CallPortfolioGetPositionsV4(this.instrumentTypes, balance.id, limit, offset)
+                new CallPortfolioGetPositionsV4(this.instrumentTypes, limit, offset)
             )
 
             for (const index in positionsPage.positions) {
@@ -789,6 +791,17 @@ export class Positions {
         }
 
         return list
+    }
+
+    /**
+     * Returns positions history.
+     */
+    public getPositionsHistory(): PositionsHistory {
+        if (!this.positionsHistoryFacade) {
+            throw new Error("Positions history facade is not available")
+        }
+
+        return this.positionsHistoryFacade
     }
 
     /**
@@ -857,6 +870,11 @@ export class Positions {
         if (isNewPosition) {
             this.subscribePositions()
         }
+
+        if (position.status === "closed") {
+            this.positions.delete(msg.externalId)
+            this.positionsHistory.unshift(position)
+        }
     }
 
     /**
@@ -881,6 +899,11 @@ export class Positions {
         if (isNewPosition) {
             this.subscribePositions()
         }
+
+        if (position.status === "closed") {
+            this.positions.delete(msg.externalId)
+            this.positionsHistory.unshift(position)
+        }
     }
 
     private subscribePositions(): void {
@@ -902,6 +925,108 @@ export class Positions {
         if (this.intervalId) {
             clearInterval(this.intervalId)
         }
+    }
+}
+
+class PositionsHistory {
+    /**
+     * Positions history.
+     * @private
+     */
+    private readonly positions: Position[]
+
+    /**
+     * User ID.
+     * @private
+     */
+    private readonly userId: number
+
+    /**
+     * Instance of WebSocket API client.
+     * @private
+     */
+    private readonly wsApiClient: WsApiClient
+
+    /**
+     * Start time for positions history.
+     * @private
+     */
+    private startTime: number | undefined
+
+    /**
+     * Limit of positions per page.
+     * @private
+     */
+    private readonly limit: number = 30
+
+    /**
+     * Offset for positions history.
+     * @private
+     */
+    private offset: number = 0
+
+    /**
+     * Flag for previous page.
+     * @private
+     */
+    private prevPage: boolean = true
+
+    constructor(wsApiClient: WsApiClient, userId: number, positions: Position[]) {
+        this.wsApiClient = wsApiClient
+        this.userId = userId
+        this.positions = positions
+    }
+
+    /**
+     * Fetches previous page of positions history.
+     */
+    public async fetchPrevPage() {
+        if (!this.startTime) {
+            this.startTime = Math.trunc(this.wsApiClient.currentTime.unixMilliTime / 1000)
+        }
+
+        const positionsPage = await this.wsApiClient.doRequest<PortfolioPositionsHistoryV2>(
+            new CallPortfolioGetHistoryPositionsV2(
+                {
+                    userId: this.userId,
+                    limit: this.limit,
+                    offset: this.offset,
+                    end: this.startTime,
+                    instrumentTypes: ["digital-option", "binary-option", "turbo-option", "blitz-option"],
+                }
+            )
+        )
+
+        for (const index in positionsPage.positions) {
+            const position = new Position(this.wsApiClient)
+            position.syncFromHistoryResponse(positionsPage.positions[index])
+            this.positions.push(position)
+        }
+
+        if (positionsPage.positions.length < positionsPage.limit) {
+            this.prevPage = false
+        }
+
+        this.offset += this.limit
+    }
+
+    /**
+     * Checks if previous page exists.
+     */
+    public hasPrevPage(): boolean {
+        return this.prevPage
+    }
+
+    /**
+     * Returns positions history.
+     */
+    public getPositions(): Position[] {
+        const positions = [];
+        for (let i = 0; i < this.positions.length; i += 1) {
+            positions[i] = this.positions[i];
+        }
+
+        return positions
     }
 }
 
@@ -1063,6 +1188,32 @@ export class Position {
         this.openTime = new Date(msg.openTime)
         this.pnl = msg.pnl
         this.quoteTimestamp = msg.quoteTimestamp !== undefined ? new Date(msg.quoteTimestamp) : undefined
+        this.status = msg.status
+        this.userId = msg.userId
+        this.orderIds = msg.orderIds
+    }
+
+    /**
+     * Synchronises position from DTO.
+     * @param msg - Position data transfer object.
+     * @private
+     */
+    syncFromHistoryResponse(msg: PortfolioPositionsHistoryV2Position): void {
+        this.id = msg.externalId
+        this.internalId = msg.internalId
+        this.activeId = msg.activeId
+        this.balanceId = msg.userBalanceId
+        this.instrumentType = msg.instrumentType
+        this.invest = msg.invest
+        this.openQuote = msg.openQuote
+        this.openTime = new Date(msg.openTime)
+        this.closeProfit = msg.closeProfit
+        this.closeQuote = msg.closeQuote
+        this.closeReason = msg.closeReason
+        this.closeTime = msg.closeTime !== undefined ? new Date(msg.closeTime) : undefined
+        this.pnl = msg.pnl
+        this.pnlRealized = msg.pnlRealized
+        this.pnlNet = msg.pnlNet
         this.status = msg.status
         this.userId = msg.userId
         this.orderIds = msg.orderIds
@@ -4238,6 +4389,105 @@ class PortfolioPositionChangedV3 {
     }
 }
 
+class PortfolioPositionsHistoryV2 {
+    limit: number
+    positions: PortfolioPositionsHistoryV2Position[] = []
+
+    constructor(data: any) {
+        this.limit = data.limit
+
+        for (const index in data.positions) {
+            this.positions.push(new PortfolioPositionsHistoryV2Position(data.positions[index]))
+        }
+    }
+}
+
+class PortfolioPositionsHistoryV2Position {
+    externalId: number
+    internalId: string
+    userId: number
+    userBalanceId: number
+    activeId: number
+    instrumentType: string
+    status: string
+    openQuote: number
+    openTime: number
+    invest: number
+    closeProfit: number | undefined
+    closeQuote: number | undefined
+    closeReason: string | undefined
+    closeTime: number | undefined
+    pnl: number
+    pnlRealized: number
+    pnlNet: number
+    orderIds: number[]
+
+    constructor(data: {
+        active_id: number
+        close_profit: number | undefined
+        close_quote: number | undefined
+        close_reason: string | undefined
+        close_time: number | undefined
+        expected_profit: number
+        instrument_type: string
+        source: string
+        external_id: number
+        id: string
+        invest: number
+        open_quote: number
+        open_time: number
+        pnl: number
+        pnl_realized: number
+        pnl_net: number
+        quote_timestamp: number | undefined
+        status: string
+        user_id: number
+        user_balance_id: number
+        version: number
+        raw_event: RawEvent | undefined
+    }) {
+        this.activeId = data.active_id
+        this.closeProfit = data.close_profit
+        this.closeQuote = data.close_quote
+        this.closeReason = data.close_reason
+        this.closeTime = data.close_time
+        this.externalId = data.external_id
+        this.internalId = data.id
+        this.instrumentType = data.instrument_type
+        this.invest = data.invest
+        this.openQuote = data.open_quote
+        this.openTime = data.open_time
+        this.pnl = data.pnl
+        this.pnlRealized = data.pnl_realized
+        this.pnlNet = data.pnl_net
+        this.status = data.status
+        this.userId = data.user_id
+        this.userBalanceId = data.user_balance_id
+
+        if (data.raw_event) {
+            let order_ids: number[] | undefined
+            switch (data.instrument_type) {
+                case InstrumentType.BinaryOption:
+                case InstrumentType.TurboOption:
+                case InstrumentType.BlitzOption:
+                    order_ids = data.raw_event.binary_options_option_changed1!.order_ids
+                    break;
+                case InstrumentType.DigitalOption:
+                    order_ids = data.raw_event.digital_options_position_changed1!.order_ids
+                    break;
+            }
+
+            if (order_ids) {
+                this.orderIds = order_ids
+            } else {
+                this.orderIds = [data.external_id]
+            }
+        } else {
+            this.orderIds = [data.external_id]
+        }
+    }
+}
+
 class PortfolioPositionsV4 {
     limit: number
     positions: PortfolioPositionsV4Position[] = []
@@ -4829,7 +5079,7 @@ class CallInternalBillingGetBalancesV1 implements Request<InternalBillingBalance
 }
 
 class CallPortfolioGetPositionsV4 implements Request<PortfolioPositionsV4> {
-    constructor(private readonly instrumentTypes: string[], private readonly userBalanceId: number, private readonly limit: number, private readonly offset: number) {
+    constructor(private readonly instrumentTypes: string[], private readonly limit: number, private readonly offset: number) {
     }
 
     messageName() {
@@ -4842,7 +5092,6 @@ class CallPortfolioGetPositionsV4 implements Request<PortfolioPositionsV4> {
             version: '4.0',
             body: {
                 instrument_types: this.instrumentTypes,
-                user_balance_id: this.userBalanceId,
                 limit: this.limit,
                 offset: this.offset
             }
@@ -4851,6 +5100,54 @@ class CallPortfolioGetPositionsV4 implements Request<PortfolioPositionsV4> {
 
     createResponse(data: any): PortfolioPositionsV4 {
         return new PortfolioPositionsV4(data)
+    }
+
+    resultOnly(): boolean {
+        return false
+    }
+}
+
+class CallPortfolioGetHistoryPositionsV2 implements Request<PortfolioPositionsHistoryV2> {
+    private readonly instrumentTypes: string[];
+    private readonly userId: number;
+    private readonly end: number;
+    private readonly limit: number;
+    private readonly offset: number;
+
+    constructor(data: {
+        instrumentTypes: string[],
+        userId: number,
+        end: number,
+        limit: number,
+        offset: number
+    }) {
+        this.instrumentTypes = data.instrumentTypes;
+        this.userId = data.userId;
+        this.end = data.end;
+        this.limit = data.limit;
+        this.offset = data.offset;
+    }
+
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: 'portfolio.get-history-positions',
+            version: '2.0',
+            body: {
+                instrument_types: this.instrumentTypes,
+                user_id: this.userId,
+                end: this.end,
+                limit: this.limit,
+                offset: this.offset
+            }
+        }
+    }
+
+    createResponse(data: any): PortfolioPositionsHistoryV2 {
+        return new PortfolioPositionsHistoryV2(data)
     }
 
     resultOnly(): boolean {
@@ -5075,7 +5372,7 @@ class SubscribeInternalBillingBalanceChangedV1 implements SubscribeRequest<Inter
 }
 
 class SubscribePortfolioPositionChangedV3 implements SubscribeRequest<PortfolioPositionChangedV3> {
-    constructor(private readonly userId: number, private readonly userBalanceId: number) {
+    constructor(private readonly userId: number) {
     }
 
     messageName() {
@@ -5089,7 +5386,6 @@ class SubscribePortfolioPositionChangedV3 implements SubscribeRequest<PortfolioP
             params: {
                 routingFilters: {
                     user_id: this.userId,
-                    user_balance_id: this.userBalanceId,
                 }
             }
         }

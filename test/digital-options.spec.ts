@@ -10,8 +10,8 @@ import {
 import {getUserByTitle} from "./utils/userUtils";
 import {User} from "./data/types";
 import {expect} from "chai";
-import {waitForPosition} from "./utils/positionsHelper";
 import {justWait, waitForCondition} from "./utils/waiters";
+import {PositionsHelper} from "./utils/positionsHelper";
 
 describe('Digital-options', () => {
     let sdk: QuadcodeClientSdk;
@@ -40,6 +40,7 @@ describe('Digital-options', () => {
 
     describe('Getting digital-option instruments', async () => {
         let availableInstruments: DigitalOptionsUnderlyingInstrument[];
+        let positionsHelper: PositionsHelper;
 
         function findInstrumentByPeriod(period: number) {
             const instrument = availableInstruments.find(instr => instr.period === period
@@ -54,6 +55,7 @@ describe('Digital-options', () => {
             const first = underlyings[0];
             const instruments = await first.instruments();
             availableInstruments = instruments.getAvailableForBuyAt(sdk.currentTime());
+            positionsHelper = await PositionsHelper.create(sdk);
         });
 
         it('should return instruments array', () => {
@@ -99,21 +101,23 @@ describe('Digital-options', () => {
 
             async function createOpenOrder() {
                 const instrument = findInstrumentByPeriod(60);
-                const positions = await sdk.positions();
                 const order = await digitalOptions.buySpotStrike(instrument, DigitalOptionsDirection.Call, 1, demoBalance);
                 expect(order.id, 'Option id should be not null').to.be.not.null
-                const position = await waitForPosition(positions, (position) => position.orderIds.includes(order.id));
+                const position = await positionsHelper.waitForPosition((position) => position.orderIds.includes(order.id));
                 expect(position.id, 'Position must be present').to.be.not.null
                 return {order, position};
             }
 
-            it('option should be sold', async () => {
+            it('should be sold', async () => {
                 const {position} = await createOpenOrder();
+                expect(positionsHelper.findPosition(position.id), 'Position must be present in all positions').not.to.be.undefined
                 await justWait(3000);
                 await position.sell();
                 await waitForCondition(() => position.status === "closed", 2000);
                 expect(position.status, "Invalid status").eq("closed");
                 expect(position.closeReason, "Close reason must be default").eq("default");
+                expect(positionsHelper.findHistoryPosition(position.id), 'Position must be present in history positions').not.to.be.undefined
+                expect(positionsHelper.findPosition(position.id), 'Position must be not present in all positions').to.be.undefined
             }).timeout(10000);
 
         });
