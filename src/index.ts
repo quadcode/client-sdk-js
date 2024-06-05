@@ -842,7 +842,11 @@ export class Positions {
                 continue
             }
 
-            const position = this.positions.get(externalId)!
+            const position = this.positions.get(externalId)
+            if (!position) {
+                continue
+            }
+
             position.syncFromStateEvent(msg.positions[index])
             this.onUpdatePositionObserver.notify(position)
         }
