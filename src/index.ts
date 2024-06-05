@@ -877,6 +877,7 @@ export class Positions {
 
         if (position.status === "closed") {
             this.positions.delete(msg.externalId)
+            this.positionsIds.delete(`${msg.instrumentType}-${msg.internalId}`)
             this.positionsHistory.unshift(position)
         }
     }
@@ -906,6 +907,7 @@ export class Positions {
 
         if (position.status === "closed") {
             this.positions.delete(msg.externalId)
+            this.positionsIds.delete(`${msg.instrumentType}-${msg.internalId}`)
             this.positionsHistory.unshift(position)
         }
     }
