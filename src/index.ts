@@ -842,7 +842,11 @@ export class Positions {
                 continue
             }
 
-            const position = this.positions.get(externalId)!
+            const position = this.positions.get(externalId)
+            if (!position) {
+                continue
+            }
+
             position.syncFromStateEvent(msg.positions[index])
             this.onUpdatePositionObserver.notify(position)
         }
@@ -873,6 +877,7 @@ export class Positions {
 
         if (position.status === "closed") {
             this.positions.delete(msg.externalId)
+            this.positionsIds.delete(`${msg.instrumentType}-${msg.internalId}`)
             this.positionsHistory.unshift(position)
         }
     }
@@ -902,6 +907,7 @@ export class Positions {
 
         if (position.status === "closed") {
             this.positions.delete(msg.externalId)
+            this.positionsIds.delete(`${msg.instrumentType}-${msg.internalId}`)
             this.positionsHistory.unshift(position)
         }
     }
