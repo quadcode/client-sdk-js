@@ -3679,8 +3679,6 @@ class WsApiClient {
     doRequest<T>(request: Request<T>): Promise<T> {
         const requestId = (++this.lastRequestId).toString()
 
-        console.log(request.messageName(), request.messageBody())
-
         this.connection.send(JSON.stringify({
             name: request.messageName(),
             request_id: requestId,
