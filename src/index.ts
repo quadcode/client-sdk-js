@@ -3577,7 +3577,6 @@ class WsApiClient {
             } = JSON.parse(data)
             if (frame.request_id) {
                 if (this.requests.has(frame.request_id)) {
-                    console.log(frame)
                     const requestMetaData = this.requests.get(frame.request_id)!
                     if (frame.status >= 4000) {
                         requestMetaData.reject(new Error(`request is failed with status ${frame.status} and message: ${frame.msg.message}`))
