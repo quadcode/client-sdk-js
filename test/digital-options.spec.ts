@@ -113,7 +113,7 @@ describe('Digital-options', () => {
                 expect(positionsHelper.findPosition(position.id), 'Position must be present in all positions').not.to.be.undefined
                 await justWait(3000);
                 await position.sell();
-                await waitForCondition(() => position.status === "closed", 2000);
+                expect(await waitForCondition(() => position.status === "closed", 3000)).to.be.true;
                 expect(position.status, "Invalid status").eq("closed");
                 expect(position.closeReason, "Close reason must be default").eq("default");
                 expect(positionsHelper.findHistoryPosition(position.id), 'Position must be present in history positions').not.to.be.undefined

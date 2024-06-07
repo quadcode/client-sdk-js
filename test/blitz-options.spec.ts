@@ -58,7 +58,7 @@ describe('Blitz-options', () => {
 
             it('should expired', async () => {
                 const position = await openOption();
-                await waitForCondition(() => position.closeReason !== undefined, 7000);
+                expect(await waitForCondition(() => position.closeReason !== undefined, 7000)).to.be.true;
                 expect(position.closeReason, 'Invalid close reason').to.be.oneOf(["win", "equal", "loose"])
                 expect(positionsHelper.findHistoryPosition(position.id), 'Position must be present in history positions').not.to.be.undefined
                 expect(positionsHelper.findPosition(position.id), 'Position must be not present in all positions').to.be.undefined

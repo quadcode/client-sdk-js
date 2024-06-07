@@ -6,15 +6,15 @@ export function justWait(timeout: number): Promise<string> {
     });
 }
 
-export async function waitForCondition(condition: () => boolean, timeout: number): Promise<void> {
+export async function waitForCondition(condition: () => boolean, timeout: number): Promise<boolean> {
     const interval = 100;
     const endTime = Date.now() + timeout;
 
     while (Date.now() < endTime) {
         if (condition()) {
-            return;
+            return true;
         }
         await new Promise(resolve => setTimeout(resolve, interval));
     }
-    throw new Error("Timeout waiting for condition");
+    return false;
 }

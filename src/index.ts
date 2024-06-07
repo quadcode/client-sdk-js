@@ -294,12 +294,13 @@ export class Balances {
      * Create instance from DTO.
      * @param types - List of supported balance type ids.
      * @param balancesMsg - Balances data transfer object.
+     * @param wsApiClient - Instance of WebSocket API client.
      * @internal
      * @private
      */
-    private constructor(private readonly types: number[], balancesMsg: InternalBillingBalancesV1) {
+    private constructor(private readonly types: number[], balancesMsg: InternalBillingBalancesV1, wsApiClient: WsApiClient) {
         for (const index in balancesMsg.items) {
-            const balance = new Balance(balancesMsg.items[index])
+            const balance = new Balance(balancesMsg.items[index], wsApiClient)
             this.balances.set(balance.id, balance)
         }
     }
@@ -312,7 +313,7 @@ export class Balances {
         const types = [1, 4]
         const balancesMsg = await wsApiClient.doRequest<InternalBillingBalancesV1>(new CallInternalBillingGetBalancesV1(types))
 
-        const balances = new Balances(types, balancesMsg)
+        const balances = new Balances(types, balancesMsg, wsApiClient)
 
         await wsApiClient.subscribe<InternalBillingBalanceChangedV1>(new SubscribeInternalBillingBalanceChangedV1(), (event: InternalBillingBalanceChangedV1) => {
             balances.updateBalance(event)
@@ -398,17 +399,25 @@ export class Balance {
     private onUpdateObserver: Observable<Balance> = new Observable<Balance>()
 
     /**
+     * Instance of WebSocket API client.
+     * @private
+     */
+    private wsApiClient: WsApiClient
+
+    /**
      * Initialises the class instance from DTO.
      * @param msg - Balance data transfer object.
+     * @param wsApiClient
      * @internal
      * @private
      */
-    public constructor(msg: InternalBillingBalanceV1) {
+    public constructor(msg: InternalBillingBalanceV1, wsApiClient: WsApiClient) {
         this.id = msg.id
         this.type = this.convertBalanceType(msg.type)
         this.amount = msg.amount
         this.currency = msg.currency
         this.userId = msg.userId
+        this.wsApiClient = wsApiClient
     }
 
     /**
@@ -425,6 +434,17 @@ export class Balance {
      */
     public unsubscribeOnUpdate(callback: CallbackForBalanceUpdate): void {
         this.onUpdateObserver.unsubscribe(callback)
+    }
+
+    /**
+     * Resets demo balance to 10000.
+     */
+    public async resetDemoBalance(): Promise<void> {
+        if (this.type !== BalanceType.Demo) {
+            throw new Error('Only demo balance can be reset')
+        }
+
+        await this.wsApiClient.doRequest(new CallInternalBillingResetTrainingBalanceV3(this.id, 10000))
     }
 
     /**
@@ -4937,6 +4957,34 @@ class CallCoreGetProfileV1 implements Request<CoreProfileV1> {
 
     resultOnly(): boolean {
         return false
+    }
+}
+
+class CallInternalBillingResetTrainingBalanceV3 implements Request<Result> {
+    constructor(private readonly userBalanceId: number, private readonly amount: number) {
+    }
+
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: 'internal-billing.reset-training-balance',
+            version: '3.0',
+            body: {
+                user_balance_id: this.userBalanceId,
+                amount: this.amount
+            }
+        }
+    }
+
+    createResponse(data: any): Result {
+        return new Result(data)
+    }
+
+    resultOnly(): boolean {
+        return true
     }
 }
 
