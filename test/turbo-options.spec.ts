@@ -103,7 +103,7 @@ describe('Turbo-options', () => {
                 expect(positionsHelper.findPosition(position.id), 'Position must be present in all positions').not.to.be.undefined
                 await justWait(3000);
                 await position.sell();
-                await waitForCondition(() => position.status === "closed", 2000);
+                expect(await waitForCondition(() => position.status === "closed", 2000)).to.be.true;
                 expect(position.closeReason, "Invalid close reason").eq("sold");
                 expect(position.sellProfit, "Sell profit must be present").not.be.null;
                 expect(positionsHelper.findHistoryPosition(position.id), 'Position must be present in history positions').not.to.be.undefined
