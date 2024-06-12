@@ -58,6 +58,24 @@ export class QuadcodeClientSdk {
     private digitalOptionsFacade: DigitalOptions | undefined
 
     /**
+     * Margin forex facade cache.
+     * @private
+     */
+    private marginForexFacade: MarginForex | undefined
+
+    /**
+     * Margin cfd facade cache
+     * @private
+     */
+    private marginCfdFacade: MarginCfd | undefined
+
+    /**
+     * Margin crypto facade cache
+     * @private
+     */
+    private marginCryptoFacade: MarginCrypto | undefined
+
+    /**
      * Creates instance of class.
      * @param userProfile - Information about the user on whose behalf your application is working.
      * @param wsApiClient - Instance of WebSocket API client.
@@ -175,6 +193,36 @@ export class QuadcodeClientSdk {
             this.digitalOptionsFacade = await DigitalOptions.create(this.wsApiClient)
         }
         return this.digitalOptionsFacade
+    }
+
+    /**
+     * Returns margin forex facade class.
+     */
+    public async marginForex(): Promise<MarginForex> {
+        if (!this.marginForexFacade) {
+            this.marginForexFacade = await MarginForex.create(this.wsApiClient)
+        }
+        return this.marginForexFacade
+    }
+
+    /**
+     * Returns margin cfd facade class.
+     */
+    public async marginCfd(): Promise<MarginCfd> {
+        if (!this.marginCfdFacade) {
+            this.marginCfdFacade = await MarginCfd.create(this.wsApiClient)
+        }
+        return this.marginCfdFacade
+    }
+
+    /**
+     * Returns margin crypto facade class.
+     */
+    public async marginCrypto(): Promise<MarginCrypto> {
+        if (!this.marginCryptoFacade) {
+            this.marginCryptoFacade = await MarginCrypto.create(this.wsApiClient)
+        }
+        return this.marginCryptoFacade
     }
 
     /**
@@ -312,8 +360,27 @@ export class Balances {
     public static async create(wsApiClient: WsApiClient): Promise<Balances> {
         const types = [1, 4]
         const balancesMsg = await wsApiClient.doRequest<InternalBillingBalancesV1>(new CallInternalBillingGetBalancesV1(types))
-
         const balances = new Balances(types, balancesMsg, wsApiClient)
+        let hasMargin = false
+
+        for (const [index] of balances.balances) {
+            const balance = balances.balances.get(index)!
+
+            if (!balance.isMargin) {
+                continue
+            }
+
+            await wsApiClient.doRequest<Result>(new CallSubscribeMarginalPortfolioBalanceChangedV1(balance.id))
+            const marginBalance = await wsApiClient.doRequest<MarginPortfolioBalanceV1>(new CallMarginalGetMarginalBalanceV1(balance.id))
+            balance.updateMargin(marginBalance)
+            hasMargin = true
+        }
+
+        if (hasMargin) {
+            await wsApiClient.subscribe<MarginPortfolioBalanceV1>(new SubscribeMarginalPortfolioBalanceChangedV1(), (event: MarginPortfolioBalanceV1) => {
+                balances.updateMarginBalance(event)
+            })
+        }
 
         await wsApiClient.subscribe<InternalBillingBalanceChangedV1>(new SubscribeInternalBillingBalanceChangedV1(), (event: InternalBillingBalanceChangedV1) => {
             balances.updateBalance(event)
@@ -361,6 +428,23 @@ export class Balances {
 
         this.balances.get(balanceChangedMsg.id)!.update(balanceChangedMsg)
     }
+
+    /**
+     * Updates instance from DTO.
+     * @param balanceChangedMsg - Margin balances data transfer object.
+     * @private
+     */
+    private updateMarginBalance(balanceChangedMsg: MarginPortfolioBalanceV1): void {
+        if (!this.types.includes(balanceChangedMsg.type)) {
+            return
+        }
+
+        if (!this.balances.has(balanceChangedMsg.id)) {
+            return
+        }
+
+        this.balances.get(balanceChangedMsg.id)!.updateMargin(balanceChangedMsg)
+    }
 }
 
 /**
@@ -393,6 +477,61 @@ export class Balance {
     public userId: number
 
     /**
+     * Is balance marginal.
+     */
+    public isMargin: boolean
+
+    /**
+     * Gross Profit and Loss (PnL).
+     */
+    public pnl: number | undefined
+
+    /**
+     * Net Profit and Loss (PnL) after deductions.
+     */
+    public pnlNet: number | undefined
+
+    /**
+     * Total equity in the account.
+     */
+    public equity: number | undefined
+
+    /**
+     * Total equity in USD.
+     */
+    public equityUsd: number | undefined
+
+    /**
+     * Swap charges for holding positions overnight.
+     */
+    public swap: number | undefined
+
+    /**
+     * Dividends received or paid.
+     */
+    public dividends: number | undefined
+
+    /**
+     * Margin used by the account.
+     */
+    public margin: number | undefined
+
+    /**
+     * Available margin for new positions.
+     */
+    public available: number | undefined
+
+    /**
+     * Margin level as a percentage.
+     */
+    public marginLevel: number | undefined
+
+    /**
+     * Stop out level where positions are closed to prevent losses.
+     */
+    public stopOutLevel: number | undefined
+
+    /**
      * Balance updates observer.
      * @private
      */
@@ -417,6 +556,7 @@ export class Balance {
         this.amount = msg.amount
         this.currency = msg.currency
         this.userId = msg.userId
+        this.isMargin = msg.isMargin
         this.wsApiClient = wsApiClient
     }
 
@@ -457,6 +597,21 @@ export class Balance {
         this.amount = msg.amount
         this.currency = msg.currency
         this.userId = msg.userId
+
+        this.onUpdateObserver.notify(this)
+    }
+
+    updateMargin(msg: MarginPortfolioBalanceV1): void {
+        this.pnl = msg.pnl
+        this.pnlNet = msg.pnlNet
+        this.equity = msg.equity
+        this.equityUsd = msg.equityUsd
+        this.swap = msg.swap
+        this.dividends = msg.dividends
+        this.margin = msg.margin
+        this.available = msg.available
+        this.marginLevel = msg.marginLevel
+        this.stopOutLevel = msg.stopOutLevel
 
         this.onUpdateObserver.notify(this)
     }
@@ -2874,10 +3029,8 @@ export class DigitalOptions {
      * @private
      */
     private updateUnderlyings(msg: DigitalOptionInstrumentsUnderlyingListChangedV1): void {
-        const ids = []
         for (const index in msg.underlying) {
             const underlying = msg.underlying[index]
-            ids.push(underlying.activeId)
             if (this.underlyings.has(underlying.activeId)) {
                 this.underlyings.get(underlying.activeId)!.update(underlying)
             } else {
@@ -2909,6 +3062,14 @@ export enum DigitalOptionsDirection {
      * The decision is that the price will go down.
      */
     Put = 'put',
+}
+
+/**
+ * Margin direction.
+ */
+export enum MarginDirection {
+    Buy = 'buy',
+    Sell = 'sell',
 }
 
 /**
@@ -3457,6 +3618,660 @@ export class DigitalOptionsOrder {
      */
     public constructor(msg: DigitalOptionPlacedV2) {
         this.id = msg.id
+    }
+}
+
+/**
+ * Margin order class.
+ */
+export class MarginOrder {
+    /**
+     * Order's ID.
+     */
+    public id: number
+
+    /**
+     * Creates instance from DTO.
+     * @param msg - Order data transfer object.
+     * @internal
+     * @private
+     */
+    public constructor(msg: MarginOrderPlacedV1) {
+        this.id = msg.id
+    }
+}
+
+export class MarginForex {
+    /**
+     * Instance of WebSocket API client.
+     * @private
+     */
+    private readonly wsApiClient: WsApiClient
+
+    /**
+     * Underlyings current state.
+     * @private
+     */
+    private underlyings: Map<number, MarginUnderlying> = new Map<number, MarginUnderlying>()
+
+    /**
+     * Creates instance from DTO.
+     * @param underlyingList - Underlyings data transfer object.
+     * @param wsApiClient - Instance of WebSocket API client.
+     * @internal
+     * @private
+     */
+    private constructor(underlyingList: MarginInstrumentsUnderlyingListV1, wsApiClient: WsApiClient) {
+        this.wsApiClient = wsApiClient
+
+        for (const index in underlyingList.items) {
+            const underlying = underlyingList.items[index]
+            this.underlyings.set(underlying.activeId, new MarginUnderlying(underlying, "forex", wsApiClient))
+        }
+    }
+
+    /**
+     * Subscribes on underlyings updates, requests current state of underlyings, puts the state into this class instance and returns it.
+     * @param wsApiClient - Instance of WebSocket API client.
+     */
+    public static async create(wsApiClient: WsApiClient): Promise<MarginForex> {
+        const request = new SubscribeMarginInstrumentsUnderlyingListChangedV1("forex")
+        await wsApiClient.subscribe<MarginInstrumentsUnderlyingListChangedV1>(request, (event) => {
+            marginForexFacade.updateUnderlyings(event)
+        })
+        const underlyingList = await wsApiClient.doRequest<MarginInstrumentsUnderlyingListV1>(new CallMarginInstrumentsGetUnderlyingListV1("forex"))
+        const marginForexFacade = new MarginForex(underlyingList, wsApiClient)
+        return marginForexFacade
+    }
+
+    /**
+     * Makes request for buy margin active.
+     * @param instrument - The instrument for which the option is purchased.
+     * @param direction - Direction of price change.
+     * @param count
+     * @param balance - The balance from which the initial investment will be written off and upon successful closing of the position, profit will be credited to this balance.
+     */
+    public async buy(
+        instrument: MarginUnderlyingInstrument,
+        direction: MarginDirection,
+        count: number,
+        balance: Balance,
+    ): Promise<MarginOrder> {
+        const request = new CallMarginPlaceMarketOrderV1(
+            direction,
+            balance.id,
+            count.toString(),
+            instrument.id,
+            instrument.activeId,
+            instrument.defaultLeverage.toString(),
+            "forex",
+        )
+        const response = await this.wsApiClient.doRequest<MarginOrderPlacedV1>(request)
+        return new MarginOrder(response)
+    }
+
+    /**
+     * Returns list of underlyings available for buy at specified time.
+     * @param at - Time for which the check is performed.
+     */
+    public getUnderlyingsAvailableForTradingAt(at: Date): MarginUnderlying[] {
+        const list = []
+        for (const [activeId] of this.underlyings) {
+            if (this.underlyings.get(activeId)!.isAvailableForTradingAt(at)) {
+                list.push(this.underlyings.get(activeId)!)
+            }
+        }
+        return list
+    }
+
+    /**
+     * Updates instance from DTO.
+     * @param msg - Underlyings data transfer object.
+     * @private
+     */
+    private updateUnderlyings(msg: MarginInstrumentsUnderlyingListChangedV1): void {
+        for (const index in msg.items) {
+            const underlying = msg.items[index]
+            if (this.underlyings.has(underlying.activeId)) {
+                this.underlyings.get(underlying.activeId)!.update(underlying)
+            } else {
+                this.underlyings.set(underlying.activeId, new MarginUnderlying(underlying, "forex", this.wsApiClient))
+            }
+        }
+    }
+}
+
+export class MarginCfd {
+    /**
+     * Instance of WebSocket API client.
+     * @private
+     */
+    private readonly wsApiClient: WsApiClient
+
+    /**
+     * Underlyings current state.
+     * @private
+     */
+    private underlyings: Map<number, MarginUnderlying> = new Map<number, MarginUnderlying>()
+
+    /**
+     * Creates instance from DTO.
+     * @param underlyingList - Underlyings data transfer object.
+     * @param wsApiClient - Instance of WebSocket API client.
+     * @internal
+     * @private
+     */
+    private constructor(underlyingList: MarginInstrumentsUnderlyingListV1, wsApiClient: WsApiClient) {
+        this.wsApiClient = wsApiClient
+
+        for (const index in underlyingList.items) {
+            const underlying = underlyingList.items[index]
+            this.underlyings.set(underlying.activeId, new MarginUnderlying(underlying, "cfd", wsApiClient))
+        }
+    }
+
+    /**
+     * Subscribes on underlyings updates, requests current state of underlyings, puts the state into this class instance and returns it.
+     * @param wsApiClient - Instance of WebSocket API client.
+     */
+    public static async create(wsApiClient: WsApiClient): Promise<MarginCfd> {
+        const request = new SubscribeMarginInstrumentsUnderlyingListChangedV1("cfd")
+        await wsApiClient.subscribe<MarginInstrumentsUnderlyingListChangedV1>(request, (event) => {
+            marginForexFacade.updateUnderlyings(event)
+        })
+        const underlyingList = await wsApiClient.doRequest<MarginInstrumentsUnderlyingListV1>(new CallMarginInstrumentsGetUnderlyingListV1("forex"))
+        const marginForexFacade = new MarginCfd(underlyingList, wsApiClient)
+        return marginForexFacade
+    }
+
+    /**
+     * Makes request for buy margin active.
+     * @param instrument - The instrument for which the option is purchased.
+     * @param direction - Direction of price change.
+     * @param count
+     * @param balance - The balance from which the initial investment will be written off and upon successful closing of the position, profit will be credited to this balance.
+     */
+    public async buy(
+        instrument: MarginUnderlyingInstrument,
+        direction: MarginDirection,
+        count: number,
+        balance: Balance,
+    ): Promise<MarginOrder> {
+        const request = new CallMarginPlaceMarketOrderV1(
+            direction,
+            balance.id,
+            count.toString(),
+            instrument.id,
+            instrument.activeId,
+            instrument.defaultLeverage.toString(),
+            "cfd",
+        )
+        const response = await this.wsApiClient.doRequest<MarginOrderPlacedV1>(request)
+        return new MarginOrder(response)
+    }
+
+    /**
+     * Returns list of underlyings available for buy at specified time.
+     * @param at - Time for which the check is performed.
+     */
+    public getUnderlyingsAvailableForTradingAt(at: Date): MarginUnderlying[] {
+        const list = []
+        for (const [activeId] of this.underlyings) {
+            if (this.underlyings.get(activeId)!.isAvailableForTradingAt(at)) {
+                list.push(this.underlyings.get(activeId)!)
+            }
+        }
+        return list
+    }
+
+    /**
+     * Updates instance from DTO.
+     * @param msg - Underlyings data transfer object.
+     * @private
+     */
+    private updateUnderlyings(msg: MarginInstrumentsUnderlyingListChangedV1): void {
+        for (const index in msg.items) {
+            const underlying = msg.items[index]
+            if (this.underlyings.has(underlying.activeId)) {
+                this.underlyings.get(underlying.activeId)!.update(underlying)
+            } else {
+                this.underlyings.set(underlying.activeId, new MarginUnderlying(underlying, "cfd", this.wsApiClient))
+            }
+        }
+    }
+}
+
+export class MarginCrypto {
+    /**
+     * Instance of WebSocket API client.
+     * @private
+     */
+    private readonly wsApiClient: WsApiClient
+
+    /**
+     * Underlyings current state.
+     * @private
+     */
+    private underlyings: Map<number, MarginUnderlying> = new Map<number, MarginUnderlying>()
+
+    /**
+     * Creates instance from DTO.
+     * @param underlyingList - Underlyings data transfer object.
+     * @param wsApiClient - Instance of WebSocket API client.
+     * @internal
+     * @private
+     */
+    private constructor(underlyingList: MarginInstrumentsUnderlyingListV1, wsApiClient: WsApiClient) {
+        this.wsApiClient = wsApiClient
+
+        for (const index in underlyingList.items) {
+            const underlying = underlyingList.items[index]
+            this.underlyings.set(underlying.activeId, new MarginUnderlying(underlying, "crypto", wsApiClient))
+        }
+    }
+
+    /**
+     * Subscribes on underlyings updates, requests current state of underlyings, puts the state into this class instance and returns it.
+     * @param wsApiClient - Instance of WebSocket API client.
+     */
+    public static async create(wsApiClient: WsApiClient): Promise<MarginCrypto> {
+        const request = new SubscribeMarginInstrumentsUnderlyingListChangedV1("crypto")
+        await wsApiClient.subscribe<MarginInstrumentsUnderlyingListChangedV1>(request, (event) => {
+            marginForexFacade.updateUnderlyings(event)
+        })
+        const underlyingList = await wsApiClient.doRequest<MarginInstrumentsUnderlyingListV1>(new CallMarginInstrumentsGetUnderlyingListV1("forex"))
+        const marginForexFacade = new MarginCrypto(underlyingList, wsApiClient)
+        return marginForexFacade
+    }
+
+    /**
+     * Makes request for buy margin active.
+     * @param instrument - The instrument for which the option is purchased.
+     * @param direction - Direction of price change.
+     * @param count
+     * @param balance - The balance from which the initial investment will be written off and upon successful closing of the position, profit will be credited to this balance.
+     */
+    public async buy(
+        instrument: MarginUnderlyingInstrument,
+        direction: MarginDirection,
+        count: number,
+        balance: Balance,
+    ): Promise<MarginOrder> {
+        const request = new CallMarginPlaceMarketOrderV1(
+            direction,
+            balance.id,
+            count.toString(),
+            instrument.id,
+            instrument.activeId,
+            instrument.defaultLeverage.toString(),
+            "crypto",
+        )
+        const response = await this.wsApiClient.doRequest<MarginOrderPlacedV1>(request)
+        return new MarginOrder(response)
+    }
+
+    /**
+     * Returns list of underlyings available for buy at specified time.
+     * @param at - Time for which the check is performed.
+     */
+    public getUnderlyingsAvailableForTradingAt(at: Date): MarginUnderlying[] {
+        const list = []
+        for (const [activeId] of this.underlyings) {
+            if (this.underlyings.get(activeId)!.isAvailableForTradingAt(at)) {
+                list.push(this.underlyings.get(activeId)!)
+            }
+        }
+        return list
+    }
+
+    /**
+     * Updates instance from DTO.
+     * @param msg - Underlyings data transfer object.
+     * @private
+     */
+    private updateUnderlyings(msg: MarginInstrumentsUnderlyingListChangedV1): void {
+        for (const index in msg.items) {
+            const underlying = msg.items[index]
+            if (this.underlyings.has(underlying.activeId)) {
+                this.underlyings.get(underlying.activeId)!.update(underlying)
+            } else {
+                this.underlyings.set(underlying.activeId, new MarginUnderlying(underlying, "crypto", this.wsApiClient))
+            }
+        }
+    }
+}
+
+export class MarginUnderlying {
+    /**
+     * Underlying active ID.
+     */
+    public activeId: number
+
+    /**
+     * Margin instrument type (cfd/crypto/forex).
+     * @private
+     */
+    private marginInstrumentType: string
+
+    /**
+     * Is trading suspended on the underlying.
+     */
+    public isSuspended: boolean
+
+    /**
+     * Underlying name (ticker/symbol).
+     */
+    public name: string
+
+    /**
+     * Underlying trading schedule.
+     */
+    public schedule: MarginUnderlyingTradingSession[]
+
+    /**
+     * Instruments facade class instance.
+     * @private
+     */
+    private instrumentsFacade: MarginUnderlyingInstruments | undefined
+
+    /**
+     * Instance of WebSocket API client.
+     * @private
+     */
+    private readonly wsApiClient: WsApiClient
+
+    /**
+     * Creates instance from DTO.
+     * @param msg - Underlying data transfer object.
+     * @param marginInstrumentType
+     * @param wsApiClient - Instance of WebSocket API client.
+     * @internal
+     * @private
+     */
+    public constructor(msg: MarginInstrumentsUnderlyingListV1Item, marginInstrumentType: string, wsApiClient: WsApiClient) {
+        this.activeId = msg.activeId
+        this.marginInstrumentType = marginInstrumentType
+        this.isSuspended = msg.isSuspended
+        this.name = msg.name
+        this.wsApiClient = wsApiClient
+
+        this.schedule = []
+        for (const index in msg.schedule) {
+            const session = msg.schedule[index];
+            this.schedule.push(new MarginUnderlyingTradingSession(session.open, session.close))
+        }
+    }
+
+    /**
+     * Checks availability for trading at specified time.
+     * @param at - Time for which the check is performed.
+     */
+    public isAvailableForTradingAt(at: Date): boolean {
+        if (this.isSuspended) {
+            return false
+        }
+
+        const atUnixTimeMilli = at.getTime()
+        return this.schedule.findIndex((session: MarginUnderlyingTradingSession): boolean => {
+            return session.open.getTime() <= atUnixTimeMilli && session.close.getTime() >= atUnixTimeMilli
+        }) >= 0
+    }
+
+    /**
+     * Returns margin active's instruments facade.
+     */
+    public async instruments(): Promise<MarginUnderlyingInstruments> {
+        if (!this.instrumentsFacade) {
+            this.instrumentsFacade = await MarginUnderlyingInstruments.create(this.activeId, this.marginInstrumentType, this.wsApiClient)
+        }
+
+        return this.instrumentsFacade
+    }
+
+    /**
+     * Updates the instance from DTO.
+     * @param msg - Underlying data transfer object.
+     * @private
+     */
+    update(msg: MarginInstrumentsUnderlyingListV1Item): void {
+        this.isSuspended = msg.isSuspended
+        this.name = msg.name
+
+        this.schedule = []
+        for (const index in msg.schedule) {
+            const session = msg.schedule[index];
+            this.schedule.push(new MarginUnderlyingTradingSession(session.open, session.close))
+        }
+    }
+}
+
+
+/**
+ * Margin forex active trading session class.
+ */
+export class MarginUnderlyingTradingSession {
+    /**
+     * Start time of trading session.
+     */
+    public open: Date
+
+    /**
+     * End time of trading session.
+     */
+    public close: Date
+
+    /**
+     * Initialises class instance from DTO.
+     * @param openTs - Unix time of session start.
+     * @param closeTs - Unix time of session end.
+     * @internal
+     * @private
+     */
+    public constructor(openTs: number, closeTs: number) {
+        this.open = new Date(openTs * 1000)
+        this.close = new Date(closeTs * 1000)
+    }
+}
+
+
+/**
+ * Margin underlying instruments facade class.
+ */
+export class MarginUnderlyingInstruments {
+    /**
+     * Instruments current state.
+     * @private
+     */
+    private instruments: Map<string, MarginUnderlyingInstrument> = new Map<string, MarginUnderlyingInstrument>()
+
+    /**
+     * Just private constructor. Use {@link MarginUnderlyingInstruments.create create} instead.
+     * @internal
+     * @private
+     */
+    private constructor() {
+    }
+
+    /**
+     * Subscribes on underlying instruments updates, requests current state of underlying instruments, puts the state into this class instance and returns it.
+     * @param activeId
+     * @param marginInstrumentType
+     * @param wsApiClient
+     */
+    public static async create(activeId: number, marginInstrumentType: string, wsApiClient: WsApiClient): Promise<MarginUnderlyingInstruments> {
+        const instrumentsFacade = new MarginUnderlyingInstruments()
+
+        const instruments = await wsApiClient.doRequest<MarginInstrumentsInstrumentsListV1>(
+            new CallMarginInstrumentsGetInstrumentsListV1(activeId, marginInstrumentType)
+        )
+
+        instrumentsFacade.syncInstrumentsFromResponse(instruments)
+
+        return instrumentsFacade
+    }
+
+    /**
+     * Returns list of instruments available for buy at specified time.
+     * @param at - Time for which the check is performed.
+     */
+    public getAvailableForBuyAt(at: Date): MarginUnderlyingInstrument[] {
+        const list = []
+        for (const [index] of this.instruments) {
+            if (this.instruments.get(index)!.isAvailableForBuyAt(at)) {
+                list.push(this.instruments.get(index)!)
+            }
+        }
+        return list
+    }
+
+    /**
+     * Updates the instance from DTO.
+     * @param msg - Instruments data transfer object.
+     * @private
+     */
+    private syncInstrumentsFromResponse(msg: MarginInstrumentsInstrumentsListV1) {
+        const instrumentIds = []
+        for (const index in msg.items) {
+            const instrument = msg.items[index]
+            instrumentIds.push(instrument.id)
+            this.syncInstrumentFromResponse(instrument)
+        }
+
+        for (const [index] of this.instruments) {
+            if (!instrumentIds.includes(this.instruments.get(index)!.id)) {
+                this.instruments.delete(index)
+            }
+        }
+    }
+
+    /**
+     * Updates the instance from DTO.
+     * @param msg - Instrument data transfer object.
+     * @private
+     */
+    private syncInstrumentFromResponse(msg: MarginInstrumentsInstrumentsListV1Item) {
+        if (!this.instruments.has(msg.id)) {
+            this.instruments.set(msg.id, new MarginUnderlyingInstrument(msg))
+        } else {
+            this.instruments.get(msg.id)!.sync(msg)
+        }
+    }
+}
+
+/**
+ * Margin underlying instruments facade class.
+ */
+export class MarginUnderlyingInstrument {
+    /**
+     * Instrument ID.
+     */
+    public id: string
+
+    /**
+     * Active ID of the instrument.
+     */
+    public activeId: number
+
+    /**
+     * Allow long positions.
+     */
+    public allowLongPosition: boolean
+
+    /**
+     * Allow short positions.
+     */
+    public allowShortPosition: boolean
+
+    /**
+     * Default leverage for the instrument.
+     */
+    public defaultLeverage: number
+
+    /**
+     * Leverage profile for the instrument.
+     */
+    public leverageProfile: number
+
+    /**
+     * Indicates if the instrument is suspended.
+     */
+    public isSuspended: boolean
+
+    /**
+     * Active trading schedule.
+     */
+    public tradable: MarginUnderlyingInstrumentTradable
+
+    /**
+     * Creates instance from DTO.
+     * @param msg - Instrument data transfer object.
+     * @internal
+     * @private
+     */
+    public constructor(msg: MarginInstrumentsInstrumentsListV1Item) {
+        this.id = msg.id
+        this.activeId = msg.activeId
+        this.allowLongPosition = msg.allowLongPosition
+        this.allowShortPosition = msg.allowShortPosition
+        this.defaultLeverage = msg.defaultLeverage
+        this.leverageProfile = msg.leverageProfile
+        this.isSuspended = msg.isSuspended
+        this.tradable = new MarginUnderlyingInstrumentTradable(msg.tradable.from, msg.tradable.to)
+    }
+
+    /**
+     * Checks availability for buy option at specified time.
+     * @param at - Time for which the check is performed.
+     */
+    public isAvailableForBuyAt(at: Date): boolean {
+        const atUnixTimeMilli = at.getTime()
+        return this.tradable.from.getTime() <= atUnixTimeMilli && this.tradable.to.getTime() >= atUnixTimeMilli
+    }
+
+    /**
+     * Returns the remaining duration in milliseconds for which it is possible to purchase options.
+     * @param {Date} currentTime - The current time.
+     * @returns {number} - The remaining duration in milliseconds.
+     */
+    public durationRemainingForPurchase(currentTime: Date): number {
+        if (!this.isAvailableForBuyAt(currentTime)) {
+            return 0
+        }
+
+        return this.tradable.to.getTime() - currentTime.getTime();
+    }
+
+    sync(msg: MarginInstrumentsInstrumentsListV1Item): void {
+        this.id = msg.id
+        this.activeId = msg.activeId
+        this.allowLongPosition = msg.allowLongPosition
+        this.allowShortPosition = msg.allowShortPosition
+        this.defaultLeverage = msg.defaultLeverage
+        this.leverageProfile = msg.leverageProfile
+        this.isSuspended = msg.isSuspended
+        this.tradable = new MarginUnderlyingInstrumentTradable(msg.tradable.from, msg.tradable.to)
+    }
+}
+
+class MarginUnderlyingInstrumentTradable {
+    /**
+     * Start time of trading session.
+     */
+    public from: Date
+
+    /**
+     * End time of trading session.
+     */
+    public to: Date
+
+    /**
+     * Initialises class instance from DTO.
+     * @param fromTs - Unix time of session start.
+     * @param toTs - Unix time of session end.
+     */
+    public constructor(fromTs: number, toTs: number) {
+        this.from = new Date(fromTs * 1000)
+        this.to = new Date(toTs * 1000)
     }
 }
 
@@ -4043,6 +4858,14 @@ class DigitalOptionPlacedV2 {
     }
 }
 
+class MarginOrderPlacedV1 {
+    id: number
+
+    constructor(data: any) {
+        this.id = data.id
+    }
+}
+
 class InitializationDataV3 {
     binaryActives: InitializationDataV3BinaryActive[] = []
     blitzActives: InitializationDataV3BlitzActive[] = []
@@ -4316,13 +5139,22 @@ class InternalBillingBalanceV1 {
     amount: number
     currency: string
     userId: number
+    isMargin: boolean
 
-    constructor(data: any) {
+    constructor(data: {
+        id: number
+        type: number
+        amount: number
+        currency: string
+        user_id: number
+        is_marginal: boolean
+    }) {
         this.id = data.id
         this.type = data.type
         this.amount = data.amount
         this.currency = data.currency
         this.userId = data.user_id
+        this.isMargin = data.is_marginal
     }
 }
 
@@ -5490,5 +6322,366 @@ class SubscribeQuoteGenerated implements SubscribeRequest<QuoteGenerated> {
 
     createEvent(data: any): QuoteGenerated {
         return new QuoteGenerated(data)
+    }
+}
+
+class CallMarginPlaceMarketOrderV1 implements Request<MarginOrderPlacedV1> {
+    constructor(
+        private side: string,
+        private userBalanceId: number,
+        private count: string,
+        private instrumentId: string,
+        private instrumentActiveId: number,
+        private leverage: string,
+        private instrumentType: string,
+    ) {
+    }
+
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: `marginal-${this.instrumentType}.place-market-order`,
+            version: '1.0',
+            body: {
+                side: this.side,
+                user_balance_id: this.userBalanceId,
+                count: this.count,
+                instrument_id: this.instrumentId,
+                instrument_active_id: this.instrumentActiveId,
+                leverage: this.leverage
+            }
+        }
+    }
+
+    createResponse(data: any): MarginOrderPlacedV1 {
+        return new MarginOrderPlacedV1(data)
+    }
+
+    resultOnly(): boolean {
+        return false
+    }
+}
+
+class CallMarginInstrumentsGetUnderlyingListV1 implements Request<MarginInstrumentsUnderlyingListV1> {
+    constructor(private marginInstrumentType: string) {
+    }
+
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: `marginal-${this.marginInstrumentType}-instruments.get-underlying-list`,
+            version: '1.0',
+            body: {}
+        }
+    }
+
+    createResponse(data: any): MarginInstrumentsUnderlyingListV1 {
+        return new MarginInstrumentsUnderlyingListV1(data)
+    }
+
+    resultOnly(): boolean {
+        return false
+    }
+}
+
+class SubscribeMarginInstrumentsUnderlyingListChangedV1 implements SubscribeRequest<MarginInstrumentsUnderlyingListChangedV1> {
+    constructor(private marginInstrumentType: string) {
+    }
+
+    messageName() {
+        return 'subscribeMessage'
+    }
+
+    messageBody() {
+        return {
+            name: `${this.eventMicroserviceName()}.${this.eventName()}`,
+            version: '1.0'
+        }
+    }
+
+    eventMicroserviceName() {
+        return `marginal-${this.marginInstrumentType}-instruments`
+    }
+
+    eventName() {
+        return 'underlying-list-changed'
+    }
+
+    createEvent(data: any): MarginInstrumentsUnderlyingListChangedV1 {
+        return new MarginInstrumentsUnderlyingListChangedV1(data)
+    }
+}
+
+class CallMarginInstrumentsGetInstrumentsListV1 implements Request<MarginInstrumentsInstrumentsListV1> {
+    constructor(
+        private activeId: number,
+        private marginInstrumentType: string,
+    ) {
+    }
+
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: `marginal-${this.marginInstrumentType}-instruments.get-instruments-list`,
+            version: '1.0',
+            body: {
+                active_id: this.activeId
+            }
+        }
+    }
+
+    createResponse(data: any): MarginInstrumentsInstrumentsListV1 {
+        return new MarginInstrumentsInstrumentsListV1(data)
+    }
+
+    resultOnly(): boolean {
+        return false
+    }
+}
+
+class CallMarginalGetMarginalBalanceV1 implements Request<MarginPortfolioBalanceV1> {
+    constructor(private readonly userBalanceId: number) {
+    }
+
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: 'marginal-portfolio.get-marginal-balance',
+            version: '1.0',
+            body: {
+                user_balance_id: this.userBalanceId
+            }
+        }
+    }
+
+    createResponse(data: any): MarginPortfolioBalanceV1 {
+        return new MarginPortfolioBalanceV1(data)
+    }
+
+    resultOnly(): boolean {
+        return false
+    }
+}
+
+class CallSubscribeMarginalPortfolioBalanceChangedV1 implements Request<Result> {
+    constructor(private readonly userBalanceId: number) {
+    }
+
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: 'marginal-portfolio.subscribe-balance-changed',
+            version: '1.0',
+            body: {
+                user_balance_id: this.userBalanceId
+            }
+        }
+    }
+
+    createResponse(data: any): Result {
+        return new Result(data)
+    }
+
+    resultOnly(): boolean {
+        return true
+    }
+}
+
+class SubscribeMarginalPortfolioBalanceChangedV1 implements SubscribeRequest<MarginPortfolioBalanceV1> {
+    messageName() {
+        return 'subscribeMessage'
+    }
+
+    messageBody() {
+        return {
+            name: `${this.eventMicroserviceName()}.${this.eventName()}`,
+            version: '1.0'
+        }
+    }
+
+    eventMicroserviceName() {
+        return 'marginal-portfolio'
+    }
+
+    eventName() {
+        return 'balance-changed'
+    }
+
+    createEvent(data: any): MarginPortfolioBalanceV1 {
+        return new MarginPortfolioBalanceV1(data)
+    }
+}
+
+
+class MarginPortfolioBalanceV1 {
+    id: number
+    type: number
+    cash: number
+    currency: string
+    userId: number
+    pnl: number
+    pnlNet: number
+    equity: number
+    equityUsd: number
+    swap: number
+    dividends: number
+    margin: number
+    available: number
+    marginLevel: number
+    stopOutLevel: number
+
+    constructor(data: {
+        id: number
+        type: number
+        cash: string
+        currency: string
+        user_id: number
+        pnl: string
+        pnl_net: string
+        equity: string
+        equity_usd: string
+        swap: string
+        dividends: string
+        margin: string
+        available: string
+        margin_level: string
+        stop_out_level: string
+    }) {
+        this.id = data.id
+        this.type = data.type
+        this.cash = parseFloat(data.cash)
+        this.currency = data.currency
+        this.userId = data.user_id
+        this.pnl = parseFloat(data.pnl)
+        this.pnlNet = parseFloat(data.pnl_net)
+        this.equity = parseFloat(data.equity)
+        this.equityUsd = parseFloat(data.equity_usd)
+        this.swap = parseFloat(data.swap)
+        this.dividends = parseFloat(data.dividends)
+        this.margin = parseFloat(data.margin)
+        this.available = parseFloat(data.available)
+        this.marginLevel = parseFloat(data.margin_level)
+        this.stopOutLevel = parseFloat(data.stop_out_level)
+    }
+}
+
+class MarginInstrumentsUnderlyingListV1 {
+    items: MarginInstrumentsUnderlyingListV1Item[] = []
+
+    constructor(data: {
+        items: {
+            active_id: number
+            is_suspended: boolean
+            name: string
+            schedule: {
+                open: number,
+                close: number,
+            }[]
+        }[]
+    }) {
+        for (const index in data.items) {
+            const underlying = data.items[index]
+            this.items.push(new MarginInstrumentsUnderlyingListV1Item(
+                underlying.active_id,
+                underlying.is_suspended,
+                underlying.name,
+                underlying.schedule,
+            ))
+        }
+    }
+}
+
+class MarginInstrumentsUnderlyingListChangedV1 {
+    type: string
+    items: MarginInstrumentsUnderlyingListV1Item[] = []
+
+    constructor(data: {
+        type: string
+        items: {
+            active_id: number
+            is_suspended: boolean
+            name: string
+            schedule: {
+                open: number,
+                close: number,
+            }[]
+        }[]
+    }) {
+        this.type = data.type
+        for (const index in data.items) {
+            const underlying = data.items[index]
+            this.items.push(new MarginInstrumentsUnderlyingListV1Item(
+                underlying.active_id,
+                underlying.is_suspended,
+                underlying.name,
+                underlying.schedule,
+            ))
+        }
+    }
+}
+
+class MarginInstrumentsUnderlyingListV1Item {
+    constructor(
+        public activeId: number,
+        public isSuspended: boolean,
+        public name: string,
+        public schedule: {
+            open: number,
+            close: number,
+        }[],
+    ) {
+    }
+}
+
+class MarginInstrumentsInstrumentsListV1 {
+    items: MarginInstrumentsInstrumentsListV1Item[] = []
+
+    constructor(data: any) {
+        for (const index in data.items) {
+            const instrument = data.items[index]
+            this.items.push(new MarginInstrumentsInstrumentsListV1Item(instrument))
+        }
+    }
+}
+
+class MarginInstrumentsInstrumentsListV1Item {
+    id: string
+    activeId: number
+    allowLongPosition: boolean
+    allowShortPosition: boolean
+    defaultLeverage: number
+    leverageProfile: number
+    isSuspended: boolean
+    tradable: MarginInstrumentsInstrumentsListV1Tradable
+
+    constructor(msg: any) {
+        this.id = msg.id
+        this.activeId = msg.active_id
+        this.allowLongPosition = msg.allow_long_position
+        this.allowShortPosition = msg.allow_short_position
+        this.defaultLeverage = msg.default_leverage
+        this.leverageProfile = msg.leverage_profile
+        this.isSuspended = msg.is_suspended
+        this.tradable = new MarginInstrumentsInstrumentsListV1Tradable(msg.tradable.from, msg.tradable.to)
+    }
+}
+
+class MarginInstrumentsInstrumentsListV1Tradable {
+    constructor(public from: number, public to: number) {
     }
 }
