@@ -1456,6 +1456,15 @@ export class Position {
                 break
             case InstrumentType.BlitzOption:
                 throw new Error("Blitz options are not supported")
+            case InstrumentType.MarginCfd:
+                promise = this.wsApiClient.doRequest(new CallMarginClosePositionV1("cfd", this.id!))
+                break
+            case InstrumentType.MarginCrypto:
+                promise = this.wsApiClient.doRequest(new CallMarginClosePositionV1("crypto", this.id!))
+                break
+            case InstrumentType.MarginForex:
+                promise = this.wsApiClient.doRequest(new CallMarginClosePositionV1("forex", this.id!))
+                break
             default:
                 throw new Error(`Unknown instrument type ${this.instrumentType}`)
         }
@@ -1601,6 +1610,9 @@ export enum InstrumentType {
     DigitalOption = "digital-option",
     TurboOption = "turbo-option",
     BlitzOption = "blitz-option",
+    MarginForex = "marginal-forex",
+    MarginCfd = "marginal-cfd",
+    MarginCrypto = "marginal-crypto",
 }
 
 /**
@@ -5234,6 +5246,15 @@ class PortfolioPositionChangedV3 {
                 case InstrumentType.DigitalOption:
                     order_ids = data.raw_event.digital_options_position_changed1!.order_ids
                     break;
+                case InstrumentType.MarginCfd:
+                    order_ids = data.raw_event.marginal_cfd_position_changed1!.order_ids
+                    break;
+                case InstrumentType.MarginForex:
+                    order_ids = data.raw_event.marginal_forex_position_changed1!.order_ids
+                    break;
+                case InstrumentType.MarginCrypto:
+                    order_ids = data.raw_event.marginal_crypto_position_changed1!.order_ids
+                    break
             }
 
             if (order_ids) {
@@ -5333,6 +5354,15 @@ class PortfolioPositionsHistoryV2Position {
                 case InstrumentType.DigitalOption:
                     order_ids = data.raw_event.digital_options_position_changed1!.order_ids
                     break;
+                case InstrumentType.MarginCfd:
+                    order_ids = data.raw_event.marginal_cfd_position_changed1!.order_ids
+                    break;
+                case InstrumentType.MarginForex:
+                    order_ids = data.raw_event.marginal_forex_position_changed1!.order_ids
+                    break;
+                case InstrumentType.MarginCrypto:
+                    order_ids = data.raw_event.marginal_crypto_position_changed1!.order_ids
+                    break
             }
 
             if (order_ids) {
@@ -5480,6 +5510,15 @@ class PortfolioPositionsV4Position {
                 case InstrumentType.DigitalOption:
                     order_ids = data.raw_event.digital_options_position_changed1!.order_ids
                     break;
+                case InstrumentType.MarginCfd:
+                    order_ids = data.raw_event.marginal_cfd_position_changed1!.order_ids
+                    break;
+                case InstrumentType.MarginForex:
+                    order_ids = data.raw_event.marginal_forex_position_changed1!.order_ids
+                    break;
+                case InstrumentType.MarginCrypto:
+                    order_ids = data.raw_event.marginal_crypto_position_changed1!.order_ids
+                    break
             }
 
             if (order_ids) {
@@ -5496,6 +5535,9 @@ class PortfolioPositionsV4Position {
 class RawEvent {
     binary_options_option_changed1: RawEventItem | undefined
     digital_options_position_changed1: RawEventItem | undefined
+    marginal_forex_position_changed1: RawEventItem | undefined
+    marginal_cfd_position_changed1: RawEventItem | undefined
+    marginal_crypto_position_changed1: RawEventItem | undefined
 }
 
 class RawEventItem {
@@ -5625,6 +5667,33 @@ class CallSubscribePositions implements Request<Result> {
             body: {
                 frequency: this.frequency,
                 ids: this.positionIds
+            }
+        }
+    }
+
+    createResponse(data: any): Result {
+        return new Result(data)
+    }
+
+    resultOnly(): boolean {
+        return true
+    }
+}
+
+class CallMarginClosePositionV1 implements Request<Result> {
+    constructor(private marginInstrumentType: string, private positionId: number) {
+    }
+
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: `margin-${this.marginInstrumentType}.close-position`,
+            version: '1.0',
+            body: {
+                position_id: this.positionId
             }
         }
     }
