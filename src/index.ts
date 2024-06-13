@@ -1469,7 +1469,10 @@ export class Position {
                 throw new Error(`Unknown instrument type ${this.instrumentType}`)
         }
 
-        await promise
+        const result = await promise
+        if (!result.success) {
+            throw new Error(result.reason)
+        }
     }
 }
 
@@ -4645,9 +4648,11 @@ class HttpLoginResponse {
 
 class Result {
     success: boolean
+    reason: string
 
-    constructor(data: { success: boolean }) {
+    constructor(data: { success: boolean, reason: string }) {
         this.success = data.success
+        this.reason = data.reason
     }
 }
 
@@ -5690,7 +5695,7 @@ class CallMarginClosePositionV1 implements Request<Result> {
 
     messageBody() {
         return {
-            name: `margin-${this.marginInstrumentType}.close-position`,
+            name: `marginal-${this.marginInstrumentType}.close-position`,
             version: '1.0',
             body: {
                 position_id: this.positionId
