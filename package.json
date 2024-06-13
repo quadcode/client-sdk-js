@@ -12,8 +12,8 @@
     "test": "mocha"
   },
   "repository": "https://github.com/quadcode/client-sdk-js.git",
-  "author": "Quadcode",
-  "license": "UNLICENSED",
+  "author": "Quadcode Software",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/quadcode/client-sdk-js/issues"
   },
