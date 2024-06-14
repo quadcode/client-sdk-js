@@ -6912,7 +6912,7 @@ class SubscribeMarginInstrumentsUnderlyingListChangedV1 implements SubscribeRequ
     }
 
     eventMicroserviceName() {
-        return `i-${this.marginInstrumentType}-instruments`
+        return `marginal-${this.marginInstrumentType}-instruments`
     }
 
     eventName() {
