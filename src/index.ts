@@ -346,7 +346,7 @@ export class Balances {
      * @internal
      * @private
      */
-    private constructor(private readonly types: number[], balancesMsg: InternalBillingBalancesV1, wsApiClient: WsApiClient) {
+    private constructor(private readonly types: number[], balancesMsg: InternalBillingBalancesV3, wsApiClient: WsApiClient) {
         for (const index in balancesMsg.items) {
             const balance = new Balance(balancesMsg.items[index], wsApiClient)
             this.balances.set(balance.id, balance)
@@ -359,17 +359,12 @@ export class Balances {
      */
     public static async create(wsApiClient: WsApiClient): Promise<Balances> {
         const types = [1, 4]
-        const balancesMsg = await wsApiClient.doRequest<InternalBillingBalancesV1>(new CallInternalBillingGetBalancesV1(types))
+        const balancesMsg = await wsApiClient.doRequest<InternalBillingBalancesV3>(new CallInternalBillingGetBalancesV3(types))
         const balances = new Balances(types, balancesMsg, wsApiClient)
         let hasMargin = false
 
         for (const [index] of balances.balances) {
             const balance = balances.balances.get(index)!
-
-            if (!balance.isMargin) {
-                continue
-            }
-
             await wsApiClient.doRequest<Result>(new CallSubscribeMarginalPortfolioBalanceChangedV1(balance.id))
             const marginBalance = await wsApiClient.doRequest<MarginPortfolioBalanceV1>(new CallMarginalGetMarginalBalanceV1(balance.id))
             balance.updateMargin(marginBalance)
@@ -477,11 +472,6 @@ export class Balance {
     public userId: number
 
     /**
-     * Is balance marginal.
-     */
-    public isMargin: boolean
-
-    /**
      * Gross Profit and Loss (PnL).
      */
     public pnl: number | undefined
@@ -550,13 +540,12 @@ export class Balance {
      * @internal
      * @private
      */
-    public constructor(msg: InternalBillingBalanceV1, wsApiClient: WsApiClient) {
+    public constructor(msg: InternalBillingBalanceV3, wsApiClient: WsApiClient) {
         this.id = msg.id
         this.type = this.convertBalanceType(msg.type)
         this.amount = msg.amount
         this.currency = msg.currency
         this.userId = msg.userId
-        this.isMargin = msg.isMargin
         this.wsApiClient = wsApiClient
     }
 
@@ -584,7 +573,7 @@ export class Balance {
             throw new Error('Only demo balance can be reset')
         }
 
-        await this.wsApiClient.doRequest(new CallInternalBillingResetTrainingBalanceV3(this.id, 10000))
+        await this.wsApiClient.doRequest(new CallInternalBillingResetTrainingBalanceV4(this.id, 10000))
     }
 
     /**
@@ -693,7 +682,7 @@ export class Quotes {
         const currentQuote = new CurrentQuote()
         this.currentQuotes.set(activeId, currentQuote)
 
-        await this.wsApiClient.subscribe<QuoteGenerated>(new SubscribeQuoteGenerated(activeId), (event: QuoteGenerated) => {
+        await this.wsApiClient.subscribe<QuoteGeneratedV2>(new SubscribeQuoteGeneratedV2(activeId), (event: QuoteGeneratedV2) => {
             if (event.activeId !== activeId) {
                 return
             }
@@ -1095,7 +1084,7 @@ export class Positions {
             }
         }
 
-        this.wsApiClient!.doRequest<Result>(new CallSubscribePositions("frequent", internalIds)).then(() => {
+        this.wsApiClient!.doRequest<Result>(new CallPortfolioSubscribePositions("frequent", internalIds)).then(() => {
         })
     }
 
@@ -1449,7 +1438,7 @@ export class Position {
         switch (this.instrumentType) {
             case InstrumentType.TurboOption:
             case InstrumentType.BinaryOption:
-                promise = this.wsApiClient.doRequest(new CallSellOptionsV3([this.id!]))
+                promise = this.wsApiClient.doRequest(new CallBinaryOptionsSellOptionsV3([this.id!]))
                 break
             case InstrumentType.DigitalOption:
                 promise = this.wsApiClient.doRequest(new CallDigitalOptionsClosePositionV1(this.id!))
@@ -1518,12 +1507,12 @@ export class BlitzOptions {
      * @param wsApiClient - Instance of WebSocket API client.
      */
     public static async create(wsApiClient: WsApiClient): Promise<BlitzOptions> {
-        const initializationData = await wsApiClient.doRequest<InitializationDataV3>(new CallGetInitializationDataV3())
+        const initializationData = await wsApiClient.doRequest<InitializationDataV3>(new CallBinaryOptionsGetInitializationDataV3())
 
         const blitzOptions = new BlitzOptions(initializationData.blitzActives, wsApiClient)
 
         blitzOptions.intervalId = setInterval(async () => {
-            const response = await wsApiClient.doRequest<InitializationDataV3>(new CallGetInitializationDataV3())
+            const response = await wsApiClient.doRequest<InitializationDataV3>(new CallBinaryOptionsGetInitializationDataV3())
             blitzOptions.updateActives(response.blitzActives)
         }, 600000)
 
@@ -1869,12 +1858,12 @@ export class TurboOptions {
      * @param wsApiClient - Instance of WebSocket API client.
      */
     public static async create(wsApiClient: WsApiClient): Promise<TurboOptions> {
-        const initializationData = await wsApiClient.doRequest<InitializationDataV3>(new CallGetInitializationDataV3())
+        const initializationData = await wsApiClient.doRequest<InitializationDataV3>(new CallBinaryOptionsGetInitializationDataV3())
 
         const turboOptions = new TurboOptions(initializationData.turboActives, wsApiClient)
 
         turboOptions.intervalId = setInterval(async () => {
-            const response = await wsApiClient.doRequest<InitializationDataV3>(new CallGetInitializationDataV3())
+            const response = await wsApiClient.doRequest<InitializationDataV3>(new CallBinaryOptionsGetInitializationDataV3())
             turboOptions.updateActives(response.turboActives)
         }, 600000)
 
@@ -2400,12 +2389,12 @@ export class BinaryOptions {
      * @param wsApiClient - Instance of WebSocket API client.
      */
     public static async create(wsApiClient: WsApiClient): Promise<BinaryOptions> {
-        const initializationData = await wsApiClient.doRequest<InitializationDataV3>(new CallGetInitializationDataV3())
+        const initializationData = await wsApiClient.doRequest<InitializationDataV3>(new CallBinaryOptionsGetInitializationDataV3())
 
         const binaryOptions = new BinaryOptions(initializationData.binaryActives, wsApiClient)
 
         binaryOptions.intervalId = setInterval(async () => {
-            const response = await wsApiClient.doRequest<InitializationDataV3>(new CallGetInitializationDataV3())
+            const response = await wsApiClient.doRequest<InitializationDataV3>(new CallBinaryOptionsGetInitializationDataV3())
             binaryOptions.updateActives(response.binaryActives)
         }, 600000)
 
@@ -3035,14 +3024,14 @@ export class DigitalOptions {
         balance: Balance,
     ): Promise<DigitalOptionsOrder> {
         const strike = instrument.getStrikeByPriceAndDirection(strikePrice, direction)
-        const request = new CallDigitalOptionsPlaceDigitalOptionV2(
+        const request = new CallDigitalOptionsPlaceDigitalOptionV3(
             instrument.assetId,
             strike.symbol,
             instrument.index,
             amount,
             balance.id
         )
-        const response = await this.wsApiClient.doRequest<DigitalOptionPlacedV2>(request)
+        const response = await this.wsApiClient.doRequest<DigitalOptionPlacedV3>(request)
         return new DigitalOptionsOrder(response)
     }
 
@@ -3278,12 +3267,13 @@ export class DigitalOptionsUnderlyingInstruments {
         const instrumentsFacade = new DigitalOptionsUnderlyingInstruments()
         instrumentsFacade.wsApiClient = wsApiClient
 
-        await wsApiClient.subscribe<DigitalOptionInstrumentsInstrumentGeneratedV1>(new SubscribeDigitalOptionInstrumentsInstrumentGeneratedV1('digital-option', assetId), (event) => {
-            if (event.instrumentType !== 'digital-option' || event.assetId !== assetId) {
-                return
-            }
-            instrumentsFacade.syncInstrumentFromEvent(event)
-        })
+        await wsApiClient.subscribe<DigitalOptionInstrumentsInstrumentGeneratedV3>(
+            new SubscribeDigitalOptionInstrumentsInstrumentGeneratedV3(assetId), (event) => {
+                if (event.instrumentType !== 'digital-option' || event.assetId !== assetId) {
+                    return
+                }
+                instrumentsFacade.syncInstrumentFromEvent(event)
+            })
 
         const instruments = await wsApiClient.doRequest<DigitalOptionInstrumentsInstrumentsV1>(new CallDigitalOptionInstrumentsGetInstrumentsV1('digital-option', assetId))
         instrumentsFacade.syncInstrumentsFromResponse(instruments)
@@ -3310,7 +3300,7 @@ export class DigitalOptionsUnderlyingInstruments {
      * @param msg - Instrument data transfer object.
      * @private
      */
-    private syncInstrumentFromEvent(msg: DigitalOptionInstrumentsInstrumentGeneratedV1) {
+    private syncInstrumentFromEvent(msg: DigitalOptionInstrumentsInstrumentGeneratedV3) {
         if (!this.instruments.has(msg.index)) {
             this.instruments.set(msg.index, new DigitalOptionsUnderlyingInstrument(msg, this.wsApiClient!))
         } else {
@@ -3544,7 +3534,7 @@ export class DigitalOptionsUnderlyingInstrument {
      * Updates the instance from DTO.
      * @param msg - Instrument data transfer object.
      */
-    sync(msg: DigitalOptionInstrumentsInstrumentGeneratedV1): void {
+    sync(msg: DigitalOptionInstrumentsInstrumentGeneratedV3): void {
         this.assetId = msg.assetId
         this.deadtime = msg.deadtime
         this.expiration = new Date(msg.expiration * 1000)
@@ -3654,7 +3644,7 @@ export class DigitalOptionsOrder {
      * @internal
      * @private
      */
-    public constructor(msg: DigitalOptionPlacedV2) {
+    public constructor(msg: DigitalOptionPlacedV3) {
         this.id = msg.id
     }
 }
@@ -4979,9 +4969,9 @@ class CoreProfileV1 {
     }
 }
 
-class DigitalOptionInstrumentsInstrumentGeneratedV1 {
+class DigitalOptionInstrumentsInstrumentGeneratedV3 {
     assetId: number
-    data: DigitalOptionInstrumentsInstrumentGeneratedV1DataItem[] = []
+    data: DigitalOptionInstrumentsInstrumentGeneratedV3DataItem[] = []
     deadtime: number
     expiration: number
     index: number
@@ -4991,7 +4981,7 @@ class DigitalOptionInstrumentsInstrumentGeneratedV1 {
     constructor(msg: any) {
         this.assetId = msg.asset_id
         for (const index in msg.data) {
-            this.data.push(new DigitalOptionInstrumentsInstrumentGeneratedV1DataItem(msg.data[index]))
+            this.data.push(new DigitalOptionInstrumentsInstrumentGeneratedV3DataItem(msg.data[index]))
         }
         this.deadtime = msg.deadtime
         this.expiration = msg.expiration
@@ -5001,7 +4991,7 @@ class DigitalOptionInstrumentsInstrumentGeneratedV1 {
     }
 }
 
-class DigitalOptionInstrumentsInstrumentGeneratedV1DataItem {
+class DigitalOptionInstrumentsInstrumentGeneratedV3DataItem {
     direction: string
     strike: string
     symbol: string
@@ -5144,7 +5134,7 @@ class DigitalOptionInstrumentsUnderlyingListV1Underlying {
     }
 }
 
-class DigitalOptionPlacedV2 {
+class DigitalOptionPlacedV3 {
     id: number
 
     constructor(data: any) {
@@ -5417,23 +5407,22 @@ class DigitalOptionClientPriceGeneratedV1CallOrPutPrice {
     }
 }
 
-class InternalBillingBalancesV1 {
-    items: InternalBillingBalanceV1[] = []
+class InternalBillingBalancesV3 {
+    items: InternalBillingBalanceV3[] = []
 
     constructor(balances: any) {
         for (const index in balances) {
-            this.items.push(new InternalBillingBalanceV1(balances[index]))
+            this.items.push(new InternalBillingBalanceV3(balances[index]))
         }
     }
 }
 
-class InternalBillingBalanceV1 {
+class InternalBillingBalanceV3 {
     id: number
     type: number
     amount: number
     currency: string
     userId: number
-    isMargin: boolean
 
     constructor(data: {
         id: number
@@ -5441,14 +5430,12 @@ class InternalBillingBalanceV1 {
         amount: number
         currency: string
         user_id: number
-        is_marginal: boolean
     }) {
         this.id = data.id
         this.type = data.type
         this.amount = data.amount
         this.currency = data.currency
         this.userId = data.user_id
-        this.isMargin = data.is_marginal
     }
 }
 
@@ -5826,7 +5813,7 @@ class RawEventItem {
     order_ids: number[] | undefined
 }
 
-class QuoteGenerated {
+class QuoteGeneratedV2 {
     activeId: number
     time: number
     ask: number
@@ -5934,7 +5921,7 @@ class CallBinaryOptionsOpenBinaryOptionV1 implements Request<BinaryOptionsOption
     }
 }
 
-class CallSubscribePositions implements Request<Result> {
+class CallPortfolioSubscribePositions implements Request<Result> {
     constructor(private frequency: string, private positionIds: string[]) {
     }
 
@@ -5944,7 +5931,7 @@ class CallSubscribePositions implements Request<Result> {
 
     messageBody() {
         return {
-            name: 'subscribe-positions',
+            name: 'portfolio.subscribe-positions',
             version: '1.0',
             body: {
                 frequency: this.frequency,
@@ -6016,7 +6003,7 @@ class CallDigitalOptionsClosePositionV1 implements Request<Result> {
     }
 }
 
-class CallSellOptionsV3 implements Request<Result> {
+class CallBinaryOptionsSellOptionsV3 implements Request<Result> {
     constructor(private optionsIds: number[]) {
     }
 
@@ -6026,7 +6013,7 @@ class CallSellOptionsV3 implements Request<Result> {
 
     messageBody() {
         return {
-            name: 'sell-options',
+            name: 'binary-options.sell-options',
             version: '3.0',
             body: {
                 options_ids: this.optionsIds
@@ -6143,7 +6130,7 @@ class CallCoreGetProfileV1 implements Request<CoreProfileV1> {
     }
 }
 
-class CallInternalBillingResetTrainingBalanceV3 implements Request<Result> {
+class CallInternalBillingResetTrainingBalanceV4 implements Request<Result> {
     constructor(private readonly userBalanceId: number, private readonly amount: number) {
     }
 
@@ -6154,7 +6141,7 @@ class CallInternalBillingResetTrainingBalanceV3 implements Request<Result> {
     messageBody() {
         return {
             name: 'internal-billing.reset-training-balance',
-            version: '3.0',
+            version: '4.0',
             body: {
                 user_balance_id: this.userBalanceId,
                 amount: this.amount
@@ -6229,7 +6216,7 @@ class CallDigitalOptionInstrumentsGetUnderlyingListV1 implements Request<Digital
     }
 }
 
-class CallDigitalOptionsPlaceDigitalOptionV2 implements Request<DigitalOptionPlacedV2> {
+class CallDigitalOptionsPlaceDigitalOptionV3 implements Request<DigitalOptionPlacedV3> {
     constructor(
         private assetId: number,
         private instrumentId: string,
@@ -6246,7 +6233,7 @@ class CallDigitalOptionsPlaceDigitalOptionV2 implements Request<DigitalOptionPla
     messageBody() {
         return {
             name: 'digital-options.place-digital-option',
-            version: '2.0',
+            version: '3.0',
             body: {
                 amount: this.amount.toString(),
                 asset_id: this.assetId,
@@ -6257,8 +6244,8 @@ class CallDigitalOptionsPlaceDigitalOptionV2 implements Request<DigitalOptionPla
         }
     }
 
-    createResponse(data: any): DigitalOptionPlacedV2 {
-        return new DigitalOptionPlacedV2(data)
+    createResponse(data: any): DigitalOptionPlacedV3 {
+        return new DigitalOptionPlacedV3(data)
     }
 
     resultOnly(): boolean {
@@ -6266,14 +6253,14 @@ class CallDigitalOptionsPlaceDigitalOptionV2 implements Request<DigitalOptionPla
     }
 }
 
-class CallGetInitializationDataV3 implements Request<InitializationDataV3> {
+class CallBinaryOptionsGetInitializationDataV3 implements Request<InitializationDataV3> {
     messageName() {
         return 'sendMessage'
     }
 
     messageBody() {
         return {
-            name: 'get-initialization-data',
+            name: 'binary-options.get-initialization-data',
             version: '3.0',
             body: {}
         }
@@ -6288,7 +6275,7 @@ class CallGetInitializationDataV3 implements Request<InitializationDataV3> {
     }
 }
 
-class CallInternalBillingGetBalancesV1 implements Request<InternalBillingBalancesV1> {
+class CallInternalBillingGetBalancesV3 implements Request<InternalBillingBalancesV3> {
     constructor(private readonly typesIds: number[]) {
     }
 
@@ -6299,15 +6286,15 @@ class CallInternalBillingGetBalancesV1 implements Request<InternalBillingBalance
     messageBody() {
         return {
             name: 'internal-billing.get-balances',
-            version: '1.0',
+            version: '3.0',
             body: {
                 types_ids: this.typesIds
             }
         }
     }
 
-    createResponse(data: any): InternalBillingBalancesV1 {
-        return new InternalBillingBalancesV1(data)
+    createResponse(data: any): InternalBillingBalancesV3 {
+        return new InternalBillingBalancesV3(data)
     }
 
     resultOnly(): boolean {
@@ -6440,9 +6427,8 @@ class SubscribePortfolioPositionsStateV1 implements SubscribeRequest<PortfolioPo
     }
 }
 
-class SubscribeDigitalOptionInstrumentsInstrumentGeneratedV1 implements SubscribeRequest<DigitalOptionInstrumentsInstrumentGeneratedV1> {
+class SubscribeDigitalOptionInstrumentsInstrumentGeneratedV3 implements SubscribeRequest<DigitalOptionInstrumentsInstrumentGeneratedV3> {
     constructor(
-        private instrumentType: string,
         private assetId: number,
     ) {
     }
@@ -6454,10 +6440,9 @@ class SubscribeDigitalOptionInstrumentsInstrumentGeneratedV1 implements Subscrib
     messageBody() {
         return {
             name: `${this.eventMicroserviceName()}.${this.eventName()}`,
-            version: '1.0',
+            version: '3.0',
             params: {
                 routingFilters: {
-                    instrument_type: this.instrumentType,
                     asset_id: this.assetId
                 }
             }
@@ -6472,8 +6457,8 @@ class SubscribeDigitalOptionInstrumentsInstrumentGeneratedV1 implements Subscrib
         return 'instrument-generated'
     }
 
-    createEvent(data: any): DigitalOptionInstrumentsInstrumentGeneratedV1 {
-        return new DigitalOptionInstrumentsInstrumentGeneratedV1(data)
+    createEvent(data: any): DigitalOptionInstrumentsInstrumentGeneratedV3 {
+        return new DigitalOptionInstrumentsInstrumentGeneratedV3(data)
     }
 }
 
@@ -6641,7 +6626,7 @@ class SubscribePortfolioPositionChangedV3 implements SubscribeRequest<PortfolioP
     }
 }
 
-class SubscribeQuoteGenerated implements SubscribeRequest<QuoteGenerated> {
+class SubscribeQuoteGeneratedV2 implements SubscribeRequest<QuoteGeneratedV2> {
     activeId
 
     constructor(activeId: number) {
@@ -6655,6 +6640,7 @@ class SubscribeQuoteGenerated implements SubscribeRequest<QuoteGenerated> {
     messageBody() {
         return {
             name: `${this.eventName()}`,
+            version: '2.0',
             params: {
                 routingFilters: {
                     active_id: this.activeId
@@ -6671,8 +6657,8 @@ class SubscribeQuoteGenerated implements SubscribeRequest<QuoteGenerated> {
         return 'quote-generated'
     }
 
-    createEvent(data: any): QuoteGenerated {
-        return new QuoteGenerated(data)
+    createEvent(data: any): QuoteGeneratedV2 {
+        return new QuoteGeneratedV2(data)
     }
 }
 
@@ -6926,7 +6912,7 @@ class SubscribeMarginInstrumentsUnderlyingListChangedV1 implements SubscribeRequ
     }
 
     eventMicroserviceName() {
-        return `marginal-${this.marginInstrumentType}-instruments`
+        return `i-${this.marginInstrumentType}-instruments`
     }
 
     eventName() {
