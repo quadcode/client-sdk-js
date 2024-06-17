@@ -3694,7 +3694,9 @@ export class MarginForex {
         await wsApiClient.subscribe<MarginInstrumentsUnderlyingListChangedV1>(request, (event) => {
             marginForexFacade.updateUnderlyings(event)
         })
-        const underlyingList = await wsApiClient.doRequest<MarginInstrumentsUnderlyingListV1>(new CallMarginInstrumentsGetUnderlyingListV1("forex"))
+        const underlyingList = await wsApiClient.doRequest<MarginInstrumentsUnderlyingListV1>(
+            new CallMarginInstrumentsGetUnderlyingListV1("forex")
+        )
         const marginForexFacade = new MarginForex(underlyingList, wsApiClient)
         return marginForexFacade
     }
@@ -3794,7 +3796,9 @@ export class MarginCfd {
         await wsApiClient.subscribe<MarginInstrumentsUnderlyingListChangedV1>(request, (event) => {
             marginForexFacade.updateUnderlyings(event)
         })
-        const underlyingList = await wsApiClient.doRequest<MarginInstrumentsUnderlyingListV1>(new CallMarginInstrumentsGetUnderlyingListV1("forex"))
+        const underlyingList = await wsApiClient.doRequest<MarginInstrumentsUnderlyingListV1>(
+            new CallMarginInstrumentsGetUnderlyingListV1("cfd")
+        )
         const marginForexFacade = new MarginCfd(underlyingList, wsApiClient)
         return marginForexFacade
     }
@@ -3894,7 +3898,9 @@ export class MarginCrypto {
         await wsApiClient.subscribe<MarginInstrumentsUnderlyingListChangedV1>(request, (event) => {
             marginForexFacade.updateUnderlyings(event)
         })
-        const underlyingList = await wsApiClient.doRequest<MarginInstrumentsUnderlyingListV1>(new CallMarginInstrumentsGetUnderlyingListV1("forex"))
+        const underlyingList = await wsApiClient.doRequest<MarginInstrumentsUnderlyingListV1>(
+            new CallMarginInstrumentsGetUnderlyingListV1("crypto")
+        )
         const marginForexFacade = new MarginCrypto(underlyingList, wsApiClient)
         return marginForexFacade
     }
