@@ -1557,12 +1557,13 @@ export class BlitzOptions {
         price: number,
         balance: Balance
     ): Promise<BlitzOptionsOption> {
-        const request = new CallBinaryOptionsOpenBlitzOptionV1(
+        const request = new CallBinaryOptionsOpenBlitzOptionV2(
             active.id,
             direction,
             expirationSize,
             price,
-            balance.id
+            balance.id,
+            100 - active.profitCommissionPercent,
         )
         const response = await this.wsApiClient.doRequest<BinaryOptionsOptionV1>(request)
         return new BlitzOptionsOption(response)
@@ -1906,12 +1907,13 @@ export class TurboOptions {
         price: number,
         balance: Balance
     ): Promise<TurboOptionsOption> {
-        const request = new CallBinaryOptionsOpenTurboOptionV1(
+        const request = new CallBinaryOptionsOpenTurboOptionV2(
             instrument.activeId,
             Math.trunc(instrument.expiredAt.getTime() / 1000),
             direction,
             price,
-            balance.id
+            balance.id,
+            100 - instrument.profitCommissionPercent,
         )
         const response = await this.wsApiClient.doRequest<BinaryOptionsOptionV1>(request)
         return new TurboOptionsOption(response)
@@ -2139,6 +2141,7 @@ export class TurboOptionsActiveInstruments {
      * @param deadtime - Deadtime.
      * @param optionCount - Options count.
      * @param expirationTimes - Expiration sizes.
+     * @param profitCommissionPercent - Profit commission percent.
      * @param currentTime - An object with the current time obtained from WebSocket API.
      * @internal
      * @private
@@ -2148,6 +2151,7 @@ export class TurboOptionsActiveInstruments {
         private deadtime: number,
         private optionCount: number,
         private expirationTimes: number[],
+        private profitCommissionPercent: number,
         private readonly currentTime: WsApiClientCurrentTime,
     ) {
     }
@@ -2163,6 +2167,7 @@ export class TurboOptionsActiveInstruments {
             active.deadtime,
             active.optionCount,
             active.expirationTimes,
+            active.profitCommissionPercent,
             currentTime,
         )
 
@@ -2204,7 +2209,15 @@ export class TurboOptionsActiveInstruments {
                 const key = `${this.activeId},${expirationSize},${instrumentExpirationUnixTime}`
                 generatedInstrumentsKeys.push(key)
                 if (!this.instruments.has(key)) {
-                    this.instruments.set(key, new TurboOptionsActiveInstrument(this.activeId, expirationSize, new Date(instrumentExpirationUnixTime * 1000), this.deadtime))
+                    this.instruments.set(key,
+                        new TurboOptionsActiveInstrument(
+                            this.activeId,
+                            expirationSize,
+                            new Date(instrumentExpirationUnixTime * 1000),
+                            this.deadtime,
+                            this.profitCommissionPercent,
+                        )
+                    )
                 } else {
                     this.instruments.get(key)!.update(this.deadtime)
                 }
@@ -2239,6 +2252,7 @@ export class TurboOptionsActiveInstrument {
      * @param expirationSize - Instrument's expiration size.
      * @param expiredAt - The time when the instrument will be expired.
      * @param deadtime - How many seconds before expiration time the ability to purchase options for this instrument will not be allowed.
+     * @param profitCommissionPercent - The commission is taken from 100% of the profit. Therefore, income percent can be calculated using the following formula: `profitIncomePercent=100-profitCommissionPercent`.
      * @internal
      * @private
      */
@@ -2246,7 +2260,8 @@ export class TurboOptionsActiveInstrument {
         public readonly activeId: number,
         public readonly expirationSize: number,
         public readonly expiredAt: Date,
-        public deadtime: number
+        public deadtime: number,
+        public profitCommissionPercent: number,
     ) {
     }
 
@@ -2437,12 +2452,13 @@ export class BinaryOptions {
         price: number,
         balance: Balance
     ): Promise<BinaryOptionsOption> {
-        const request = new CallBinaryOptionsOpenBinaryOptionV1(
+        const request = new CallBinaryOptionsOpenBinaryOptionV2(
             instrument.activeId,
             Math.trunc(instrument.expiredAt.getTime() / 1000),
             direction,
             price,
-            balance.id
+            balance.id,
+            100 - instrument.profitCommissionPercent,
         )
         const response = await this.wsApiClient.doRequest<BinaryOptionsOptionV1>(request)
         return new BinaryOptionsOption(response)
@@ -2688,6 +2704,7 @@ export class BinaryOptionsActiveInstruments {
      * @param optionCount - Options count.
      * @param optionSpecial - Special instruments.
      * @param expirationTimes - Expiration sizes.
+     * @param profitCommissionPercent - Profit commission percent.
      * @param currentTime - An object with the current time obtained from WebSocket API.
      * @internal
      * @private
@@ -2698,6 +2715,7 @@ export class BinaryOptionsActiveInstruments {
         private optionCount: number,
         private optionSpecial: BinaryOptionsActiveSpecialInstrument[],
         private expirationTimes: number[],
+        private profitCommissionPercent: number,
         private readonly currentTime: WsApiClientCurrentTime,
     ) {
     }
@@ -2714,6 +2732,7 @@ export class BinaryOptionsActiveInstruments {
             active.optionCount,
             active.optionSpecial,
             active.expirationTimes,
+            active.profitCommissionPercent,
             currentTime,
         )
 
@@ -2755,7 +2774,15 @@ export class BinaryOptionsActiveInstruments {
                 const key = `${this.activeId},${expirationSize},${instrumentExpirationUnixTime}`
                 generatedInstrumentsKeys.push(key)
                 if (!this.instruments.has(key)) {
-                    this.instruments.set(key, new BinaryOptionsActiveInstrument(this.activeId, expirationSize, new Date(instrumentExpirationUnixTime * 1000), this.deadtime))
+                    this.instruments.set(key,
+                        new BinaryOptionsActiveInstrument(
+                            this.activeId,
+                            expirationSize,
+                            new Date(instrumentExpirationUnixTime * 1000),
+                            this.deadtime,
+                            this.profitCommissionPercent,
+                        )
+                    )
                 }
                 this.instruments.get(key)!.update(this.deadtime)
                 instrumentExpirationUnixTime += expirationSize
@@ -2771,7 +2798,15 @@ export class BinaryOptionsActiveInstruments {
             const key = `${this.activeId},${expirationSize},${specialInstrument.expiredAt.toISOString()}`
             generatedInstrumentsKeys.push(key)
             if (!this.instruments.has(key)) {
-                this.instruments.set(key, new BinaryOptionsActiveInstrument(this.activeId, expirationSize, specialInstrument.expiredAt, this.deadtime))
+                this.instruments.set(key,
+                    new BinaryOptionsActiveInstrument(
+                        this.activeId,
+                        expirationSize,
+                        specialInstrument.expiredAt,
+                        this.deadtime,
+                        this.profitCommissionPercent,
+                    )
+                )
             }
             this.instruments.get(key)!.update(this.deadtime)
         }
@@ -2803,6 +2838,7 @@ export class BinaryOptionsActiveInstrument {
      * @param expirationSize - Instrument's expiration size.
      * @param expiredAt - The time when the instrument will be expired.
      * @param deadtime - How many seconds before expiration time the ability to purchase options for this instrument will not be allowed.
+     * @param profitCommissionPercent - The commission is taken from 100% of the profit. Therefore, income percent can be calculated using the following formula: `profitIncomePercent=100-profitCommissionPercent`.
      * @internal
      * @private
      */
@@ -2810,7 +2846,8 @@ export class BinaryOptionsActiveInstrument {
         public readonly activeId: number,
         public readonly expirationSize: number | string,
         public readonly expiredAt: Date,
-        public deadtime: number
+        public deadtime: number,
+        public profitCommissionPercent: number,
     ) {
     }
 
@@ -5886,13 +5923,14 @@ class Authenticate implements Request<Authenticated> {
     }
 }
 
-class CallBinaryOptionsOpenBinaryOptionV1 implements Request<BinaryOptionsOptionV1> {
+class CallBinaryOptionsOpenBinaryOptionV2 implements Request<BinaryOptionsOptionV1> {
     constructor(
         private activeId: number,
         private expiredAt: number,
         private direction: string,
         private price: number,
         private userBalanceId: number,
+        private profitPercent: number
     ) {
     }
 
@@ -5903,14 +5941,15 @@ class CallBinaryOptionsOpenBinaryOptionV1 implements Request<BinaryOptionsOption
     messageBody() {
         return {
             name: 'binary-options.open-option',
-            version: '1.0',
+            version: '2.0',
             body: {
                 active_id: this.activeId,
                 direction: this.direction,
                 expired: this.expiredAt,
                 option_type_id: 1,
                 price: this.price,
-                user_balance_id: this.userBalanceId
+                user_balance_id: this.userBalanceId,
+                profit_percent: this.profitPercent
             }
         }
     }
@@ -6033,14 +6072,15 @@ class CallBinaryOptionsSellOptionsV3 implements Request<Result> {
     }
 }
 
-class CallBinaryOptionsOpenBlitzOptionV1 implements Request<BinaryOptionsOptionV1> {
+class CallBinaryOptionsOpenBlitzOptionV2 implements Request<BinaryOptionsOptionV1> {
 
     constructor(
         private activeId: number,
         private direction: string,
         private expirationSize: number,
         private price: number,
-        private userBalanceId: number
+        private userBalanceId: number,
+        private profitPercent: number,
     ) {
     }
 
@@ -6051,7 +6091,7 @@ class CallBinaryOptionsOpenBlitzOptionV1 implements Request<BinaryOptionsOptionV
     messageBody() {
         return {
             name: 'binary-options.open-option',
-            version: '1.0',
+            version: '2.0',
             body: {
                 active_id: this.activeId,
                 direction: this.direction,
@@ -6059,7 +6099,8 @@ class CallBinaryOptionsOpenBlitzOptionV1 implements Request<BinaryOptionsOptionV
                 expired: 0,
                 option_type_id: 12,
                 price: this.price,
-                user_balance_id: this.userBalanceId
+                user_balance_id: this.userBalanceId,
+                profit_percent: this.profitPercent,
             }
         }
     }
@@ -6073,13 +6114,14 @@ class CallBinaryOptionsOpenBlitzOptionV1 implements Request<BinaryOptionsOptionV
     }
 }
 
-class CallBinaryOptionsOpenTurboOptionV1 implements Request<BinaryOptionsOptionV1> {
+class CallBinaryOptionsOpenTurboOptionV2 implements Request<BinaryOptionsOptionV1> {
     constructor(
         private activeId: number,
         private expiredAt: number,
         private direction: string,
         private price: number,
-        private userBalanceId: number
+        private userBalanceId: number,
+        private profitPercent: number,
     ) {
     }
 
@@ -6090,14 +6132,15 @@ class CallBinaryOptionsOpenTurboOptionV1 implements Request<BinaryOptionsOptionV
     messageBody() {
         return {
             name: 'binary-options.open-option',
-            version: '1.0',
+            version: '2.0',
             body: {
                 active_id: this.activeId,
                 direction: this.direction,
                 expired: this.expiredAt,
                 option_type_id: 3,
                 price: this.price,
-                user_balance_id: this.userBalanceId
+                user_balance_id: this.userBalanceId,
+                profit_percent: this.profitPercent,
             }
         }
     }
