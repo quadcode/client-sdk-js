@@ -1619,6 +1619,29 @@ export enum InstrumentType {
 }
 
 /**
+ * Margin Trading TPSL types.
+ */
+export enum MarginTradingTPSLType {
+    Price = "price",
+    Pips = "pips",
+    Delta = "delta",
+    Pnl = "pnl",
+}
+
+/**
+ * Margin Trading TPSL class.
+ */
+export class MarginTradingTPSL {
+    public readonly type: string
+    public readonly value: number
+
+    constructor(type: string, value: number) {
+        this.type = type
+        this.value = value
+    }
+}
+
+/**
  * Blitz options direction of price change.
  */
 export enum BlitzOptionsDirection {
@@ -3722,6 +3745,33 @@ export class MarginForex {
             instrument.activeId,
             instrument.defaultLeverage.toString(),
             "forex",
+        )
+        const response = await this.wsApiClient.doRequest<MarginOrderPlacedV1>(request)
+        return new MarginOrder(response)
+    }
+
+    public async buyStop(
+        instrument: MarginUnderlyingInstrument,
+        direction: MarginDirection,
+        count: number,
+        balance: Balance,
+        price: number,
+        takeProfit: MarginTradingTPSL | undefined,
+        stopLoss: MarginTradingTPSL | undefined,
+    ): Promise<MarginOrder> {
+        const request = new CallMarginPlaceStopOrderV1(
+            {
+                side: direction,
+                userBalanceId: balance.id,
+                count: count.toString(),
+                instrumentId: instrument.id,
+                instrumentActiveId: instrument.activeId,
+                leverage: instrument.defaultLeverage.toString(),
+                stopPrice: price,
+                takeProfit: takeProfit,
+                stopLoss: stopLoss,
+                instrumentType: 'forex'
+            }
         )
         const response = await this.wsApiClient.doRequest<MarginOrderPlacedV1>(request)
         return new MarginOrder(response)
@@ -6402,6 +6452,73 @@ class SubscribeQuoteGenerated implements SubscribeRequest<QuoteGenerated> {
 
     createEvent(data: any): QuoteGenerated {
         return new QuoteGenerated(data)
+    }
+}
+
+class CallMarginPlaceStopOrderV1 implements Request<MarginOrderPlacedV1> {
+    private readonly side: string
+    private readonly userBalanceId: number
+    private readonly count: string
+    private readonly stopPrice: number
+    private readonly instrumentId: string
+    private readonly instrumentActiveId: number
+    private readonly leverage: string
+    private readonly stopLoss: MarginTradingTPSL | undefined
+    private readonly takeProfit: MarginTradingTPSL | undefined
+    private readonly instrumentType: string
+
+    constructor(data: {
+        side: string,
+        userBalanceId: number,
+        count: string,
+        stopPrice: number,
+        instrumentId: string,
+        instrumentActiveId: number,
+        leverage: string,
+        stopLoss: MarginTradingTPSL | undefined,
+        takeProfit: MarginTradingTPSL | undefined,
+        instrumentType: string
+    }) {
+        this.side = data.side
+        this.userBalanceId = data.userBalanceId
+        this.count = data.count
+        this.stopPrice = data.stopPrice
+        this.instrumentId = data.instrumentId
+        this.instrumentActiveId = data.instrumentActiveId
+        this.leverage = data.leverage
+        this.stopLoss = data.stopLoss
+        this.takeProfit = data.takeProfit
+        this.instrumentType = data.instrumentType
+    }
+
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: `marginal-${this.instrumentType}.place-stop-order`,
+            version: '1.0',
+            body: {
+                side: this.side,
+                user_balance_id: this.userBalanceId,
+                count: this.count,
+                stop_price: this.stopPrice,
+                instrument_id: this.instrumentId,
+                instrument_active_id: this.instrumentActiveId,
+                leverage: this.leverage,
+                stop_loss: this.stopLoss,
+                take_profit: this.takeProfit
+            }
+        }
+    }
+
+    createResponse(data: any): MarginOrderPlacedV1 {
+        return new MarginOrderPlacedV1(data)
+    }
+
+    resultOnly(): boolean {
+        return false
     }
 }
 
