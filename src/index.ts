@@ -3750,6 +3750,16 @@ export class MarginForex {
         return new MarginOrder(response)
     }
 
+    /**
+     * Makes stop order request for buy margin active.
+     * @param instrument
+     * @param direction
+     * @param count
+     * @param balance
+     * @param price
+     * @param takeProfit
+     * @param stopLoss
+     */
     public async buyStop(
         instrument: MarginUnderlyingInstrument,
         direction: MarginDirection,
@@ -3880,6 +3890,43 @@ export class MarginCfd {
     }
 
     /**
+     * Makes stop order request for buy margin active.
+     * @param instrument
+     * @param direction
+     * @param count
+     * @param balance
+     * @param price
+     * @param takeProfit
+     * @param stopLoss
+     */
+    public async buyStop(
+        instrument: MarginUnderlyingInstrument,
+        direction: MarginDirection,
+        count: number,
+        balance: Balance,
+        price: number,
+        takeProfit: MarginTradingTPSL | undefined,
+        stopLoss: MarginTradingTPSL | undefined,
+    ): Promise<MarginOrder> {
+        const request = new CallMarginPlaceStopOrderV1(
+            {
+                side: direction,
+                userBalanceId: balance.id,
+                count: count.toString(),
+                instrumentId: instrument.id,
+                instrumentActiveId: instrument.activeId,
+                leverage: instrument.defaultLeverage.toString(),
+                stopPrice: price,
+                takeProfit: takeProfit,
+                stopLoss: stopLoss,
+                instrumentType: 'cfd'
+            }
+        )
+        const response = await this.wsApiClient.doRequest<MarginOrderPlacedV1>(request)
+        return new MarginOrder(response)
+    }
+
+    /**
      * Returns list of underlyings available for buy at specified time.
      * @param at - Time for which the check is performed.
      */
@@ -3976,6 +4023,43 @@ export class MarginCrypto {
             instrument.activeId,
             instrument.defaultLeverage.toString(),
             "crypto",
+        )
+        const response = await this.wsApiClient.doRequest<MarginOrderPlacedV1>(request)
+        return new MarginOrder(response)
+    }
+
+    /**
+     * Makes stop order request for buy margin active.
+     * @param instrument
+     * @param direction
+     * @param count
+     * @param balance
+     * @param price
+     * @param takeProfit
+     * @param stopLoss
+     */
+    public async buyStop(
+        instrument: MarginUnderlyingInstrument,
+        direction: MarginDirection,
+        count: number,
+        balance: Balance,
+        price: number,
+        takeProfit: MarginTradingTPSL | undefined,
+        stopLoss: MarginTradingTPSL | undefined,
+    ): Promise<MarginOrder> {
+        const request = new CallMarginPlaceStopOrderV1(
+            {
+                side: direction,
+                userBalanceId: balance.id,
+                count: count.toString(),
+                instrumentId: instrument.id,
+                instrumentActiveId: instrument.activeId,
+                leverage: instrument.defaultLeverage.toString(),
+                stopPrice: price,
+                takeProfit: takeProfit,
+                stopLoss: stopLoss,
+                instrumentType: 'crypto'
+            }
         )
         const response = await this.wsApiClient.doRequest<MarginOrderPlacedV1>(request)
         return new MarginOrder(response)
