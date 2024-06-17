@@ -3752,28 +3752,34 @@ export class MarginForex {
 
     /**
      * Makes stop order request for buy margin active.
-     * @param data
+     * @param instrument
+     * @param direction
+     * @param count
+     * @param balance
+     * @param price
+     * @param takeProfit
+     * @param stopLoss
      */
-    public async buyStop(data: {
+    public async buyStop(
         instrument: MarginUnderlyingInstrument,
         direction: MarginDirection,
         count: number,
         balance: Balance,
         price: number,
-        takeProfit: MarginTradingTPSL | undefined,
-        stopLoss: MarginTradingTPSL | undefined,
-    }): Promise<MarginOrder> {
+        takeProfit: MarginTradingTPSL | null = null,
+        stopLoss: MarginTradingTPSL | null = null,
+    ): Promise<MarginOrder> {
         const request = new CallMarginPlaceStopOrderV1(
             {
-                side: data.direction,
-                userBalanceId: data.balance.id,
-                count: data.count.toString(),
-                instrumentId: data.instrument.id,
-                instrumentActiveId: data.instrument.activeId,
-                leverage: data.instrument.defaultLeverage.toString(),
-                stopPrice: data.price,
-                takeProfit: data.takeProfit,
-                stopLoss: data.stopLoss,
+                side: direction,
+                userBalanceId: balance.id,
+                count: count.toString(),
+                instrumentId: instrument.id,
+                instrumentActiveId: instrument.activeId,
+                leverage: instrument.defaultLeverage.toString(),
+                stopPrice: price,
+                takeProfit: takeProfit,
+                stopLoss: stopLoss,
                 instrumentType: 'forex'
             }
         )
@@ -3885,28 +3891,34 @@ export class MarginCfd {
 
     /**
      * Makes stop order request for buy margin active.
-     * @param data
+     * @param instrument
+     * @param direction
+     * @param count
+     * @param balance
+     * @param price
+     * @param takeProfit
+     * @param stopLoss
      */
-    public async buyStop(data: {
+    public async buyStop(
         instrument: MarginUnderlyingInstrument,
         direction: MarginDirection,
         count: number,
         balance: Balance,
         price: number,
-        takeProfit: MarginTradingTPSL | undefined,
-        stopLoss: MarginTradingTPSL | undefined,
-    }): Promise<MarginOrder> {
+        takeProfit: MarginTradingTPSL | null = null,
+        stopLoss: MarginTradingTPSL | null = null,
+    ): Promise<MarginOrder> {
         const request = new CallMarginPlaceStopOrderV1(
             {
-                side: data.direction,
-                userBalanceId: data.balance.id,
-                count: data.count.toString(),
-                instrumentId: data.instrument.id,
-                instrumentActiveId: data.instrument.activeId,
-                leverage: data.instrument.defaultLeverage.toString(),
-                stopPrice: data.price,
-                takeProfit: data.takeProfit,
-                stopLoss: data.stopLoss,
+                side: direction,
+                userBalanceId: balance.id,
+                count: count.toString(),
+                instrumentId: instrument.id,
+                instrumentActiveId: instrument.activeId,
+                leverage: instrument.defaultLeverage.toString(),
+                stopPrice: price,
+                takeProfit: takeProfit,
+                stopLoss: stopLoss,
                 instrumentType: 'cfd'
             }
         )
@@ -4018,28 +4030,34 @@ export class MarginCrypto {
 
     /**
      * Makes stop order request for buy margin active.
-     * @param data
+     * @param instrument
+     * @param direction
+     * @param count
+     * @param balance
+     * @param price
+     * @param takeProfit
+     * @param stopLoss
      */
-    public async buyStop(data: {
+    public async buyStop(
         instrument: MarginUnderlyingInstrument,
         direction: MarginDirection,
         count: number,
         balance: Balance,
         price: number,
-        takeProfit: MarginTradingTPSL | undefined,
-        stopLoss: MarginTradingTPSL | undefined,
-    }): Promise<MarginOrder> {
+        takeProfit: MarginTradingTPSL | null = null,
+        stopLoss: MarginTradingTPSL | null = null,
+    ): Promise<MarginOrder> {
         const request = new CallMarginPlaceStopOrderV1(
             {
-                side: data.direction,
-                userBalanceId: data.balance.id,
-                count: data.count.toString(),
-                instrumentId: data.instrument.id,
-                instrumentActiveId: data.instrument.activeId,
-                leverage: data.instrument.defaultLeverage.toString(),
-                stopPrice: data.price,
-                takeProfit: data.takeProfit,
-                stopLoss: data.stopLoss,
+                side: direction,
+                userBalanceId: balance.id,
+                count: count.toString(),
+                instrumentId: instrument.id,
+                instrumentActiveId: instrument.activeId,
+                leverage: instrument.defaultLeverage.toString(),
+                stopPrice: price,
+                takeProfit: takeProfit,
+                stopLoss: stopLoss,
                 instrumentType: 'crypto'
             }
         )
@@ -6529,8 +6547,8 @@ class CallMarginPlaceStopOrderV1 implements Request<MarginOrderPlacedV1> {
     private readonly instrumentId: string
     private readonly instrumentActiveId: number
     private readonly leverage: string
-    private readonly stopLoss: MarginTradingTPSL | undefined
-    private readonly takeProfit: MarginTradingTPSL | undefined
+    private readonly stopLoss: MarginTradingTPSL | null
+    private readonly takeProfit: MarginTradingTPSL | null
     private readonly instrumentType: string
 
     constructor(data: {
@@ -6541,8 +6559,8 @@ class CallMarginPlaceStopOrderV1 implements Request<MarginOrderPlacedV1> {
         instrumentId: string,
         instrumentActiveId: number,
         leverage: string,
-        stopLoss: MarginTradingTPSL | undefined,
-        takeProfit: MarginTradingTPSL | undefined,
+        stopLoss: MarginTradingTPSL | null,
+        takeProfit: MarginTradingTPSL | null,
         instrumentType: string
     }) {
         this.side = data.side
