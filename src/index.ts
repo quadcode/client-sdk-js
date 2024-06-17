@@ -3752,15 +3752,9 @@ export class MarginForex {
 
     /**
      * Makes stop order request for buy margin active.
-     * @param instrument
-     * @param direction
-     * @param count
-     * @param balance
-     * @param price
-     * @param takeProfit
-     * @param stopLoss
+     * @param data
      */
-    public async buyStop(
+    public async buyStop(data: {
         instrument: MarginUnderlyingInstrument,
         direction: MarginDirection,
         count: number,
@@ -3768,18 +3762,18 @@ export class MarginForex {
         price: number,
         takeProfit: MarginTradingTPSL | undefined,
         stopLoss: MarginTradingTPSL | undefined,
-    ): Promise<MarginOrder> {
+    }): Promise<MarginOrder> {
         const request = new CallMarginPlaceStopOrderV1(
             {
-                side: direction,
-                userBalanceId: balance.id,
-                count: count.toString(),
-                instrumentId: instrument.id,
-                instrumentActiveId: instrument.activeId,
-                leverage: instrument.defaultLeverage.toString(),
-                stopPrice: price,
-                takeProfit: takeProfit,
-                stopLoss: stopLoss,
+                side: data.direction,
+                userBalanceId: data.balance.id,
+                count: data.count.toString(),
+                instrumentId: data.instrument.id,
+                instrumentActiveId: data.instrument.activeId,
+                leverage: data.instrument.defaultLeverage.toString(),
+                stopPrice: data.price,
+                takeProfit: data.takeProfit,
+                stopLoss: data.stopLoss,
                 instrumentType: 'forex'
             }
         )
@@ -3891,15 +3885,9 @@ export class MarginCfd {
 
     /**
      * Makes stop order request for buy margin active.
-     * @param instrument
-     * @param direction
-     * @param count
-     * @param balance
-     * @param price
-     * @param takeProfit
-     * @param stopLoss
+     * @param data
      */
-    public async buyStop(
+    public async buyStop(data: {
         instrument: MarginUnderlyingInstrument,
         direction: MarginDirection,
         count: number,
@@ -3907,18 +3895,18 @@ export class MarginCfd {
         price: number,
         takeProfit: MarginTradingTPSL | undefined,
         stopLoss: MarginTradingTPSL | undefined,
-    ): Promise<MarginOrder> {
+    }): Promise<MarginOrder> {
         const request = new CallMarginPlaceStopOrderV1(
             {
-                side: direction,
-                userBalanceId: balance.id,
-                count: count.toString(),
-                instrumentId: instrument.id,
-                instrumentActiveId: instrument.activeId,
-                leverage: instrument.defaultLeverage.toString(),
-                stopPrice: price,
-                takeProfit: takeProfit,
-                stopLoss: stopLoss,
+                side: data.direction,
+                userBalanceId: data.balance.id,
+                count: data.count.toString(),
+                instrumentId: data.instrument.id,
+                instrumentActiveId: data.instrument.activeId,
+                leverage: data.instrument.defaultLeverage.toString(),
+                stopPrice: data.price,
+                takeProfit: data.takeProfit,
+                stopLoss: data.stopLoss,
                 instrumentType: 'cfd'
             }
         )
@@ -4030,15 +4018,9 @@ export class MarginCrypto {
 
     /**
      * Makes stop order request for buy margin active.
-     * @param instrument
-     * @param direction
-     * @param count
-     * @param balance
-     * @param price
-     * @param takeProfit
-     * @param stopLoss
+     * @param data
      */
-    public async buyStop(
+    public async buyStop(data: {
         instrument: MarginUnderlyingInstrument,
         direction: MarginDirection,
         count: number,
@@ -4046,18 +4028,18 @@ export class MarginCrypto {
         price: number,
         takeProfit: MarginTradingTPSL | undefined,
         stopLoss: MarginTradingTPSL | undefined,
-    ): Promise<MarginOrder> {
+    }): Promise<MarginOrder> {
         const request = new CallMarginPlaceStopOrderV1(
             {
-                side: direction,
-                userBalanceId: balance.id,
-                count: count.toString(),
-                instrumentId: instrument.id,
-                instrumentActiveId: instrument.activeId,
-                leverage: instrument.defaultLeverage.toString(),
-                stopPrice: price,
-                takeProfit: takeProfit,
-                stopLoss: stopLoss,
+                side: data.direction,
+                userBalanceId: data.balance.id,
+                count: data.count.toString(),
+                instrumentId: data.instrument.id,
+                instrumentActiveId: data.instrument.activeId,
+                leverage: data.instrument.defaultLeverage.toString(),
+                stopPrice: data.price,
+                takeProfit: data.takeProfit,
+                stopLoss: data.stopLoss,
                 instrumentType: 'crypto'
             }
         )
