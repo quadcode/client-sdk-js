@@ -3779,7 +3779,7 @@ export class MarginForex {
             direction,
             balance.id,
             count.toString(),
-            price,
+            price.toString(),
             instrument.id,
             instrument.activeId,
             instrument.defaultLeverage.toString(),
@@ -3922,7 +3922,7 @@ export class MarginCfd {
             direction,
             balance.id,
             count.toString(),
-            price,
+            price.toString(),
             instrument.id,
             instrument.activeId,
             instrument.defaultLeverage.toString(),
@@ -4065,7 +4065,7 @@ export class MarginCrypto {
             direction,
             balance.id,
             count.toString(),
-            price,
+            price.toString(),
             instrument.id,
             instrument.activeId,
             instrument.defaultLeverage.toString(),
@@ -6552,18 +6552,37 @@ class SubscribeQuoteGenerated implements SubscribeRequest<QuoteGenerated> {
 }
 
 class CallMarginPlaceStopOrderV1 implements Request<MarginOrderPlacedV1> {
+    private readonly stopLoss: {
+        value: string
+        type: string
+    }
+
+    private readonly takeProfit: {
+        value: string
+        type: string
+    }
+
     constructor(
         private side: string,
         private userBalanceId: number,
         private count: string,
-        private stopPrice: number,
+        private stopPrice: string,
         private instrumentId: string,
         private instrumentActiveId: number,
         private leverage: string,
         private instrumentType: string,
-        private stopLoss: MarginTradingTPSL | null,
-        private takeProfit: MarginTradingTPSL | null,
+        stopLoss: MarginTradingTPSL | null,
+        takeProfit: MarginTradingTPSL | null,
     ) {
+        this.stopLoss = {
+            value: stopLoss ? stopLoss.value.toString() : '',
+            type: stopLoss ? stopLoss.type : ''
+        }
+
+        this.takeProfit = {
+            value: takeProfit ? takeProfit.value.toString() : '',
+            type: takeProfit ? takeProfit.type : ''
+        }
     }
 
     messageName() {
@@ -6598,6 +6617,16 @@ class CallMarginPlaceStopOrderV1 implements Request<MarginOrderPlacedV1> {
 }
 
 class CallMarginPlaceMarketOrderV1 implements Request<MarginOrderPlacedV1> {
+    private readonly stopLoss: {
+        value: string
+        type: string
+    }
+
+    private readonly takeProfit: {
+        value: string
+        type: string
+    }
+
     constructor(
         private side: string,
         private userBalanceId: number,
@@ -6606,9 +6635,18 @@ class CallMarginPlaceMarketOrderV1 implements Request<MarginOrderPlacedV1> {
         private instrumentActiveId: number,
         private leverage: string,
         private instrumentType: string,
-        private stopLoss: MarginTradingTPSL | null,
-        private takeProfit: MarginTradingTPSL | null,
+        stopLoss: MarginTradingTPSL | null,
+        takeProfit: MarginTradingTPSL | null,
     ) {
+        this.stopLoss = {
+            value: stopLoss ? stopLoss.value.toString() : '',
+            type: stopLoss ? stopLoss.type : ''
+        }
+
+        this.takeProfit = {
+            value: takeProfit ? takeProfit.value.toString() : '',
+            type: takeProfit ? takeProfit.type : ''
+        }
     }
 
     messageName() {
