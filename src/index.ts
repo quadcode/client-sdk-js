@@ -3005,7 +3005,7 @@ export class DigitalOptions {
      * @internal
      * @private
      */
-    private constructor(underlyingList: DigitalOptionInstrumentsUnderlyingListV1, wsApiClient: WsApiClient) {
+    private constructor(underlyingList: DigitalOptionInstrumentsUnderlyingListV3, wsApiClient: WsApiClient) {
         this.wsApiClient = wsApiClient
 
         for (const index in underlyingList.underlying) {
@@ -3019,14 +3019,14 @@ export class DigitalOptions {
      * @param wsApiClient - Instance of WebSocket API client.
      */
     public static async create(wsApiClient: WsApiClient): Promise<DigitalOptions> {
-        const request = new SubscribeDigitalOptionInstrumentsUnderlyingListChangedV1()
-        await wsApiClient.subscribe<DigitalOptionInstrumentsUnderlyingListChangedV1>(request, (event) => {
+        const request = new SubscribeDigitalOptionInstrumentsUnderlyingListChangedV3()
+        await wsApiClient.subscribe<DigitalOptionInstrumentsUnderlyingListChangedV3>(request, (event) => {
             if (event.type !== 'digital-option') {
                 return
             }
             digitalOptionsFacade.updateUnderlyings(event)
         })
-        const underlyingList = await wsApiClient.doRequest<DigitalOptionInstrumentsUnderlyingListV1>(new CallDigitalOptionInstrumentsGetUnderlyingListV1(true))
+        const underlyingList = await wsApiClient.doRequest<DigitalOptionInstrumentsUnderlyingListV3>(new CallDigitalOptionInstrumentsGetUnderlyingListV3(true))
         const digitalOptionsFacade = new DigitalOptions(underlyingList, wsApiClient)
         return digitalOptionsFacade
     }
@@ -3092,7 +3092,7 @@ export class DigitalOptions {
      * @param msg - Underlyings data transfer object.
      * @private
      */
-    private updateUnderlyings(msg: DigitalOptionInstrumentsUnderlyingListChangedV1): void {
+    private updateUnderlyings(msg: DigitalOptionInstrumentsUnderlyingListChangedV3): void {
         for (const index in msg.underlying) {
             const underlying = msg.underlying[index]
             if (this.underlyings.has(underlying.activeId)) {
@@ -3179,7 +3179,7 @@ export class DigitalOptionsUnderlying {
      * @internal
      * @private
      */
-    public constructor(msg: DigitalOptionInstrumentsUnderlyingListV1Underlying, wsApiClient: WsApiClient) {
+    public constructor(msg: DigitalOptionInstrumentsUnderlyingListV3Underlying, wsApiClient: WsApiClient) {
         this.activeId = msg.activeId
         this.isSuspended = msg.isSuspended
         this.name = msg.name
@@ -3223,7 +3223,7 @@ export class DigitalOptionsUnderlying {
      * @param msg - Underlying data transfer object.
      * @private
      */
-    update(msg: DigitalOptionInstrumentsUnderlyingListChangedV1Underlying): void {
+    update(msg: DigitalOptionInstrumentsUnderlyingListChangedV3Underlying): void {
         this.isSuspended = msg.isSuspended
         this.name = msg.name
 
@@ -3312,7 +3312,7 @@ export class DigitalOptionsUnderlyingInstruments {
                 instrumentsFacade.syncInstrumentFromEvent(event)
             })
 
-        const instruments = await wsApiClient.doRequest<DigitalOptionInstrumentsInstrumentsV1>(new CallDigitalOptionInstrumentsGetInstrumentsV1('digital-option', assetId))
+        const instruments = await wsApiClient.doRequest<DigitalOptionInstrumentsInstrumentsV3>(new CallDigitalOptionInstrumentsGetInstrumentsV3(assetId))
         instrumentsFacade.syncInstrumentsFromResponse(instruments)
 
         return instrumentsFacade
@@ -3350,7 +3350,7 @@ export class DigitalOptionsUnderlyingInstruments {
      * @param msg - Instruments data transfer object.
      * @private
      */
-    private syncInstrumentsFromResponse(msg: DigitalOptionInstrumentsInstrumentsV1) {
+    private syncInstrumentsFromResponse(msg: DigitalOptionInstrumentsInstrumentsV3) {
         const indexes = []
         for (const index in msg.instruments) {
             const instrument = msg.instruments[index]
@@ -3370,7 +3370,7 @@ export class DigitalOptionsUnderlyingInstruments {
      * @param msg - Instrument data transfer object.
      * @private
      */
-    private syncInstrumentFromResponse(msg: DigitalOptionInstrumentsInstrumentsV1Instrument) {
+    private syncInstrumentFromResponse(msg: DigitalOptionInstrumentsInstrumentsV3Instrument) {
         if (!this.instruments.has(msg.index)) {
             this.instruments.set(msg.index, new DigitalOptionsUnderlyingInstrument(msg, this.wsApiClient!))
         } else {
@@ -5043,22 +5043,20 @@ class DigitalOptionInstrumentsInstrumentGeneratedV3DataItem {
     }
 }
 
-class DigitalOptionInstrumentsInstrumentsV1 {
-    type: string
-    instruments: DigitalOptionInstrumentsInstrumentsV1Instrument[] = []
+class DigitalOptionInstrumentsInstrumentsV3 {
+    instruments: DigitalOptionInstrumentsInstrumentsV3Instrument[] = []
 
     constructor(data: any) {
-        this.type = data.type
         for (const index in data.instruments) {
             const instrument = data.instruments[index]
-            this.instruments.push(new DigitalOptionInstrumentsInstrumentsV1Instrument(instrument))
+            this.instruments.push(new DigitalOptionInstrumentsInstrumentsV3Instrument(instrument))
         }
     }
 }
 
-class DigitalOptionInstrumentsInstrumentsV1Instrument {
+class DigitalOptionInstrumentsInstrumentsV3Instrument {
     assetId: number
-    data: DigitalOptionInstrumentsInstrumentsV1InstrumentDataItem[] = []
+    data: DigitalOptionInstrumentsInstrumentsV3InstrumentDataItem[] = []
     deadtime: number
     expiration: number
     index: number
@@ -5068,7 +5066,7 @@ class DigitalOptionInstrumentsInstrumentsV1Instrument {
     constructor(msg: any) {
         this.assetId = msg.asset_id
         for (const index in msg.data) {
-            this.data.push(new DigitalOptionInstrumentsInstrumentsV1InstrumentDataItem(msg.data[index]))
+            this.data.push(new DigitalOptionInstrumentsInstrumentsV3InstrumentDataItem(msg.data[index]))
         }
         this.deadtime = msg.deadtime
         this.expiration = msg.expiration
@@ -5078,7 +5076,7 @@ class DigitalOptionInstrumentsInstrumentsV1Instrument {
     }
 }
 
-class DigitalOptionInstrumentsInstrumentsV1InstrumentDataItem {
+class DigitalOptionInstrumentsInstrumentsV3InstrumentDataItem {
     direction: string
     strike: string
     symbol: string
@@ -5090,9 +5088,9 @@ class DigitalOptionInstrumentsInstrumentsV1InstrumentDataItem {
     }
 }
 
-class DigitalOptionInstrumentsUnderlyingListChangedV1 {
+class DigitalOptionInstrumentsUnderlyingListChangedV3 {
     type: string
-    underlying: DigitalOptionInstrumentsUnderlyingListChangedV1Underlying[] = []
+    underlying: DigitalOptionInstrumentsUnderlyingListChangedV3Underlying[] = []
 
     constructor(data: {
         type: string
@@ -5109,7 +5107,7 @@ class DigitalOptionInstrumentsUnderlyingListChangedV1 {
         this.type = data.type
         for (const index in data.underlying) {
             const underlying = data.underlying[index]
-            this.underlying.push(new DigitalOptionInstrumentsUnderlyingListChangedV1Underlying(
+            this.underlying.push(new DigitalOptionInstrumentsUnderlyingListChangedV3Underlying(
                 underlying.active_id,
                 underlying.is_suspended,
                 underlying.name,
@@ -5119,7 +5117,7 @@ class DigitalOptionInstrumentsUnderlyingListChangedV1 {
     }
 }
 
-class DigitalOptionInstrumentsUnderlyingListChangedV1Underlying {
+class DigitalOptionInstrumentsUnderlyingListChangedV3Underlying {
     constructor(
         public activeId: number,
         public isSuspended: boolean,
@@ -5132,9 +5130,9 @@ class DigitalOptionInstrumentsUnderlyingListChangedV1Underlying {
     }
 }
 
-class DigitalOptionInstrumentsUnderlyingListV1 {
+class DigitalOptionInstrumentsUnderlyingListV3 {
     type: string
-    underlying: DigitalOptionInstrumentsUnderlyingListV1Underlying[] = []
+    underlying: DigitalOptionInstrumentsUnderlyingListV3Underlying[] = []
 
     constructor(data: {
         type: string
@@ -5151,7 +5149,7 @@ class DigitalOptionInstrumentsUnderlyingListV1 {
         this.type = data.type
         for (const index in data.underlying) {
             const underlying = data.underlying[index]
-            this.underlying.push(new DigitalOptionInstrumentsUnderlyingListV1Underlying(
+            this.underlying.push(new DigitalOptionInstrumentsUnderlyingListV3Underlying(
                 underlying.active_id,
                 underlying.is_suspended,
                 underlying.name,
@@ -5161,7 +5159,7 @@ class DigitalOptionInstrumentsUnderlyingListV1 {
     }
 }
 
-class DigitalOptionInstrumentsUnderlyingListV1Underlying {
+class DigitalOptionInstrumentsUnderlyingListV3Underlying {
     constructor(
         public activeId: number,
         public isSuspended: boolean,
@@ -6204,9 +6202,8 @@ class CallInternalBillingResetTrainingBalanceV4 implements Request<Result> {
     }
 }
 
-class CallDigitalOptionInstrumentsGetInstrumentsV1 implements Request<DigitalOptionInstrumentsInstrumentsV1> {
+class CallDigitalOptionInstrumentsGetInstrumentsV3 implements Request<DigitalOptionInstrumentsInstrumentsV3> {
     constructor(
-        private instrumentType: string,
         private assetId: number,
     ) {
     }
@@ -6220,14 +6217,13 @@ class CallDigitalOptionInstrumentsGetInstrumentsV1 implements Request<DigitalOpt
             name: 'digital-option-instruments.get-instruments',
             version: '1.0',
             body: {
-                instrument_type: this.instrumentType,
                 asset_id: this.assetId
             }
         }
     }
 
-    createResponse(data: any): DigitalOptionInstrumentsInstrumentsV1 {
-        return new DigitalOptionInstrumentsInstrumentsV1(data)
+    createResponse(data: any): DigitalOptionInstrumentsInstrumentsV3 {
+        return new DigitalOptionInstrumentsInstrumentsV3(data)
     }
 
     resultOnly(): boolean {
@@ -6235,7 +6231,7 @@ class CallDigitalOptionInstrumentsGetInstrumentsV1 implements Request<DigitalOpt
     }
 }
 
-class CallDigitalOptionInstrumentsGetUnderlyingListV1 implements Request<DigitalOptionInstrumentsUnderlyingListV1> {
+class CallDigitalOptionInstrumentsGetUnderlyingListV3 implements Request<DigitalOptionInstrumentsUnderlyingListV3> {
     constructor(private filterSuspended: boolean) {
     }
 
@@ -6246,15 +6242,15 @@ class CallDigitalOptionInstrumentsGetUnderlyingListV1 implements Request<Digital
     messageBody() {
         return {
             name: 'digital-option-instruments.get-underlying-list',
-            version: '1.0',
+            version: '3.0',
             body: {
                 filter_suspended: this.filterSuspended
             }
         }
     }
 
-    createResponse(data: any): DigitalOptionInstrumentsUnderlyingListV1 {
-        return new DigitalOptionInstrumentsUnderlyingListV1(data)
+    createResponse(data: any): DigitalOptionInstrumentsUnderlyingListV3 {
+        return new DigitalOptionInstrumentsUnderlyingListV3(data)
     }
 
     resultOnly(): boolean {
@@ -6547,7 +6543,7 @@ class SubscribeTradingSettingsDigitalOptionClientPriceGeneratedV1 implements Sub
     }
 }
 
-class SubscribeDigitalOptionInstrumentsUnderlyingListChangedV1 implements SubscribeRequest<DigitalOptionInstrumentsUnderlyingListChangedV1> {
+class SubscribeDigitalOptionInstrumentsUnderlyingListChangedV3 implements SubscribeRequest<DigitalOptionInstrumentsUnderlyingListChangedV3> {
     messageName() {
         return 'subscribeMessage'
     }
@@ -6555,7 +6551,7 @@ class SubscribeDigitalOptionInstrumentsUnderlyingListChangedV1 implements Subscr
     messageBody() {
         return {
             name: `${this.eventMicroserviceName()}.${this.eventName()}`,
-            version: '1.0'
+            version: '3.0'
         }
     }
 
@@ -6567,8 +6563,8 @@ class SubscribeDigitalOptionInstrumentsUnderlyingListChangedV1 implements Subscr
         return 'underlying-list-changed'
     }
 
-    createEvent(data: any): DigitalOptionInstrumentsUnderlyingListChangedV1 {
-        return new DigitalOptionInstrumentsUnderlyingListChangedV1(data)
+    createEvent(data: any): DigitalOptionInstrumentsUnderlyingListChangedV3 {
+        return new DigitalOptionInstrumentsUnderlyingListChangedV3(data)
     }
 }
 
