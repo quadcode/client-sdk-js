@@ -6555,12 +6555,12 @@ class CallMarginPlaceStopOrderV1 implements Request<MarginOrderPlacedV1> {
     private readonly stopLoss: {
         value: string
         type: string
-    }
+    } | undefined
 
     private readonly takeProfit: {
         value: string
         type: string
-    }
+    } | undefined
 
     constructor(
         private side: string,
@@ -6574,14 +6574,19 @@ class CallMarginPlaceStopOrderV1 implements Request<MarginOrderPlacedV1> {
         stopLoss: MarginTradingTPSL | null,
         takeProfit: MarginTradingTPSL | null,
     ) {
-        this.stopLoss = {
-            value: stopLoss ? stopLoss.value.toString() : '',
-            type: stopLoss ? stopLoss.type : ''
+        if (stopLoss) {
+            this.stopLoss = {
+                value: stopLoss.value.toString(),
+                type: stopLoss.type,
+            }
         }
 
-        this.takeProfit = {
-            value: takeProfit ? takeProfit.value.toString() : '',
-            type: takeProfit ? takeProfit.type : ''
+
+        if (takeProfit) {
+            this.takeProfit = {
+                value: takeProfit.value.toString(),
+                type: takeProfit.type,
+            }
         }
     }
 
@@ -6620,12 +6625,12 @@ class CallMarginPlaceMarketOrderV1 implements Request<MarginOrderPlacedV1> {
     private readonly stopLoss: {
         value: string
         type: string
-    }
+    } | undefined
 
     private readonly takeProfit: {
         value: string
         type: string
-    }
+    } | undefined
 
     constructor(
         private side: string,
@@ -6638,14 +6643,19 @@ class CallMarginPlaceMarketOrderV1 implements Request<MarginOrderPlacedV1> {
         stopLoss: MarginTradingTPSL | null,
         takeProfit: MarginTradingTPSL | null,
     ) {
-        this.stopLoss = {
-            value: stopLoss ? stopLoss.value.toString() : '',
-            type: stopLoss ? stopLoss.type : ''
+        if (stopLoss) {
+            this.stopLoss = {
+                value: stopLoss.value.toString(),
+                type: stopLoss.type,
+            }
         }
 
-        this.takeProfit = {
-            value: takeProfit ? takeProfit.value.toString() : '',
-            type: takeProfit ? takeProfit.type : ''
+
+        if (takeProfit) {
+            this.takeProfit = {
+                value: takeProfit.value.toString(),
+                type: takeProfit.type,
+            }
         }
     }
 
