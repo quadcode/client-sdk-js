@@ -3972,7 +3972,7 @@ export class MarginUnderlying {
      * Margin instrument type (cfd/crypto/forex).
      * @private
      */
-    private marginInstrumentType: string
+    private readonly marginInstrumentType: string
 
     /**
      * Is trading suspended on the underlying.
