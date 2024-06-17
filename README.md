@@ -27,7 +27,9 @@ const sdk = await QuadcodeClientSdk.create(
     new SsidAuthMethod('c1xxxxxxxxxxxxxxxxxxxxxxxxxxxx97') // B2B-client's application can retrieve SSID over b2b-gateway API: [/v1/b2b-gateway/users/{user_id}/sessions](https://github.com/quadcode/b2b-gateway-api/blob/ec176e29fcf8a60e94398ce9a0120a23802a83dd/quadcode-internal-balance-openapi.yaml#L104).
 )
 ```
+
 or authorize with login and password
+
 ```js
 import {
     QuadcodeClientSdk,
@@ -56,6 +58,18 @@ console.log(balances.getBalances())
 const balance = balances.getBalances().find((balance) => balance.type === BalanceType.Real)
 
 balance.subscribeOnUpdate((updatedBalance) => console.log(updatedBalance))
+```
+
+### Reset demo balance to 10.000$
+
+```js
+const balances = await sdk.balances()
+
+console.log(balances.getBalances())
+
+const balance = balances.getBalances().find((balance) => balance.type === BalanceType.Demo)
+
+balance.resetDemoBalance()
 ```
 
 ### Get user's balance by ID
@@ -123,6 +137,33 @@ positions.subscribeOnUpdatePosition((position) => {
 })
 ```
 
+### Get history of positions
+
+```js
+const blitzOptions = await sdk.blitzOptions()
+const positions = await sdk.positions()
+const positionsHistory = await positions.getPositionsHistory()
+
+console.log(positionsHistory.getPositions())
+```
+
+### Sell position
+
+```js
+const positions = await sdk.positions()
+const position = positions.getAllPositions().find((position) => position.externalId == 1)
+await position.sell() // not available for blitz options 
+```
+
+### Potential profit calculation
+
+```js
+const positions = await sdk.positions()
+const position = positions.getAllPositions().find((position) => position.externalId == 1)
+console.log(position.pnlNet)
+console.log(position.sellProfit)
+```
+
 ### Buy turbo options
 
 ```js
@@ -174,12 +215,34 @@ const firstActiveInstruments = await firstActive.instruments()
 const firstActiveAvailableInstruments = firstActiveInstruments.getAvailableForBuyAt(new Date())
 
 const firstInstrument = firstActiveAvailableInstruments[0]
+const purchaseEndTime = firstInstrument.purchaseEndTime();
 
 const callOption = await binaryOptions.buy(firstInstrument, BinaryOptionsDirection.Call, 1, balance)
 console.log(callOption)
 
 const putOption = await binaryOptions.buy(firstInstrument, BinaryOptionsDirection.Put, 1, balance)
 console.log(putOption)
+```
+
+### Get purchase end time
+
+```js
+const binaryOptions = await sdk.binaryOptions()
+
+const actives = binaryOptions.getActives()
+
+const firstActive = actives[0]
+
+const firstActiveInstruments = await firstActive.instruments()
+
+const firstActiveAvailableInstruments = firstActiveInstruments.getAvailableForBuyAt(new Date())
+
+const firstInstrument = firstActiveAvailableInstruments[0]
+
+const purchaseEndTime = firstInstrument.purchaseEndTime();
+
+const durationRemainingForPurchase = firstInstrument.durationRemainingForPurchase();
+
 ```
 
 ### Get positions for binary options
@@ -234,6 +297,30 @@ digitalOptionsPositions.subscribeOnUpdatePosition((position) => {
         console.log(position)
     }
 })
+```
+
+### Buy margin CFD/Forex/Crypto
+
+```js
+const marginCfd = await sdk.marginCfd() // or marginForex or marginCrypto
+
+const underlyings = marginCfd.getUnderlyingsAvailableForTradingAt(new Date())
+
+const firstUnderlying = underlyings.find((u) => {
+    return u.activeId === 1
+})
+
+const firstUnderlyingInstruments = await firstUnderlying.instruments()
+
+const firstUnderlyingAvailableInstruments = firstUnderlyingInstruments.getAvailableForBuyAt(new Date())
+
+const firstInstrument = firstUnderlyingAvailableInstruments[0]
+
+const callOption = await marginCfd.buy(firstInstrument, Margin.Buy, 1, balance)
+console.log(callOption)
+
+const putOption = await marginCfd.buy(firstInstrument, Margin.Sell, 1, balance)
+console.log(putOption)
 ```
 
 ## For SDK maintainers

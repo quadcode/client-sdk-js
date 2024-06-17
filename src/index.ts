@@ -1025,7 +1025,7 @@ export class Positions {
         const isNewPosition = !this.positions.has(msg.externalId)
         if (isNewPosition) {
             const position = new Position(this.wsApiClient!)
-            position.id = msg.externalId
+            position.externalId = msg.externalId
             this.positions.set(msg.externalId, position)
             const key = `${msg.instrumentType}-${msg.internalId}`
             this.positionsIds.set(key, msg.externalId)
@@ -1055,7 +1055,7 @@ export class Positions {
         const isNewPosition = !this.positions.has(msg.externalId)
         if (isNewPosition) {
             const position = new Position(this.wsApiClient!)
-            position.id = msg.externalId
+            position.externalId = msg.externalId
             this.positions.set(msg.externalId, position)
             const key = `${msg.instrumentType}-${msg.internalId}`
             this.positionsIds.set(key, msg.externalId)
@@ -1212,7 +1212,7 @@ export class Position {
     /**
      * Position's identification number ( position external ID ).
      */
-    public id: number | undefined
+    public externalId: number | undefined
 
     /**
      * Position's internal ID. ( Positions across different instrument types can have the same internal_id )
@@ -1347,7 +1347,7 @@ export class Position {
      * @private
      */
     syncFromResponse(msg: PortfolioPositionsV4Position): void {
-        this.id = msg.externalId
+        this.externalId = msg.externalId
         this.internalId = msg.internalId
         this.activeId = msg.activeId
         this.balanceId = msg.userBalanceId
@@ -1369,7 +1369,7 @@ export class Position {
      * @private
      */
     syncFromHistoryResponse(msg: PortfolioPositionsHistoryV2Position): void {
-        this.id = msg.externalId
+        this.externalId = msg.externalId
         this.internalId = msg.internalId
         this.activeId = msg.activeId
         this.balanceId = msg.userBalanceId
@@ -1438,21 +1438,21 @@ export class Position {
         switch (this.instrumentType) {
             case InstrumentType.TurboOption:
             case InstrumentType.BinaryOption:
-                promise = this.wsApiClient.doRequest(new CallBinaryOptionsSellOptionsV3([this.id!]))
+                promise = this.wsApiClient.doRequest(new CallBinaryOptionsSellOptionsV3([this.externalId!]))
                 break
             case InstrumentType.DigitalOption:
-                promise = this.wsApiClient.doRequest(new CallDigitalOptionsClosePositionV1(this.id!))
+                promise = this.wsApiClient.doRequest(new CallDigitalOptionsClosePositionV1(this.externalId!))
                 break
             case InstrumentType.BlitzOption:
                 throw new Error("Blitz options are not supported")
             case InstrumentType.MarginCfd:
-                promise = this.wsApiClient.doRequest(new CallMarginClosePositionV1("cfd", this.id!))
+                promise = this.wsApiClient.doRequest(new CallMarginClosePositionV1("cfd", this.externalId!))
                 break
             case InstrumentType.MarginCrypto:
-                promise = this.wsApiClient.doRequest(new CallMarginClosePositionV1("crypto", this.id!))
+                promise = this.wsApiClient.doRequest(new CallMarginClosePositionV1("crypto", this.externalId!))
                 break
             case InstrumentType.MarginForex:
-                promise = this.wsApiClient.doRequest(new CallMarginClosePositionV1("forex", this.id!))
+                promise = this.wsApiClient.doRequest(new CallMarginClosePositionV1("forex", this.externalId!))
                 break
             default:
                 throw new Error(`Unknown instrument type ${this.instrumentType}`)
@@ -3507,6 +3507,9 @@ export class DigitalOptionsUnderlyingInstrument {
         return new Date(this.expiration.getTime() - this.deadtime * 1000);
     }
 
+    /**
+     * Subscribes on strikes ask/bid prices updates.
+     */
     public async subscribeOnStrikesAskBidPrices() {
         const request = new SubscribeTradingSettingsDigitalOptionClientPriceGeneratedV1('digital-option', this.assetId, this.index)
         await this.wsApiClient.subscribe<DigitalOptionClientPriceGeneratedV1>(request, (event) => {
