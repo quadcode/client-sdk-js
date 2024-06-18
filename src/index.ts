@@ -3762,7 +3762,7 @@ export class MarginForex {
      * @param direction
      * @param count
      * @param balance
-     * @param price
+     * @param stopPrice
      * @param takeProfit
      * @param stopLoss
      */
@@ -3771,7 +3771,7 @@ export class MarginForex {
         direction: MarginDirection,
         count: number,
         balance: Balance,
-        price: number,
+        stopPrice: number,
         stopLoss: MarginTradingTPSL | null = null,
         takeProfit: MarginTradingTPSL | null = null,
     ): Promise<MarginOrder> {
@@ -3779,7 +3779,42 @@ export class MarginForex {
             direction,
             balance.id,
             count.toString(),
-            price.toString(),
+            stopPrice.toString(),
+            instrument.id,
+            instrument.activeId,
+            instrument.defaultLeverage.toString(),
+            'forex',
+            stopLoss,
+            takeProfit,
+        )
+        const response = await this.wsApiClient.doRequest<MarginOrderPlacedV1>(request)
+        return new MarginOrder(response)
+    }
+
+    /**
+     * Makes limit order request for buy margin active.
+     * @param instrument
+     * @param direction
+     * @param count
+     * @param balance
+     * @param limitPrice
+     * @param stopLoss
+     * @param takeProfit
+     */
+    public async buyLimit(
+        instrument: MarginUnderlyingInstrument,
+        direction: MarginDirection,
+        count: number,
+        balance: Balance,
+        limitPrice: number,
+        stopLoss: MarginTradingTPSL | null = null,
+        takeProfit: MarginTradingTPSL | null = null,
+    ): Promise<MarginOrder> {
+        const request = new CallMarginPlaceLimitOrderV1(
+            direction,
+            balance.id,
+            count.toString(),
+            limitPrice.toString(),
             instrument.id,
             instrument.activeId,
             instrument.defaultLeverage.toString(),
@@ -3905,7 +3940,7 @@ export class MarginCfd {
      * @param direction
      * @param count
      * @param balance
-     * @param price
+     * @param stopPrice
      * @param takeProfit
      * @param stopLoss
      */
@@ -3914,7 +3949,7 @@ export class MarginCfd {
         direction: MarginDirection,
         count: number,
         balance: Balance,
-        price: number,
+        stopPrice: number,
         stopLoss: MarginTradingTPSL | null = null,
         takeProfit: MarginTradingTPSL | null = null,
     ): Promise<MarginOrder> {
@@ -3922,7 +3957,42 @@ export class MarginCfd {
             direction,
             balance.id,
             count.toString(),
-            price.toString(),
+            stopPrice.toString(),
+            instrument.id,
+            instrument.activeId,
+            instrument.defaultLeverage.toString(),
+            'cfd',
+            stopLoss,
+            takeProfit,
+        )
+        const response = await this.wsApiClient.doRequest<MarginOrderPlacedV1>(request)
+        return new MarginOrder(response)
+    }
+
+    /**
+     * Makes limit order request for buy margin active.
+     * @param instrument
+     * @param direction
+     * @param count
+     * @param balance
+     * @param limitPrice
+     * @param stopLoss
+     * @param takeProfit
+     */
+    public async buyLimit(
+        instrument: MarginUnderlyingInstrument,
+        direction: MarginDirection,
+        count: number,
+        balance: Balance,
+        limitPrice: number,
+        stopLoss: MarginTradingTPSL | null = null,
+        takeProfit: MarginTradingTPSL | null = null,
+    ): Promise<MarginOrder> {
+        const request = new CallMarginPlaceLimitOrderV1(
+            direction,
+            balance.id,
+            count.toString(),
+            limitPrice.toString(),
             instrument.id,
             instrument.activeId,
             instrument.defaultLeverage.toString(),
@@ -4048,7 +4118,7 @@ export class MarginCrypto {
      * @param direction
      * @param count
      * @param balance
-     * @param price
+     * @param stopPrice
      * @param takeProfit
      * @param stopLoss
      */
@@ -4057,7 +4127,7 @@ export class MarginCrypto {
         direction: MarginDirection,
         count: number,
         balance: Balance,
-        price: number,
+        stopPrice: number,
         stopLoss: MarginTradingTPSL | null = null,
         takeProfit: MarginTradingTPSL | null = null,
     ): Promise<MarginOrder> {
@@ -4065,7 +4135,42 @@ export class MarginCrypto {
             direction,
             balance.id,
             count.toString(),
-            price.toString(),
+            stopPrice.toString(),
+            instrument.id,
+            instrument.activeId,
+            instrument.defaultLeverage.toString(),
+            'crypto',
+            stopLoss,
+            takeProfit,
+        )
+        const response = await this.wsApiClient.doRequest<MarginOrderPlacedV1>(request)
+        return new MarginOrder(response)
+    }
+
+    /**
+     * Makes limit order request for buy margin active.
+     * @param instrument
+     * @param direction
+     * @param count
+     * @param balance
+     * @param limitPrice
+     * @param stopLoss
+     * @param takeProfit
+     */
+    public async buyLimit(
+        instrument: MarginUnderlyingInstrument,
+        direction: MarginDirection,
+        count: number,
+        balance: Balance,
+        limitPrice: number,
+        stopLoss: MarginTradingTPSL | null = null,
+        takeProfit: MarginTradingTPSL | null = null,
+    ): Promise<MarginOrder> {
+        const request = new CallMarginPlaceLimitOrderV1(
+            direction,
+            balance.id,
+            count.toString(),
+            limitPrice.toString(),
             instrument.id,
             instrument.activeId,
             instrument.defaultLeverage.toString(),
@@ -6603,6 +6708,77 @@ class CallMarginPlaceStopOrderV1 implements Request<MarginOrderPlacedV1> {
                 user_balance_id: this.userBalanceId,
                 count: this.count,
                 stop_price: this.stopPrice,
+                instrument_id: this.instrumentId,
+                instrument_active_id: this.instrumentActiveId,
+                leverage: this.leverage,
+                stop_loss: this.stopLoss,
+                take_profit: this.takeProfit
+            }
+        }
+    }
+
+    createResponse(data: any): MarginOrderPlacedV1 {
+        return new MarginOrderPlacedV1(data)
+    }
+
+    resultOnly(): boolean {
+        return false
+    }
+}
+
+
+class CallMarginPlaceLimitOrderV1 implements Request<MarginOrderPlacedV1> {
+    private readonly stopLoss: {
+        value: string
+        type: string
+    } | undefined
+
+    private readonly takeProfit: {
+        value: string
+        type: string
+    } | undefined
+
+    constructor(
+        private side: string,
+        private userBalanceId: number,
+        private count: string,
+        private limitPrice: string,
+        private instrumentId: string,
+        private instrumentActiveId: number,
+        private leverage: string,
+        private instrumentType: string,
+        stopLoss: MarginTradingTPSL | null,
+        takeProfit: MarginTradingTPSL | null,
+    ) {
+        if (stopLoss) {
+            this.stopLoss = {
+                value: stopLoss.value.toString(),
+                type: stopLoss.type,
+            }
+        }
+
+
+        if (takeProfit) {
+            this.takeProfit = {
+                value: takeProfit.value.toString(),
+                type: takeProfit.type,
+            }
+        }
+    }
+
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: `marginal-${this.instrumentType}.place-limit-order`,
+            version: '1.0',
+            body: {
+                side: this.side,
+                user_balance_id: this.userBalanceId,
+                count: this.count,
+                limit_price: this.limitPrice,
                 instrument_id: this.instrumentId,
                 instrument_active_id: this.instrumentActiveId,
                 leverage: this.leverage,
