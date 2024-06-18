@@ -54,4 +54,10 @@ export class PositionsHelper {
         }
         return positionsHistory.getPositions();
     }
+
+    public async closeOpenedPositions() {
+        for (const position of this.positions.getAllPositions()) {
+            await position.sell();
+        }
+    }
 }
