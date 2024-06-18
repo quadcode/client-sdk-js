@@ -102,6 +102,7 @@ describe('Options', () => {
 
                 async function openOption() {
                     const firstInstrument = getAvailableInstrument();
+                    expect(firstInstrument.profitCommissionPercent, 'ProfitCommissionPercent is not specified').not.to.be.null
                     const binaryOption = await binaryOptions.buy(firstInstrument, BinaryOptionsDirection.Call, 10, demoBalance);
                     expect(binaryOption.id, 'Option id should be not null').to.be.not.null
                     return await positionsHelper.waitForPosition((position) => position.orderIds.includes(binaryOption.id));
@@ -126,7 +127,6 @@ describe('Options', () => {
             });
         });
     });
-
     describe('Turbo-options', () => {
 
         let turboOptions: TurboOptions;
@@ -181,6 +181,7 @@ describe('Options', () => {
 
                 async function openOption() {
                     const firstInstrument = getAvailableInstrument();
+                    expect(firstInstrument.profitCommissionPercent, 'ProfitCommissionPercent is not specified').not.to.be.null
                     const turboOption = await turboOptions.buy(firstInstrument, TurboOptionsDirection.Call, 1, demoBalance);
                     expect(turboOption.id, 'Option id should be not null').not.to.be.null
                     return await positionsHelper.waitForPosition((position) => position.orderIds.includes(turboOption.id));
@@ -234,6 +235,7 @@ describe('Options', () => {
 
             async function openOption() {
                 const active = blitzOptions.getActives()[0];
+                expect(active.profitCommissionPercent, 'ProfitCommissionPercent is not specified').not.to.be.null
                 const expirationSize = active.expirationTimes[0];
                 const blitzOption = await blitzOptions.buy(active, BlitzOptionsDirection.Call, expirationSize, 10, demoBalance);
                 expect(blitzOption.id, 'Option id should be not null').to.be.not.null
