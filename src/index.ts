@@ -870,7 +870,7 @@ export class Positions {
      * List of supported instrument types.
      * @private
      */
-    private instrumentTypes: string[] = ["digital-option", "binary-option", "turbo-option", "blitz-option"]
+    private instrumentTypes: string[] = ["digital-option", "binary-option", "turbo-option", "blitz-option", "marginal-cfd", "marginal-crypto", "marginal-forex"]
 
     /**
      * Just private constructor. Just private constructor. Use {@link Positions.create create} instead.
