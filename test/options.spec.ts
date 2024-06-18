@@ -102,6 +102,7 @@ describe('Options', () => {
 
                 async function openOption() {
                     const firstInstrument = getAvailableInstrument();
+                    expect(firstInstrument.profitCommissionPercent, 'ProfitCommissionPercent is not specified').not.to.be.null
                     const binaryOption = await binaryOptions.buy(firstInstrument, BinaryOptionsDirection.Call, 10, demoBalance);
                     expect(binaryOption.id, 'Option id should be not null').to.be.not.null
                     return await positionsHelper.waitForPosition((position) => position.orderIds.includes(binaryOption.id));
@@ -109,24 +110,23 @@ describe('Options', () => {
 
                 it('should be opened', async () => {
                     const position = await openOption();
-                    expect(position.id, 'Position must be present').to.be.not.null
+                    expect(position.externalId, 'Position must be present').to.be.not.null
                 });
 
                 it('should be sold', async () => {
                     const position = await openOption();
-                    expect(positionsHelper.findPosition(position.id), 'Position must be present in all positions').not.to.be.undefined
+                    expect(positionsHelper.findPosition(position.externalId), 'Position must be present in all positions').not.to.be.undefined
                     await justWait(3000);
                     await position.sell();
                     expect(await waitForCondition(() => position.status === "closed", 2000)).to.be.true;
                     expect(position.closeReason, "Invalid close reason").eq("sold");
                     expect(position.sellProfit, "Sell profit must be present").not.be.null;
-                    expect(positionsHelper.findHistoryPosition(position.id), 'Position must be present in history positions').not.to.be.undefined
-                    expect(positionsHelper.findPosition(position.id), 'Position must be not present in all positions').to.be.undefined
+                    expect(positionsHelper.findHistoryPosition(position.externalId), 'Position must be present in history positions').not.to.be.undefined
+                    expect(positionsHelper.findPosition(position.externalId), 'Position must be not present in all positions').to.be.undefined
                 });
             });
         });
     });
-
     describe('Turbo-options', () => {
 
         let turboOptions: TurboOptions;
@@ -181,6 +181,7 @@ describe('Options', () => {
 
                 async function openOption() {
                     const firstInstrument = getAvailableInstrument();
+                    expect(firstInstrument.profitCommissionPercent, 'ProfitCommissionPercent is not specified').not.to.be.null
                     const turboOption = await turboOptions.buy(firstInstrument, TurboOptionsDirection.Call, 1, demoBalance);
                     expect(turboOption.id, 'Option id should be not null').not.to.be.null
                     return await positionsHelper.waitForPosition((position) => position.orderIds.includes(turboOption.id));
@@ -188,7 +189,7 @@ describe('Options', () => {
 
                 it('should be opened', async () => {
                     const position = await openOption();
-                    expect(position.id, 'Position must be present').not.to.be.null
+                    expect(position.externalId, 'Position must be present').not.to.be.null
                 });
 
                 it('position should be updated by position-state event', async () => {
@@ -200,14 +201,14 @@ describe('Options', () => {
 
                 it('should be sold', async () => {
                     const position = await openOption();
-                    expect(positionsHelper.findPosition(position.id), 'Position must be present in all positions').not.to.be.undefined
+                    expect(positionsHelper.findPosition(position.externalId), 'Position must be present in all positions').not.to.be.undefined
                     await justWait(3000);
                     await position.sell();
                     expect(await waitForCondition(() => position.status === "closed", 2000)).to.be.true;
                     expect(position.closeReason, "Invalid close reason").eq("sold");
                     expect(position.sellProfit, "Sell profit must be present").not.be.null;
-                    expect(positionsHelper.findHistoryPosition(position.id), 'Position must be present in history positions').not.to.be.undefined
-                    expect(positionsHelper.findPosition(position.id), 'Position must be not present in all positions').to.be.undefined
+                    expect(positionsHelper.findHistoryPosition(position.externalId), 'Position must be present in history positions').not.to.be.undefined
+                    expect(positionsHelper.findPosition(position.externalId), 'Position must be not present in all positions').to.be.undefined
                 }).timeout(7000);
             });
         });
@@ -234,6 +235,7 @@ describe('Options', () => {
 
             async function openOption() {
                 const active = blitzOptions.getActives()[0];
+                expect(active.profitCommissionPercent, 'ProfitCommissionPercent is not specified').not.to.be.null
                 const expirationSize = active.expirationTimes[0];
                 const blitzOption = await blitzOptions.buy(active, BlitzOptionsDirection.Call, expirationSize, 10, demoBalance);
                 expect(blitzOption.id, 'Option id should be not null').to.be.not.null
@@ -242,7 +244,7 @@ describe('Options', () => {
 
             it('should be opened', async () => {
                 const position = await openOption();
-                expect(position.id, 'Position must be present').to.be.not.null
+                expect(position.externalId, 'Position must be present').to.be.not.null
             });
 
             describe('Expiration', () => {
@@ -251,8 +253,8 @@ describe('Options', () => {
                     const position = await openOption();
                     expect(await waitForCondition(() => position.closeReason !== undefined, 7000)).to.be.true;
                     expect(position.closeReason, 'Invalid close reason').to.be.oneOf(["win", "equal", "loose"])
-                    expect(positionsHelper.findHistoryPosition(position.id), 'Position must be present in history positions').not.to.be.undefined
-                    expect(positionsHelper.findPosition(position.id), 'Position must be not present in all positions').to.be.undefined
+                    expect(positionsHelper.findHistoryPosition(position.externalId), 'Position must be present in history positions').not.to.be.undefined
+                    expect(positionsHelper.findPosition(position.externalId), 'Position must be not present in all positions').to.be.undefined
                 }).timeout(10000);
 
                 it('should not be sold', async () => {
@@ -339,20 +341,20 @@ describe('Options', () => {
                     const order = await digitalOptions.buySpotStrike(instrument, DigitalOptionsDirection.Call, 1, demoBalance);
                     expect(order.id, 'Option id should be not null').to.be.not.null
                     const position = await positionsHelper.waitForPosition((position) => position.orderIds.includes(order.id));
-                    expect(position.id, 'Position must be present').to.be.not.null
+                    expect(position.externalId, 'Position must be present').to.be.not.null
                     return {order, position};
                 }
 
                 it('should be sold', async () => {
                     const {position} = await createOpenOrder();
-                    expect(positionsHelper.findPosition(position.id), 'Position must be present in all positions').not.to.be.undefined
+                    expect(positionsHelper.findPosition(position.externalId), 'Position must be present in all positions').not.to.be.undefined
                     await justWait(3000);
                     await position.sell();
                     expect(await waitForCondition(() => position.status === "closed", 3000)).to.be.true;
                     expect(position.status, "Invalid status").eq("closed");
                     expect(position.closeReason, "Close reason must be default").eq("default");
-                    expect(positionsHelper.findHistoryPosition(position.id), 'Position must be present in history positions').not.to.be.undefined
-                    expect(positionsHelper.findPosition(position.id), 'Position must be not present in all positions').to.be.undefined
+                    expect(positionsHelper.findHistoryPosition(position.externalId), 'Position must be present in history positions').not.to.be.undefined
+                    expect(positionsHelper.findPosition(position.externalId), 'Position must be not present in all positions').to.be.undefined
                 }).timeout(10000);
             });
         });

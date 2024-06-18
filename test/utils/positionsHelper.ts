@@ -32,7 +32,7 @@ export class PositionsHelper {
 
     public findPosition(id: number | undefined): Position | undefined {
         if (id === undefined) throw new Error('Parameter position_id is undefined')
-        return this.positions.getAllPositions().find(value => value.id === id);
+        return this.positions.getAllPositions().find(value => value.externalId === id);
     }
 
     /**
@@ -42,7 +42,7 @@ export class PositionsHelper {
      */
     public findHistoryPosition(id: number | undefined): Position | undefined {
         if (id === undefined) throw new Error('Parameter position_id is undefined')
-        return this.positions.getPositionsHistory().getPositions().find(value => value.id === id);
+        return this.positions.getPositionsHistory().getPositions().find(value => value.externalId === id);
     }
 
     public async loadHistoryPositions(pages: number) {
