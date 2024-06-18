@@ -4476,6 +4476,16 @@ export class MarginUnderlyingInstrument {
     public isSuspended: boolean
 
     /**
+     * The minimum amount when buying an asset.
+     */
+    public minQty: number
+
+    /**
+     * The step of the amount when buying an asset.
+     */
+    public qtyStep: number
+
+    /**
      * Active trading schedule.
      */
     public tradable: MarginUnderlyingInstrumentTradable
@@ -4494,6 +4504,8 @@ export class MarginUnderlyingInstrument {
         this.defaultLeverage = msg.defaultLeverage
         this.leverageProfile = msg.leverageProfile
         this.isSuspended = msg.isSuspended
+        this.minQty = parseFloat(msg.minQty)
+        this.qtyStep = parseFloat(msg.qtyStep)
         this.tradable = new MarginUnderlyingInstrumentTradable(msg.tradable.from, msg.tradable.to)
     }
 
@@ -4527,6 +4539,8 @@ export class MarginUnderlyingInstrument {
         this.defaultLeverage = msg.defaultLeverage
         this.leverageProfile = msg.leverageProfile
         this.isSuspended = msg.isSuspended
+        this.minQty = parseFloat(msg.minQty)
+        this.qtyStep = parseFloat(msg.qtyStep)
         this.tradable = new MarginUnderlyingInstrumentTradable(msg.tradable.from, msg.tradable.to)
     }
 }
@@ -7173,6 +7187,8 @@ class MarginInstrumentsInstrumentsListV1Item {
     defaultLeverage: number
     leverageProfile: number
     isSuspended: boolean
+    minQty: string
+    qtyStep: string
     tradable: MarginInstrumentsInstrumentsListV1Tradable
 
     constructor(msg: any) {
@@ -7183,6 +7199,8 @@ class MarginInstrumentsInstrumentsListV1Item {
         this.defaultLeverage = msg.default_leverage
         this.leverageProfile = msg.leverage_profile
         this.isSuspended = msg.is_suspended
+        this.minQty = msg.min_qty
+        this.qtyStep = msg.qty_step
         this.tradable = new MarginInstrumentsInstrumentsListV1Tradable(msg.tradable.from, msg.tradable.to)
     }
 }
