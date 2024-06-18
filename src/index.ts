@@ -3758,6 +3758,7 @@ export class MarginForex {
 
     /**
      * Makes stop order request for buy margin active.
+     * If the stop order price is on the opposite side of the current market price, it will be converted to a limit order.
      * @param instrument
      * @param direction
      * @param count
@@ -3793,6 +3794,7 @@ export class MarginForex {
 
     /**
      * Makes limit order request for buy margin active.
+     * If the limit order price is on the opposite side of the current market price, it will be converted to a stop order.
      * @param instrument
      * @param direction
      * @param count
@@ -3936,6 +3938,7 @@ export class MarginCfd {
 
     /**
      * Makes stop order request for buy margin active.
+     * If the stop order price is on the opposite side of the current market price, it will be converted to a limit order.
      * @param instrument
      * @param direction
      * @param count
@@ -3971,6 +3974,7 @@ export class MarginCfd {
 
     /**
      * Makes limit order request for buy margin active.
+     * If the limit order price is on the opposite side of the current market price, it will be converted to a stop order.
      * @param instrument
      * @param direction
      * @param count
@@ -4114,6 +4118,7 @@ export class MarginCrypto {
 
     /**
      * Makes stop order request for buy margin active.
+     * If the stop order price is on the opposite side of the current market price, it will be converted to a limit order.
      * @param instrument
      * @param direction
      * @param count
@@ -4149,6 +4154,7 @@ export class MarginCrypto {
 
     /**
      * Makes limit order request for buy margin active.
+     * If the limit order price is on the opposite side of the current market price, it will be converted to a stop order.
      * @param instrument
      * @param direction
      * @param count
