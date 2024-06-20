@@ -2821,6 +2821,7 @@ class WsApiClient {
     private lastRequestId: number = 0
     private requests: Map<string, RequestMetaData> = new Map<string, RequestMetaData>()
     private subscriptions: Map<string, SubscriptionMetaData[]> = new Map<string, SubscriptionMetaData[]>()
+    private isBrowser = typeof window !== 'undefined';
 
     constructor(apiUrl: string, platformId: number, authMethod: AuthMethod) {
         this.currentTime = new WsApiClientCurrentTime(new Date().getTime())
@@ -2830,14 +2831,19 @@ class WsApiClient {
     }
 
     connect(): Promise<void> {
-        this.connection = new WebSocket(this.apiUrl, {
-            headers: {
-                'cookie': `platform=${this.platformId}`,
-                'user-agent': 'quadcode-client-sdk-js/0.1.3'
-            }
-        })
+        if (!this.isBrowser) {
+            this.connection = new WebSocket(this.apiUrl, {
+                headers: {
+                    'cookie': `platform=${this.platformId}`,
+                    'user-agent': 'quadcode-client-sdk-js/0.1.3'
+                }
+            })
+        } else {
+            document.cookie = `platform=${this.platformId};user-agent=quadcode-client-sdk-js/0.1.3;`;
+            this.connection = new WebSocket(this.apiUrl);
+        }
 
-        this.connection.on('message', (data: string) => {
+        this.connection.onmessage = ({data}: { data: string }) => {
             const frame: {
                 request_id: string
                 name: string
@@ -2875,10 +2881,10 @@ class WsApiClient {
             } else if (frame.name && frame.name === 'timeSync') {
                 this.currentTime.unixMilliTime = frame.msg
             }
-        })
+        }
 
         return new Promise((resolve, reject) => {
-            this.connection.on('open', async () => {
+            this.connection.onopen = async () => {
                 try {
                     const isSuccessful = await this.authMethod.authenticateWsApiClient(this)
                     if (!isSuccessful) {
@@ -2894,11 +2900,11 @@ class WsApiClient {
                 } catch (e) {
                     reject(e)
                 }
-            })
+            }
 
-            this.connection.on('close', () => {
+            this.connection.onclose = () => {
                 reject(new Error('authentication is failed'))
-            })
+            }
         })
     }
 
