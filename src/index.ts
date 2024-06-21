@@ -346,7 +346,7 @@ export class Balances {
      * @internal
      * @private
      */
-    private constructor(private readonly types: number[], balancesMsg: InternalBillingBalancesV1, wsApiClient: WsApiClient) {
+    private constructor(private readonly types: number[], balancesMsg: BalancesAvailableBalancesV1, wsApiClient: WsApiClient) {
         for (const index in balancesMsg.items) {
             const balance = new Balance(balancesMsg.items[index], wsApiClient)
             this.balances.set(balance.id, balance)
@@ -359,7 +359,7 @@ export class Balances {
      */
     public static async create(wsApiClient: WsApiClient): Promise<Balances> {
         const types = [1, 4]
-        const balancesMsg = await wsApiClient.doRequest<InternalBillingBalancesV1>(new CallInternalBillingGetBalancesV1(types))
+        const balancesMsg = await wsApiClient.doRequest<BalancesAvailableBalancesV1>(new CallBalancesGetAvailableBalancesV1(types))
         const balances = new Balances(types, balancesMsg, wsApiClient)
         let hasMargin = false
 
@@ -380,7 +380,7 @@ export class Balances {
             })
         }
 
-        await wsApiClient.subscribe<InternalBillingBalanceChangedV1>(new SubscribeInternalBillingBalanceChangedV1(), (event: InternalBillingBalanceChangedV1) => {
+        await wsApiClient.subscribe<BalancesBalanceChangedV1>(new SubscribeBalancesBalanceChangedV1(), (event: BalancesBalanceChangedV1) => {
             balances.updateBalance(event)
         })
 
@@ -415,7 +415,7 @@ export class Balances {
      * @param balanceChangedMsg - Balances data transfer object.
      * @private
      */
-    private updateBalance(balanceChangedMsg: InternalBillingBalanceChangedV1): void {
+    private updateBalance(balanceChangedMsg: BalancesBalanceChangedV1): void {
         if (!this.types.includes(balanceChangedMsg.type)) {
             return
         }
@@ -548,7 +548,7 @@ export class Balance {
      * @internal
      * @private
      */
-    public constructor(msg: InternalBillingBalanceV1, wsApiClient: WsApiClient) {
+    public constructor(msg: BalancesAvailableBalancesV1Balance, wsApiClient: WsApiClient) {
         this.id = msg.id
         this.type = this.convertBalanceType(msg.type)
         this.amount = msg.amount
@@ -590,7 +590,7 @@ export class Balance {
      * @param msg - Balance data transfer object.
      * @private
      */
-    update(msg: InternalBillingBalanceChangedV1): void {
+    update(msg: BalancesBalanceChangedV1): void {
         this.type = this.convertBalanceType(msg.type)
         this.amount = msg.amount
         this.currency = msg.currency
@@ -5360,7 +5360,7 @@ class InitializationDataV3BinaryActiveSpecialInstrument {
     }
 }
 
-class InternalBillingBalanceChangedV1 {
+class BalancesBalanceChangedV1 {
     id: number
     type: number
     amount: number
@@ -5460,17 +5460,17 @@ class DigitalOptionClientPriceGeneratedV1CallOrPutPrice {
     }
 }
 
-class InternalBillingBalancesV1 {
-    items: InternalBillingBalanceV1[] = []
+class BalancesAvailableBalancesV1 {
+    items: BalancesAvailableBalancesV1Balance[] = []
 
     constructor(balances: any) {
         for (const index in balances) {
-            this.items.push(new InternalBillingBalanceV1(balances[index]))
+            this.items.push(new BalancesAvailableBalancesV1Balance(balances[index]))
         }
     }
 }
 
-class InternalBillingBalanceV1 {
+class BalancesAvailableBalancesV1Balance {
     id: number
     type: number
     amount: number
@@ -5484,14 +5484,14 @@ class InternalBillingBalanceV1 {
         amount: number
         currency: string
         user_id: number
-        is_margin: boolean
+        is_marginal: boolean
     }) {
         this.id = data.id
         this.type = data.type
         this.amount = data.amount
         this.currency = data.currency
         this.userId = data.user_id
-        this.isMargin = data.is_margin
+        this.isMargin = data.is_marginal
     }
 }
 
@@ -6335,7 +6335,7 @@ class CallBinaryOptionsGetInitializationDataV3 implements Request<Initialization
     }
 }
 
-class CallInternalBillingGetBalancesV1 implements Request<InternalBillingBalancesV1> {
+class CallBalancesGetAvailableBalancesV1 implements Request<BalancesAvailableBalancesV1> {
     constructor(private readonly typesIds: number[]) {
     }
 
@@ -6345,7 +6345,7 @@ class CallInternalBillingGetBalancesV1 implements Request<InternalBillingBalance
 
     messageBody() {
         return {
-            name: 'internal-billing.get-balances',
+            name: 'balances.get-available-balances',
             version: '1.0',
             body: {
                 types_ids: this.typesIds
@@ -6353,8 +6353,8 @@ class CallInternalBillingGetBalancesV1 implements Request<InternalBillingBalance
         }
     }
 
-    createResponse(data: any): InternalBillingBalancesV1 {
-        return new InternalBillingBalancesV1(data)
+    createResponse(data: any): BalancesAvailableBalancesV1 {
+        return new BalancesAvailableBalancesV1(data)
     }
 
     resultOnly(): boolean {
@@ -6628,7 +6628,7 @@ class UnsubscribeMessage implements Request<Result> {
     }
 }
 
-class SubscribeInternalBillingBalanceChangedV1 implements SubscribeRequest<InternalBillingBalanceChangedV1> {
+class SubscribeBalancesBalanceChangedV1 implements SubscribeRequest<BalancesBalanceChangedV1> {
     messageName() {
         return 'subscribeMessage'
     }
@@ -6641,15 +6641,15 @@ class SubscribeInternalBillingBalanceChangedV1 implements SubscribeRequest<Inter
     }
 
     eventMicroserviceName() {
-        return 'internal-billing'
+        return 'balances'
     }
 
     eventName() {
         return 'balance-changed'
     }
 
-    createEvent(data: any): InternalBillingBalanceChangedV1 {
-        return new InternalBillingBalanceChangedV1(data)
+    createEvent(data: any): BalancesBalanceChangedV1 {
+        return new BalancesBalanceChangedV1(data)
     }
 }
 
