@@ -346,7 +346,7 @@ export class Balances {
      * @internal
      * @private
      */
-    private constructor(private readonly types: number[], balancesMsg: InternalBillingBalancesV3, wsApiClient: WsApiClient) {
+    private constructor(private readonly types: number[], balancesMsg: BalancesAvailableBalancesV1, wsApiClient: WsApiClient) {
         for (const index in balancesMsg.items) {
             const balance = new Balance(balancesMsg.items[index], wsApiClient)
             this.balances.set(balance.id, balance)
@@ -359,16 +359,19 @@ export class Balances {
      */
     public static async create(wsApiClient: WsApiClient): Promise<Balances> {
         const types = [1, 4]
-        const balancesMsg = await wsApiClient.doRequest<InternalBillingBalancesV3>(new CallInternalBillingGetBalancesV3(types))
+        const balancesMsg = await wsApiClient.doRequest<BalancesAvailableBalancesV1>(new CallBalancesGetAvailableBalancesV1(types))
         const balances = new Balances(types, balancesMsg, wsApiClient)
         let hasMargin = false
 
         for (const [index] of balances.balances) {
             const balance = balances.balances.get(index)!
             await wsApiClient.doRequest<Result>(new CallSubscribeMarginalPortfolioBalanceChangedV1(balance.id))
-            const marginBalance = await wsApiClient.doRequest<MarginPortfolioBalanceV1>(new CallMarginalGetMarginalBalanceV1(balance.id))
-            balance.updateMargin(marginBalance)
-            hasMargin = true
+
+            if (balance.isMargin) {
+                const marginBalance = await wsApiClient.doRequest<MarginPortfolioBalanceV1>(new CallMarginalGetMarginalBalanceV1(balance.id))
+                balance.updateMargin(marginBalance)
+                hasMargin = true
+            }
         }
 
         if (hasMargin) {
@@ -377,7 +380,7 @@ export class Balances {
             })
         }
 
-        await wsApiClient.subscribe<InternalBillingBalanceChangedV1>(new SubscribeInternalBillingBalanceChangedV1(), (event: InternalBillingBalanceChangedV1) => {
+        await wsApiClient.subscribe<BalancesBalanceChangedV1>(new SubscribeBalancesBalanceChangedV1(), (event: BalancesBalanceChangedV1) => {
             balances.updateBalance(event)
         })
 
@@ -412,7 +415,7 @@ export class Balances {
      * @param balanceChangedMsg - Balances data transfer object.
      * @private
      */
-    private updateBalance(balanceChangedMsg: InternalBillingBalanceChangedV1): void {
+    private updateBalance(balanceChangedMsg: BalancesBalanceChangedV1): void {
         if (!this.types.includes(balanceChangedMsg.type)) {
             return
         }
@@ -470,6 +473,11 @@ export class Balance {
      * User's identification number.
      */
     public userId: number
+
+    /**
+     * Is margin balance.
+     */
+    public isMargin: boolean = false
 
     /**
      * Gross Profit and Loss (PnL).
@@ -540,12 +548,13 @@ export class Balance {
      * @internal
      * @private
      */
-    public constructor(msg: InternalBillingBalanceV3, wsApiClient: WsApiClient) {
+    public constructor(msg: BalancesAvailableBalancesV1Balance, wsApiClient: WsApiClient) {
         this.id = msg.id
         this.type = this.convertBalanceType(msg.type)
         this.amount = msg.amount
         this.currency = msg.currency
         this.userId = msg.userId
+        this.isMargin = msg.isMargin
         this.wsApiClient = wsApiClient
     }
 
@@ -581,7 +590,7 @@ export class Balance {
      * @param msg - Balance data transfer object.
      * @private
      */
-    update(msg: InternalBillingBalanceChangedV1): void {
+    update(msg: BalancesBalanceChangedV1): void {
         this.type = this.convertBalanceType(msg.type)
         this.amount = msg.amount
         this.currency = msg.currency
@@ -4677,6 +4686,7 @@ class WsApiClient {
     private readonly apiUrl: string
     private readonly platformId: number
     private readonly authMethod: AuthMethod
+    private isBrowser = typeof window !== 'undefined';
 
     private readonly initialReconnectTimeout: number = 100
     private readonly reconnectMultiplier: number = 2
@@ -4697,14 +4707,19 @@ class WsApiClient {
     }
 
     connect(): Promise<void> {
-        this.connection = new WebSocket(this.apiUrl, {
-            headers: {
-                'cookie': `platform=${this.platformId}`,
-                'user-agent': 'quadcode-client-sdk-js/0.1.3'
-            }
-        })
+        if (!this.isBrowser) {
+            this.connection = new WebSocket(this.apiUrl, {
+                headers: {
+                    'cookie': `platform=${this.platformId}`,
+                    'user-agent': 'quadcode-client-sdk-js/0.1.3'
+                }
+            })
+        } else {
+            document.cookie = `platform=${this.platformId};user-agent=quadcode-client-sdk-js/0.1.3;`;
+            this.connection = new WebSocket(this.apiUrl);
+        }
 
-        this.connection.on('message', (data: string) => {
+        this.connection.onmessage = ({data}: { data: string }) => {
             const frame: {
                 request_id: string
                 name: string
@@ -4748,10 +4763,10 @@ class WsApiClient {
             } else if (frame.name && frame.name === 'timeSync') {
                 this.currentTime.unixMilliTime = frame.msg
             }
-        })
+        }
 
         return new Promise((resolve, reject) => {
-            this.connection.on('open', async () => {
+            this.connection.onopen = async () => {
                 try {
                     const isSuccessful = await this.authMethod.authenticateWsApiClient(this)
                     if (!isSuccessful) {
@@ -4765,19 +4780,19 @@ class WsApiClient {
                         return reject(new Error('setOptions operation is failed'))
                     }
 
-                    this.connection.on('close', () => {
+                    this.connection.onclose = () => {
                         this.reconnect()
-                    })
+                    }
 
-                    this.connection.on('error', () => {
+                    this.connection.onerror = () => {
                         this.reconnect()
-                    })
+                    }
 
                     return resolve()
                 } catch (e) {
                     return reject(e)
                 }
-            })
+            }
         })
     }
 
@@ -5345,7 +5360,7 @@ class InitializationDataV3BinaryActiveSpecialInstrument {
     }
 }
 
-class InternalBillingBalanceChangedV1 {
+class BalancesBalanceChangedV1 {
     id: number
     type: number
     amount: number
@@ -5445,22 +5460,23 @@ class DigitalOptionClientPriceGeneratedV1CallOrPutPrice {
     }
 }
 
-class InternalBillingBalancesV3 {
-    items: InternalBillingBalanceV3[] = []
+class BalancesAvailableBalancesV1 {
+    items: BalancesAvailableBalancesV1Balance[] = []
 
     constructor(balances: any) {
         for (const index in balances) {
-            this.items.push(new InternalBillingBalanceV3(balances[index]))
+            this.items.push(new BalancesAvailableBalancesV1Balance(balances[index]))
         }
     }
 }
 
-class InternalBillingBalanceV3 {
+class BalancesAvailableBalancesV1Balance {
     id: number
     type: number
     amount: number
     currency: string
     userId: number
+    isMargin: boolean
 
     constructor(data: {
         id: number
@@ -5468,12 +5484,14 @@ class InternalBillingBalanceV3 {
         amount: number
         currency: string
         user_id: number
+        is_marginal: boolean
     }) {
         this.id = data.id
         this.type = data.type
         this.amount = data.amount
         this.currency = data.currency
         this.userId = data.user_id
+        this.isMargin = data.is_marginal
     }
 }
 
@@ -6317,7 +6335,7 @@ class CallBinaryOptionsGetInitializationDataV3 implements Request<Initialization
     }
 }
 
-class CallInternalBillingGetBalancesV3 implements Request<InternalBillingBalancesV3> {
+class CallBalancesGetAvailableBalancesV1 implements Request<BalancesAvailableBalancesV1> {
     constructor(private readonly typesIds: number[]) {
     }
 
@@ -6327,16 +6345,16 @@ class CallInternalBillingGetBalancesV3 implements Request<InternalBillingBalance
 
     messageBody() {
         return {
-            name: 'internal-billing.get-balances',
-            version: '3.0',
+            name: 'balances.get-available-balances',
+            version: '1.0',
             body: {
                 types_ids: this.typesIds
             }
         }
     }
 
-    createResponse(data: any): InternalBillingBalancesV3 {
-        return new InternalBillingBalancesV3(data)
+    createResponse(data: any): BalancesAvailableBalancesV1 {
+        return new BalancesAvailableBalancesV1(data)
     }
 
     resultOnly(): boolean {
@@ -6610,7 +6628,7 @@ class UnsubscribeMessage implements Request<Result> {
     }
 }
 
-class SubscribeInternalBillingBalanceChangedV1 implements SubscribeRequest<InternalBillingBalanceChangedV1> {
+class SubscribeBalancesBalanceChangedV1 implements SubscribeRequest<BalancesBalanceChangedV1> {
     messageName() {
         return 'subscribeMessage'
     }
@@ -6623,15 +6641,15 @@ class SubscribeInternalBillingBalanceChangedV1 implements SubscribeRequest<Inter
     }
 
     eventMicroserviceName() {
-        return 'internal-billing'
+        return 'balances'
     }
 
     eventName() {
         return 'balance-changed'
     }
 
-    createEvent(data: any): InternalBillingBalanceChangedV1 {
-        return new InternalBillingBalanceChangedV1(data)
+    createEvent(data: any): BalancesBalanceChangedV1 {
+        return new BalancesBalanceChangedV1(data)
     }
 }
 
