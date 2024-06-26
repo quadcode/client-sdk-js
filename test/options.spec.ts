@@ -333,7 +333,7 @@ describe('Options', () => {
                     const digitalOptionsOrder = await digitalOptions.buySpotStrike(firstInstrument, DigitalOptionsDirection.Call, 10, realBalance);
                     const order = await positionsHelper.waitForOrder(order => order.id === digitalOptionsOrder.id)
                     expect(order.status).eq("rejected", "Order status must be rejected");
-                    expect(positionsHelper.waitForPosition(position => position.internalId === order.positionId, 1000)).rejects.toThrow;
+                    await expect(positionsHelper.waitForPosition(position => position.internalId === order.positionId, 1000)).rejects.toThrow("Position not found within timeout 1000");
                 });
 
                 async function createOpenOrder() {

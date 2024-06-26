@@ -9,7 +9,7 @@ describe('Positions', () => {
     let positionsHelper: PositionsHelper;
 
     beforeAll(async () => {
-        const user = getUserByTitle('regular_user') as User;
+        const user = getUserByTitle('positions_user') as User;
         sdk = await QuadcodeClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
         positionsHelper = await PositionsHelper.create(sdk);
     });
