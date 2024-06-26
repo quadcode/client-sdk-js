@@ -6,24 +6,22 @@ import {
     QuadcodeClientSdk,
     TurboOptionsDirection
 } from "../src";
-import {expect} from 'chai'
-import {User} from "./data/types";
+import {API_URL, User, WS_URL} from "./vars";
 import {getUserByTitle} from "./utils/userUtils";
 import {waitForCondition} from "./utils/waiters";
+import {afterAll, beforeAll, describe, expect, it} from "vitest";
 
 describe('Balances', () => {
     let sdk: QuadcodeClientSdk;
     let balances: Balances;
     const user = getUserByTitle('balance_user') as User;
-    const wsURL = process.env.WS_URL as string;
-    const apiUrl = process.env.API_URL as string;
 
-    before(async () => {
-        sdk = await QuadcodeClientSdk.create(wsURL, 82, new LoginPasswordAuthMethod(apiUrl, user.email, user.password));
+    beforeAll(async () => {
+        sdk = await QuadcodeClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
         balances = await sdk.balances();
     })
 
-    after(async () => {
+    afterAll(async () => {
         await sdk.shutdown();
     });
 
@@ -57,6 +55,6 @@ describe('Balances', () => {
 
     it('cannot reset normal balance', async () => {
         const balance = getBalance(BalanceType.Real);
-        await expect(balance.resetDemoBalance()).to.eventually.be.rejectedWith("Only demo balance can be reset")
+        await expect(balance.resetDemoBalance()).rejects.toThrow("Only demo balance can be reset")
     });
 });

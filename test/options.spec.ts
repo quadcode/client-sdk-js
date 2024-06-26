@@ -7,7 +7,6 @@ import {
     BlitzOptionsDirection,
     DigitalOptions,
     DigitalOptionsDirection,
-    DigitalOptionsOrder,
     DigitalOptionsUnderlyingInstrument,
     LoginPasswordAuthMethod,
     QuadcodeClientSdk,
@@ -16,8 +15,8 @@ import {
     TurboOptionsDirection
 } from "../src";
 import {getUserByTitle} from "./utils/userUtils";
-import {User} from "./data/types";
-import {expect} from "chai";
+import {API_URL, User, WS_URL} from "./vars";
+import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {justWait, waitForCondition} from "./utils/waiters";
 import {PositionsHelper} from "./utils/positionsHelper";
 
@@ -27,25 +26,24 @@ describe('Options', () => {
     let demoBalance: Balance;
     let realBalance: Balance;
 
-    before(async () => {
+    beforeAll(async () => {
         const user = getUserByTitle('regular_user') as User;
-        const wsURL = process.env.WS_URL as string;
-        const apiUrl = process.env.API_URL as string;
-        sdk = await QuadcodeClientSdk.create(wsURL, 82, new LoginPasswordAuthMethod(apiUrl, user.email, user.password));
+
+        sdk = await QuadcodeClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
         const balances = await sdk.balances();
         demoBalance = balances.getBalances().filter(value => value.type === "demo")[0];
         realBalance = balances.getBalances().filter(value => value.type === "real")[0];
         positionsHelper = await PositionsHelper.create(sdk);
     });
 
-    after(async function () {
+    afterAll(async function () {
         await sdk.shutdown();
     });
 
     describe('Binary-options', () => {
         let binaryOptions: BinaryOptions;
 
-        before(async () => {
+        beforeAll(async () => {
             binaryOptions = await sdk.binaryOptions();
         });
 
@@ -56,7 +54,7 @@ describe('Options', () => {
         describe('Getting binary-option instruments', async () => {
             let instruments: BinaryOptionsActiveInstrument[];
 
-            before(async () => {
+            beforeAll(async () => {
                 const actives = binaryOptions.getActives();
                 const first = actives[0];
                 const binaryOptionsActiveInstruments = await first.instruments();
@@ -96,8 +94,8 @@ describe('Options', () => {
 
                 it('insufficient funds for this transaction', async () => {
                     const firstInstrument = getAvailableInstrument();
-                    await expect(binaryOptions.buy(firstInstrument, BinaryOptionsDirection.Put, 10, realBalance))
-                        .to.eventually.be.rejectedWith("Insufficient funds for this transaction.")
+                    await expect(binaryOptions.buy(firstInstrument, BinaryOptionsDirection.Put, 10, realBalance)).rejects
+                        .toThrow("Insufficient funds for this transaction.")
                 });
 
                 async function openOption() {
@@ -131,7 +129,7 @@ describe('Options', () => {
 
         let turboOptions: TurboOptions;
 
-        before(async () => {
+        beforeAll(async () => {
             turboOptions = await sdk.turboOptions();
         });
 
@@ -142,7 +140,7 @@ describe('Options', () => {
         describe('Getting turbo-option instruments', async () => {
             let instruments: TurboOptionsActiveInstrument[];
 
-            before(async () => {
+            beforeAll(async () => {
                 const actives = turboOptions.getActives();
                 const first = actives[0];
                 const turboOptionsActiveInstruments = await first.instruments();
@@ -176,7 +174,7 @@ describe('Options', () => {
                 it('insufficient funds for this transaction', async () => {
                     const firstInstrument = getAvailableInstrument();
                     await expect(turboOptions.buy(firstInstrument, TurboOptionsDirection.Call, 10, realBalance))
-                        .to.eventually.be.rejectedWith("Insufficient funds for this transaction.")
+                        .rejects.toThrow("Insufficient funds for this transaction.")
                 });
 
                 async function openOption() {
@@ -209,14 +207,14 @@ describe('Options', () => {
                     expect(position.sellProfit, "Sell profit must be present").not.be.null;
                     expect(positionsHelper.findHistoryPosition(position.externalId), 'Position must be present in history positions').not.to.be.undefined
                     expect(positionsHelper.findPosition(position.externalId), 'Position must be not present in all positions').to.be.undefined
-                }).timeout(7000);
+                }, 7000);
             });
         });
     });
     describe('Blitz-options', () => {
         let blitzOptions: BlitzOptions;
 
-        before(async () => {
+        beforeAll(async () => {
             blitzOptions = await sdk.blitzOptions();
         });
 
@@ -230,7 +228,7 @@ describe('Options', () => {
                 const active = blitzOptions.getActives()[0];
                 const expirationSize = active.expirationTimes[0];
                 await expect(blitzOptions.buy(active, BlitzOptionsDirection.Put, expirationSize, 10, realBalance))
-                    .to.eventually.be.rejectedWith("Insufficient funds for this transaction.")
+                    .rejects.toThrow("Insufficient funds for this transaction.")
             });
 
             async function openOption() {
@@ -255,12 +253,12 @@ describe('Options', () => {
                     expect(position.closeReason, 'Invalid close reason').to.be.oneOf(["win", "equal", "loose"])
                     expect(positionsHelper.findHistoryPosition(position.externalId), 'Position must be present in history positions').not.to.be.undefined
                     expect(positionsHelper.findPosition(position.externalId), 'Position must be not present in all positions').to.be.undefined
-                }).timeout(10000);
+                }, 10000);
 
                 it('should not be sold', async () => {
                     const position = await openOption();
                     await justWait(1000);
-                    await expect(position.sell()).to.eventually.be.rejectedWith("Blitz options are not supported")
+                    await expect(position.sell()).rejects.toThrow("Blitz options are not supported")
                 });
 
             });
@@ -269,7 +267,7 @@ describe('Options', () => {
     describe('Digital-options', () => {
         let digitalOptions: DigitalOptions;
 
-        before(async () => {
+        beforeAll(async () => {
             digitalOptions = await sdk.digitalOptions();
         });
 
@@ -288,7 +286,7 @@ describe('Options', () => {
                 return instrument;
             }
 
-            before(async () => {
+            beforeAll(async () => {
                 const underlyings = digitalOptions.getUnderlyingsAvailableForTradingAt(sdk.currentTime())
                 const first = underlyings[0];
                 const instruments = await first.instruments();
@@ -332,17 +330,20 @@ describe('Options', () => {
 
                 it("ignore insufficient funds for this transaction because it's order", async () => {
                     const firstInstrument = findInstrumentByPeriod(60);
-                    await expect(digitalOptions.buySpotStrike(firstInstrument, DigitalOptionsDirection.Call, 10, realBalance))
-                        .to.eventually.be.an.instanceof(DigitalOptionsOrder)
+                    const digitalOptionsOrder = await digitalOptions.buySpotStrike(firstInstrument, DigitalOptionsDirection.Call, 10, realBalance);
+                    const order = await positionsHelper.waitForOrder(order => order.id === digitalOptionsOrder.id)
+                    expect(order.status).eq("rejected", "Order status must be rejected");
+                    await expect(positionsHelper.waitForPosition(position => position.internalId === order.positionId, 1000)).rejects.toThrow("Position not found within timeout 1000");
                 });
 
                 async function createOpenOrder() {
                     const instrument = findInstrumentByPeriod(60);
-                    const order = await digitalOptions.buySpotStrike(instrument, DigitalOptionsDirection.Call, 1, demoBalance);
-                    expect(order.id, 'Option id should be not null').to.be.not.null
-                    const position = await positionsHelper.waitForPosition((position) => position.orderIds.includes(order.id));
+                    const digitalOptionsOrder = await digitalOptions.buySpotStrike(instrument, DigitalOptionsDirection.Call, 1, demoBalance);
+                    const order = await positionsHelper.waitForOrder(order => order.id === digitalOptionsOrder.id);
+                    expect(order.status, 'Incorrect order status').eq("filled");
+                    const position = await positionsHelper.waitForPosition((position) => position.orderIds.includes(digitalOptionsOrder.id));
                     expect(position.externalId, 'Position must be present').to.be.not.null
-                    return {order, position};
+                    return {order: digitalOptionsOrder, position};
                 }
 
                 it('should be sold', async () => {
@@ -355,7 +356,7 @@ describe('Options', () => {
                     expect(position.closeReason, "Close reason must be default").eq("default");
                     expect(positionsHelper.findHistoryPosition(position.externalId), 'Position must be present in history positions').not.to.be.undefined
                     expect(positionsHelper.findPosition(position.externalId), 'Position must be not present in all positions').to.be.undefined
-                }).timeout(10000);
+                }, 10000);
             });
         });
     });

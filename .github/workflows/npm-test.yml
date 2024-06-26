@@ -8,17 +8,39 @@ on:
   workflow_call: # workflow can be called by another workflow
 
 jobs:
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      - name: Read vars
+        run: |
+          cat <<EOF > test/vars.ts
+          ${{ secrets.VARS }}
+          EOF
       - run: npm install
-      - run: npm test
-        env:
-          USERS_DATA: ${{secrets.USERS_DATA}}
-          API_URL: ${{secrets.API_URL}}
-          WS_URL: ${{secrets.WS_URL}}
+      - name: Run tests for Node.js
+        run: npm test
+
+  test_browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Read vars
+        run: |
+          cat <<EOF > test/vars.ts
+          ${{ secrets.VARS }}
+          EOF
+      - run: npm install
+      - name: Run tests for browser
+        run: npm run test:browser

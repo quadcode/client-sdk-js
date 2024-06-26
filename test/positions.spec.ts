@@ -1,22 +1,20 @@
 import {LoginPasswordAuthMethod, QuadcodeClientSdk} from "../src";
 import {getUserByTitle} from "./utils/userUtils";
-import {User} from "./data/types";
-import {expect} from "chai";
+import {API_URL, User, WS_URL} from "./vars";
+import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {PositionsHelper} from "./utils/positionsHelper";
 
 describe('Positions', () => {
     let sdk: QuadcodeClientSdk;
     let positionsHelper: PositionsHelper;
 
-    before(async () => {
-        const user = getUserByTitle('regular_user') as User;
-        const wsURL = process.env.WS_URL as string;
-        const apiUrl = process.env.API_URL as string;
-        sdk = await QuadcodeClientSdk.create(wsURL, 82, new LoginPasswordAuthMethod(apiUrl, user.email, user.password));
+    beforeAll(async () => {
+        const user = getUserByTitle('positions_user') as User;
+        sdk = await QuadcodeClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
         positionsHelper = await PositionsHelper.create(sdk);
     });
 
-    after(async function () {
+    afterAll(async function () {
         await sdk.shutdown();
     });
 

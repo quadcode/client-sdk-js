@@ -28,6 +28,12 @@ export class QuadcodeClientSdk {
     private positionsFacade: Positions | undefined
 
     /**
+     * Orders facade cache.
+     * @private
+     */
+    private ordersFacade: Orders | undefined
+
+    /**
      * Quotes facade cache.
      * @private
      */
@@ -226,6 +232,18 @@ export class QuadcodeClientSdk {
     }
 
     /**
+     * Returns orders facade class.
+     */
+    public async orders(): Promise<Orders> {
+        if (!this.ordersFacade) {
+            const balances = await this.balances()
+            const balanceIds = balances.getBalances().map(balance => balance.id)
+            this.ordersFacade = await Orders.create(this.wsApiClient, this.userProfile.userId, balanceIds)
+        }
+        return this.ordersFacade
+    }
+
+    /**
      * Returns ws current time.
      */
     public currentTime(): Date {
@@ -365,17 +383,17 @@ export class Balances {
 
         for (const [index] of balances.balances) {
             const balance = balances.balances.get(index)!
-            await wsApiClient.doRequest<Result>(new CallSubscribeMarginalPortfolioBalanceChangedV1(balance.id))
+            await wsApiClient.doRequest<Result>(new CallSubscribeMarginPortfolioBalanceChangedV1(balance.id))
 
             if (balance.isMargin) {
-                const marginBalance = await wsApiClient.doRequest<MarginPortfolioBalanceV1>(new CallMarginalGetMarginalBalanceV1(balance.id))
+                const marginBalance = await wsApiClient.doRequest<MarginPortfolioBalanceV1>(new CallMarginGetMarginBalanceV1(balance.id))
                 balance.updateMargin(marginBalance)
                 hasMargin = true
             }
         }
 
         if (hasMargin) {
-            await wsApiClient.subscribe<MarginPortfolioBalanceV1>(new SubscribeMarginalPortfolioBalanceChangedV1(), (event: MarginPortfolioBalanceV1) => {
+            await wsApiClient.subscribe<MarginPortfolioBalanceV1>(new SubscribeMarginPortfolioBalanceChangedV1(), (event: MarginPortfolioBalanceV1) => {
                 balances.updateMarginBalance(event)
             })
         }
@@ -1106,6 +1124,285 @@ export class Positions {
         }
     }
 }
+
+/**
+ * Don't use this class directly from your code. Use the following methods instead:
+ *
+ * * {@link QuadcodeClientSdk.orders}
+ *
+ * Orders facade class. Stores information about opened orders. Keeps order's information up to date.
+ */
+export class Orders {
+    /**
+     * Orders current state.
+     * @private
+     */
+    private orders: Map<number, Order> = new Map<number, Order>()
+
+    /**
+     * Orders updates observer.
+     * @private
+     */
+    private onUpdateOrderObserver: Observable<Order> = new Observable<Order>()
+
+    /**
+     * Instance of WebSocket API client.
+     * @private
+     */
+    private wsApiClient: WsApiClient | undefined
+
+    /**
+     * List of supported instrument types.
+     * @private
+     */
+    private instrumentTypes: string[] = ["digital-option","marginal-cfd", "marginal-crypto", "marginal-forex"]
+
+
+    /**
+     * Just private constructor. Just private constructor. Use {@link Orders.create create} instead.
+     * @internal
+     * @private
+     */
+    private constructor() {
+    }
+
+    /**
+     * Subscribes on opened order's updates, requests current state of opened order's, puts the current state to instance of class Orders and returns it.
+     * @param wsApiClient - Instance of WebSocket API client.
+     * @param userId
+     * @param balanceIds
+     */
+    public static async create(wsApiClient: WsApiClient, userId: number, balanceIds: number[]): Promise<Orders> {
+        const ordersFacade = new Orders()
+        ordersFacade.wsApiClient = wsApiClient
+
+        for (const index in ordersFacade.instrumentTypes) {
+            await ordersFacade.subscribeOrderChanged(userId, ordersFacade.instrumentTypes[index])
+        }
+
+        for (const index in balanceIds) {
+            await ordersFacade.syncOldActiveOrders(balanceIds[index])
+        }
+
+        return ordersFacade
+    }
+
+    /**
+     * Subscribes on order's updates.
+     *
+     * @private
+     */
+    private async subscribeOrderChanged(userId: number, instrumentType: string): Promise<void> {
+        await this.wsApiClient!.subscribe<PortfolioOrderChangedV2>(
+            new SubscribePortfolioOrderChangedV2(userId, instrumentType),
+            (event: PortfolioOrderChangedV2) => {
+                if (event.instrumentType === instrumentType) {
+                    this.syncOrderFromEvent(event)
+                }
+            }
+        );
+    }
+
+    /**
+     * Synchronizes old active orders.
+     * @private
+     */
+    private async syncOldActiveOrders(userBalanceId: number): Promise<void> {
+        const ordersPage = await this.wsApiClient!.doRequest<PortfolioOrdersV2>(
+            new CallPortfolioGetOrdersV2(userBalanceId)
+        )
+
+        for (const index in ordersPage.orders) {
+            this.syncOrderFromResponse(ordersPage.orders[index])
+        }
+    }
+
+    /**
+     * Returns list of all orders.
+     */
+    public getAllOrders(): Order[] {
+        const list = []
+
+        for (const [index] of this.orders) {
+            list.push(this.orders.get(index)!)
+        }
+
+        return list
+    }
+
+    /**
+     * Checks if a given position associated with a order.
+     * @param position
+     * @param order
+     */
+    public isPositionMatchingOrder(position: Position, order: Order): boolean {
+        return order.positionId === position.internalId
+    }
+
+    /**
+     * Adds specified callback to order update subscribers' list.
+     * @param callback - Callback will be called for every change of order.
+     */
+    public subscribeOnUpdateOrder(callback: CallbackForOrderUpdate): void {
+        this.onUpdateOrderObserver.subscribe(callback)
+    }
+
+    /**
+     * Removes specified callback from order update subscribers' list.
+     * @param callback - Callback for remove.
+     */
+    public unsubscribeOnUpdateOrder(callback: CallbackForOrderUpdate): void {
+        this.onUpdateOrderObserver.unsubscribe(callback)
+    }
+
+    /**
+     * Updates instance from DTO.
+     * @param msg - Order data transfer object.
+     * @private
+     */
+    private syncOrderFromResponse(msg: PortfolioOrdersV2Order): void {
+        if (msg.id === undefined) {
+            return
+        }
+
+        const isNewOrder = !this.orders.has(msg.id)
+        if (isNewOrder) {
+            const order = new Order(this.wsApiClient!)
+            this.orders.set(msg.id, order)
+        }
+
+        const order = this.orders.get(msg.id)!
+        order.syncFromResponse(msg)
+        this.onUpdateOrderObserver.notify(order)
+    }
+
+    /**
+     * Updates instance from DTO.
+     * @param msg - Order data transfer object.
+     * @private
+     */
+    private syncOrderFromEvent(msg: PortfolioOrderChangedV2): void {
+        if (msg.id === undefined) {
+            return
+        }
+
+        const isNewOrder = !this.orders.has(msg.id)
+        if (isNewOrder) {
+            const order = new Order(this.wsApiClient!)
+            this.orders.set(msg.id, order)
+        }
+
+        const order = this.orders.get(msg.id)!
+        order.syncFromEvent(msg)
+        this.onUpdateOrderObserver.notify(order)
+
+        if (order.status === "filled" || order.status === "canceled" || order.status === "rejected") {
+            this.orders.delete(msg.id)
+        }
+    }
+}
+
+export class Order {
+    /**
+     * Order's identification number.
+     */
+    public id: number | undefined
+
+    /**
+     * Order status.
+     */
+    public status: string | undefined
+
+    /**
+     * Instrument type.
+     */
+    public instrumentType: string | undefined
+
+    /**
+     * Kind of order.
+     */
+    public kind: string | undefined
+
+    /**
+     * Order position ID.
+     */
+    public positionId: string | undefined
+
+    /**
+     * User ID.
+     */
+    public userId: number | undefined
+
+    /**
+     * User's balance ID.
+     */
+    public userBalanceId: number | undefined
+
+    /**
+     * Instance of WebSocket API client.
+     * @private
+     */
+    private wsApiClient: WsApiClient
+
+    constructor(wsApiClient: WsApiClient) {
+        this.wsApiClient = wsApiClient
+    }
+
+    /**
+     * Synchronises order from DTO.
+     * @param msg - Order data transfer object.
+     * @private
+     */
+    syncFromResponse(msg: PortfolioOrdersV2Order): void {
+        this.id = msg.id
+        this.status = msg.status
+        this.positionId = msg.positionId
+        this.instrumentType = msg.instrumentType
+        this.kind = msg.kind
+        this.userId = msg.userId
+        this.userBalanceId = msg.userBalanceId
+    }
+
+    /**
+     * Synchronises order from DTO.
+     * @param msg - Order data transfer object.
+     * @private
+     */
+    syncFromEvent(msg: PortfolioOrderChangedV2): void {
+        this.id = msg.id
+        this.status = msg.status
+        this.positionId = msg.positionId
+        this.instrumentType = msg.instrumentType
+        this.kind = msg.kind
+        this.userId = msg.userId
+        this.userBalanceId = msg.userBalanceId
+    }
+
+    public async cancel(): Promise<void> {
+        if (!this.id) {
+            throw new Error('Order id is not set')
+        }
+
+        switch (this.instrumentType) {
+            case "marginal-cfd":
+                await this.wsApiClient.doRequest<Result>(new CallMarginCancelPendingOrderV1("cfd", this.id))
+                break
+            case "marginal-crypto":
+                await this.wsApiClient.doRequest<Result>(new CallMarginCancelPendingOrderV1("crypto", this.id))
+                break
+            case "marginal-forex":
+                await this.wsApiClient.doRequest<Result>(new CallMarginCancelPendingOrderV1("forex", this.id))
+                break
+            default:
+                throw new Error(`Unsupported instrument type '${this.instrumentType}'`)
+        }
+    }
+}
+
+/**
+ * Callback for handle position's update.
+ */
+export type CallbackForOrderUpdate = (order: Order) => void
 
 class PositionsHistory {
     /**
@@ -4694,7 +4991,7 @@ class WsApiClient {
     private reconnectTimeout: number = 100
 
     private disconnecting = false
-    private connection: WebSocket
+    private connection: WebSocket | undefined
     private lastRequestId: number = 0
     private requests: Map<string, RequestMetaData> = new Map<string, RequestMetaData>()
     private subscriptions: Map<string, SubscriptionMetaData[]> = new Map<string, SubscriptionMetaData[]>()
@@ -4719,7 +5016,7 @@ class WsApiClient {
             this.connection = new WebSocket(this.apiUrl);
         }
 
-        this.connection.onmessage = ({data}: { data: string }) => {
+        this.connection!.onmessage = ({data}: { data: string }) => {
             const frame: {
                 request_id: string
                 name: string
@@ -4766,7 +5063,7 @@ class WsApiClient {
         }
 
         return new Promise((resolve, reject) => {
-            this.connection.onopen = async () => {
+            this.connection!.onopen = async () => {
                 try {
                     const isSuccessful = await this.authMethod.authenticateWsApiClient(this)
                     if (!isSuccessful) {
@@ -4780,11 +5077,11 @@ class WsApiClient {
                         return reject(new Error('setOptions operation is failed'))
                     }
 
-                    this.connection.onclose = () => {
+                    this.connection!.onclose = () => {
                         this.reconnect()
                     }
 
-                    this.connection.onerror = () => {
+                    this.connection!.onerror = () => {
                         this.reconnect()
                     }
 
@@ -4798,7 +5095,13 @@ class WsApiClient {
 
     disconnect() {
         this.disconnecting = true
-        this.connection.terminate()
+        if (this.connection) {
+            if (!this.isBrowser) {
+                this.connection!.terminate()
+            } else {
+                this.connection!.close()
+            }
+        }
         this.connection = undefined
         this.lastRequestId = 0
         this.requests.clear()
@@ -4831,7 +5134,7 @@ class WsApiClient {
     doRequest<T>(request: Request<T>): Promise<T> {
         const requestId = (++this.lastRequestId).toString()
 
-        this.connection.send(JSON.stringify({
+        this.connection!.send(JSON.stringify({
             name: request.messageName(),
             request_id: requestId,
             msg: request.messageBody()
@@ -5538,7 +5841,7 @@ class PortfolioPositionChangedV3 {
         user_id: number
         user_balance_id: number
         version: number
-        raw_event: RawEvent | undefined
+        raw_event: PositionsRawEvent | undefined
     }) {
         this.activeId = data.active_id
         this.closeProfit = data.close_profit
@@ -5648,7 +5951,7 @@ class PortfolioPositionsHistoryV2Position {
         user_id: number
         user_balance_id: number
         version: number
-        raw_event: RawEvent | undefined
+        raw_event: PositionsRawEvent | undefined
     }) {
         this.activeId = data.active_id
         this.closeProfit = data.close_profit
@@ -5808,7 +6111,7 @@ class PortfolioPositionsV4Position {
         status: string
         user_id: number
         user_balance_id: number
-        raw_event: RawEvent | undefined
+        raw_event: PositionsRawEvent | undefined
     }) {
         this.activeId = data.active_id
         this.expectedProfit = data.expected_profit
@@ -5857,16 +6160,133 @@ class PortfolioPositionsV4Position {
     }
 }
 
-class RawEvent {
-    binary_options_option_changed1: RawEventItem | undefined
-    digital_options_position_changed1: RawEventItem | undefined
-    marginal_forex_position_changed1: RawEventItem | undefined
-    marginal_cfd_position_changed1: RawEventItem | undefined
-    marginal_crypto_position_changed1: RawEventItem | undefined
+class PositionsRawEvent {
+    binary_options_option_changed1: PositionsRawEventItem | undefined
+    digital_options_position_changed1: PositionsRawEventItem | undefined
+    marginal_forex_position_changed1: PositionsRawEventItem | undefined
+    marginal_cfd_position_changed1: PositionsRawEventItem | undefined
+    marginal_crypto_position_changed1: PositionsRawEventItem | undefined
 }
 
-class RawEventItem {
+class PositionsRawEventItem {
     order_ids: number[] | undefined
+}
+
+class PortfolioOrdersV2 {
+    orders: PortfolioOrdersV2Order[] = []
+
+    constructor(data: any) {
+        for (const index in data.items) {
+            this.orders.push(new PortfolioOrdersV2Order(data.items[index]))
+        }
+    }
+}
+
+class PortfolioOrdersV2Order {
+    id: number | undefined
+    instrumentType: string
+    kind: string
+    positionId: string
+    status: string
+    userId: number
+    userBalanceId: number
+
+    constructor(data: {
+        id: string
+        instrument_type: string
+        kind: string
+        position_id: string
+        status: string
+        user_id: number
+        user_balance_id: number
+        raw_event: OrdersRawEvent | undefined
+    }) {
+        this.instrumentType = data.instrument_type
+        this.kind = data.kind
+        this.positionId = data.position_id
+        this.status = data.status
+        this.userId = data.user_id
+        this.userBalanceId = data.user_balance_id
+
+        if (data.raw_event) {
+            switch (data.instrument_type) {
+                case InstrumentType.DigitalOption:
+                    this.id = data.raw_event.digital_options_order_changed1!.id
+                    break;
+                case InstrumentType.MarginCfd:
+                    this.id = data.raw_event.marginal_cfd_order_changed1!.id
+                    break;
+                case InstrumentType.MarginForex:
+                    this.id = data.raw_event.marginal_forex_order_changed1!.id
+                    break;
+                case InstrumentType.MarginCrypto:
+                    this.id = data.raw_event.marginal_crypto_order_changed1!.id
+                    break
+            }
+        }
+    }
+}
+
+class PortfolioOrderChangedV2 {
+    id: number | undefined
+    instrumentType: string
+    kind: string
+    positionId: string
+    status: string
+    userId: number
+    userBalanceId: number
+
+    constructor(data: {
+        id: string
+        instrument_type: string
+        kind: string
+        position_id: string
+        status: string
+        user_id: number
+        user_balance_id: number
+        raw_event: OrdersRawEvent | undefined
+    }) {
+        this.instrumentType = data.instrument_type
+        this.kind = data.kind
+        this.positionId = data.position_id
+        this.status = data.status
+        this.userId = data.user_id
+        this.userBalanceId = data.user_balance_id
+
+        if (data.raw_event) {
+            switch (data.instrument_type) {
+                case InstrumentType.DigitalOption:
+                    this.id = data.raw_event.digital_options_order_changed1!.id
+                    break;
+                case InstrumentType.MarginCfd:
+                    this.id = data.raw_event.marginal_cfd_order_changed1!.id
+                    break;
+                case InstrumentType.MarginForex:
+                    this.id = data.raw_event.marginal_forex_order_changed1!.id
+                    break;
+                case InstrumentType.MarginCrypto:
+                    this.id = data.raw_event.marginal_crypto_order_changed1!.id
+                    break
+            }
+        }
+    }
+}
+
+class OrdersRawEvent {
+    digital_options_order_changed1: OrdersRawEventItem | undefined
+    marginal_forex_order_changed1: OrdersRawEventItem | undefined
+    marginal_cfd_order_changed1: OrdersRawEventItem | undefined
+    marginal_crypto_order_changed1: OrdersRawEventItem | undefined
+}
+
+class OrdersRawEventItem {
+    id: number
+
+    constructor(data: {
+        id: number
+    }) {
+        this.id = data.id
+    }
 }
 
 class QuoteGeneratedV2 {
@@ -6004,6 +6424,34 @@ class CallPortfolioSubscribePositions implements Request<Result> {
 
     resultOnly(): boolean {
         return true
+    }
+}
+
+class CallPortfolioGetOrdersV2 implements Request<PortfolioOrdersV2> {
+    constructor(private userBalanceId: number) {
+    }
+
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: 'portfolio.get-orders',
+            version: '2.0',
+            body: {
+                user_balance_id: this.userBalanceId,
+                kind: 'deferred'
+            }
+        }
+    }
+
+    createResponse(data: any): PortfolioOrdersV2 {
+        return new PortfolioOrdersV2(data)
+    }
+
+    resultOnly(): boolean {
+        return false
     }
 }
 
@@ -6686,6 +7134,40 @@ class SubscribePortfolioPositionChangedV3 implements SubscribeRequest<PortfolioP
     }
 }
 
+class SubscribePortfolioOrderChangedV2 implements SubscribeRequest<PortfolioOrderChangedV2> {
+    constructor(private readonly userId: number, private readonly instrumentType: string) {
+    }
+
+    messageName() {
+        return 'subscribeMessage'
+    }
+
+    messageBody() {
+        return {
+            name: `${this.eventMicroserviceName()}.${this.eventName()}`,
+            version: '2.0',
+            params: {
+                routingFilters: {
+                    user_id: this.userId,
+                    instrument_type: this.instrumentType
+                }
+            }
+        }
+    }
+
+    eventMicroserviceName() {
+        return 'portfolio'
+    }
+
+    eventName() {
+        return 'order-changed'
+    }
+
+    createEvent(data: any): PortfolioOrderChangedV2 {
+        return new PortfolioOrderChangedV2(data)
+    }
+}
+
 class SubscribeQuoteGeneratedV2 implements SubscribeRequest<QuoteGeneratedV2> {
     activeId
 
@@ -6719,6 +7201,33 @@ class SubscribeQuoteGeneratedV2 implements SubscribeRequest<QuoteGeneratedV2> {
 
     createEvent(data: any): QuoteGeneratedV2 {
         return new QuoteGeneratedV2(data)
+    }
+}
+
+class CallMarginCancelPendingOrderV1 implements Request<Result> {
+    constructor(private marginInstrumentType: string, private orderId: number) {
+    }
+
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: `marginal-${this.marginInstrumentType}.cancel-pending-order`,
+            version: '1.0',
+            body: {
+                order_id: this.orderId
+            }
+        }
+    }
+
+    createResponse(data: any): Result {
+        return new Result(data)
+    }
+
+    resultOnly(): boolean {
+        return true
     }
 }
 
@@ -7014,7 +7523,7 @@ class CallMarginInstrumentsGetInstrumentsListV1 implements Request<MarginInstrum
     }
 }
 
-class CallMarginalGetMarginalBalanceV1 implements Request<MarginPortfolioBalanceV1> {
+class CallMarginGetMarginBalanceV1 implements Request<MarginPortfolioBalanceV1> {
     constructor(private readonly userBalanceId: number) {
     }
 
@@ -7041,7 +7550,7 @@ class CallMarginalGetMarginalBalanceV1 implements Request<MarginPortfolioBalance
     }
 }
 
-class CallSubscribeMarginalPortfolioBalanceChangedV1 implements Request<Result> {
+class CallSubscribeMarginPortfolioBalanceChangedV1 implements Request<Result> {
     constructor(private readonly userBalanceId: number) {
     }
 
@@ -7068,7 +7577,7 @@ class CallSubscribeMarginalPortfolioBalanceChangedV1 implements Request<Result> 
     }
 }
 
-class SubscribeMarginalPortfolioBalanceChangedV1 implements SubscribeRequest<MarginPortfolioBalanceV1> {
+class SubscribeMarginPortfolioBalanceChangedV1 implements SubscribeRequest<MarginPortfolioBalanceV1> {
     messageName() {
         return 'subscribeMessage'
     }
