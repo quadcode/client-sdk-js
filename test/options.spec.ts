@@ -7,7 +7,6 @@ import {
     BlitzOptionsDirection,
     DigitalOptions,
     DigitalOptionsDirection,
-    DigitalOptionsOrder,
     DigitalOptionsUnderlyingInstrument,
     LoginPasswordAuthMethod,
     QuadcodeClientSdk,
@@ -331,16 +330,20 @@ describe('Options', () => {
 
                 it("ignore insufficient funds for this transaction because it's order", async () => {
                     const firstInstrument = findInstrumentByPeriod(60);
-                    expect(await digitalOptions.buySpotStrike(firstInstrument, DigitalOptionsDirection.Call, 10, realBalance)).instanceof(DigitalOptionsOrder)
+                    const digitalOptionsOrder = await digitalOptions.buySpotStrike(firstInstrument, DigitalOptionsDirection.Call, 10, realBalance);
+                    const order = await positionsHelper.waitForOrder(order => order.id === digitalOptionsOrder.id)
+                    expect(order.status).eq("rejected", "Order status must be rejected");
+                    expect(positionsHelper.waitForPosition(position => position.internalId === order.positionId, 1000)).rejects.toThrow;
                 });
 
                 async function createOpenOrder() {
                     const instrument = findInstrumentByPeriod(60);
-                    const order = await digitalOptions.buySpotStrike(instrument, DigitalOptionsDirection.Call, 1, demoBalance);
-                    expect(order.id, 'Option id should be not null').to.be.not.null
-                    const position = await positionsHelper.waitForPosition((position) => position.orderIds.includes(order.id));
+                    const digitalOptionsOrder = await digitalOptions.buySpotStrike(instrument, DigitalOptionsDirection.Call, 1, demoBalance);
+                    const order = await positionsHelper.waitForOrder(order => order.id === digitalOptionsOrder.id);
+                    expect(order.status, 'Incorrect order status').eq("filled");
+                    const position = await positionsHelper.waitForPosition((position) => position.orderIds.includes(digitalOptionsOrder.id));
                     expect(position.externalId, 'Position must be present').to.be.not.null
-                    return {order, position};
+                    return {order: digitalOptionsOrder, position};
                 }
 
                 it('should be sold', async () => {
