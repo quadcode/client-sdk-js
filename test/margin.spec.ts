@@ -12,8 +12,8 @@ import {
     Quotes
 } from "../src";
 import {getUserByTitle} from "./utils/userUtils";
-import {User} from "./data/types";
-import {expect} from "chai";
+import {API_URL, User, WS_URL} from "./vars";
+import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {PositionsHelper} from "./utils/positionsHelper";
 import {justWait, waitForCondition} from "./utils/waiters";
 
@@ -25,11 +25,10 @@ describe('Margin Forex/CFD/Crypto', () => {
     let realBalance: Balance;
     let positionsHelper: PositionsHelper;
 
-    before(async () => {
+    beforeAll(async () => {
         user = getUserByTitle('margin_user') as User;
-        const wsURL = process.env.WS_URL as string;
-        const apiUrl = process.env.API_URL as string;
-        sdk = await QuadcodeClientSdk.create(wsURL, 82, new LoginPasswordAuthMethod(apiUrl, user.email, user.password));
+
+        sdk = await QuadcodeClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
         const balances = await sdk.balances();
         quotes = await sdk.quotes();
         demoBalance = balances.getBalances().filter(value => value.type === "demo")[0];
@@ -39,7 +38,7 @@ describe('Margin Forex/CFD/Crypto', () => {
         await demoBalance.resetDemoBalance()
     });
 
-    after(async function () {
+    afterAll(async function () {
         await sdk.shutdown();
     });
 
@@ -58,7 +57,7 @@ describe('Margin Forex/CFD/Crypto', () => {
     describe('Margin CFD', async () => {
         let marginCFD: MarginCfd;
 
-        before(async () => {
+        beforeAll(async () => {
             marginCFD = await sdk.marginCfd();
         });
 
@@ -102,8 +101,8 @@ describe('Margin Forex/CFD/Crypto', () => {
 
         it('should not create order if do not have money', async () => {
             const availableForBuy = await getUnderlyingInstrument();
-            await expect(marginCFD.buy(availableForBuy, MarginDirection.Buy, 1, realBalance))
-                .to.eventually.be.rejectedWith(`request is failed with status 4008 and message: create order: user_id: ${user.id} user_balance_id: ${realBalance.id} user balance has no deposits`)
+            await expect(marginCFD.buy(availableForBuy, MarginDirection.Buy, 1, realBalance)).rejects
+                .toThrow(`request is failed with status 4008 and message: create order: user_id: ${user.id} user_balance_id: ${realBalance.id} user balance has no deposits`)
         });
 
         it('should open market order', async () => {
@@ -140,7 +139,7 @@ describe('Margin Forex/CFD/Crypto', () => {
     describe('Margin Crypto', async () => {
         let marginCrypto: MarginCrypto;
 
-        before(async () => {
+        beforeAll(async () => {
             marginCrypto = await sdk.marginCrypto();
         });
 
@@ -184,8 +183,8 @@ describe('Margin Forex/CFD/Crypto', () => {
 
         it('should not create order if do not have money', async () => {
             const availableForBuy = await getUnderlyingInstrument();
-            await expect(marginCrypto.buy(availableForBuy, MarginDirection.Buy, 1, realBalance))
-                .to.eventually.be.rejectedWith(`request is failed with status 4008 and message: create order: user_id: ${user.id} user_balance_id: ${realBalance.id} user balance has no deposits`)
+            await expect(marginCrypto.buy(availableForBuy, MarginDirection.Buy, 1, realBalance)).rejects
+                .toThrow(`request is failed with status 4008 and message: create order: user_id: ${user.id} user_balance_id: ${realBalance.id} user balance has no deposits`)
         });
 
         it('should open market order', async () => {
@@ -222,7 +221,7 @@ describe('Margin Forex/CFD/Crypto', () => {
     describe('Margin Forex', async () => {
         let marginForex: MarginForex;
 
-        before(async () => {
+        beforeAll(async () => {
             marginForex = await sdk.marginForex();
         });
 
@@ -269,8 +268,8 @@ describe('Margin Forex/CFD/Crypto', () => {
 
         it('should not create order if do not have money', async () => {
             const availableForBuy = await getUnderlyingInstrument();
-            await expect(marginForex.buy(availableForBuy, MarginDirection.Buy, 1, realBalance))
-                .to.eventually.be.rejectedWith(`request is failed with status 4008 and message: create order: user_id: ${user.id} user_balance_id: ${realBalance.id} user balance has no deposits`)
+            await expect(marginForex.buy(availableForBuy, MarginDirection.Buy, 1, realBalance)).rejects
+                .toThrow(`request is failed with status 4008 and message: create order: user_id: ${user.id} user_balance_id: ${realBalance.id} user balance has no deposits`)
         });
 
         it('should open market order', async () => {
