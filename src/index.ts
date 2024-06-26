@@ -1155,7 +1155,7 @@ export class Orders {
      * List of supported instrument types.
      * @private
      */
-    private instrumentTypes: string[] = ["marginal-cfd", "marginal-crypto", "marginal-forex"]
+    private instrumentTypes: string[] = ["digital-option","marginal-cfd", "marginal-crypto", "marginal-forex"]
 
 
     /**
