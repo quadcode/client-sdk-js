@@ -3,7 +3,7 @@ import {
     Balances,
     BalanceType,
     LoginPasswordAuthMethod,
-    QuadcodeClientSdk,
+    ClientSdk,
     TurboOptionsDirection
 } from "../src";
 import {API_URL, User, WS_URL} from "./vars";
@@ -12,12 +12,12 @@ import {waitForCondition} from "./utils/waiters";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 
 describe('Balances', () => {
-    let sdk: QuadcodeClientSdk;
+    let sdk: ClientSdk;
     let balances: Balances;
     const user = getUserByTitle('balance_user') as User;
 
     beforeAll(async () => {
-        sdk = await QuadcodeClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
+        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
         balances = await sdk.balances();
     })
 

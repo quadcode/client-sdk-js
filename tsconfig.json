@@ -109,7 +109,6 @@
     "out": "docs",
     "emit": "both",
     "navigationLinks": {
-      "Quadcode": "https://quadcode.com/",
       "Releases": "https://github.com/quadcode/client-sdk-js/releases"
     },
     "sort": [

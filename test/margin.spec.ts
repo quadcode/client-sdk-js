@@ -8,7 +8,7 @@ import {
     MarginForex,
     MarginTradingTPSL,
     MarginUnderlyingInstrument,
-    QuadcodeClientSdk,
+    ClientSdk,
     Quotes
 } from "../src";
 import {getUserByTitle} from "./utils/userUtils";
@@ -18,7 +18,7 @@ import {PositionsHelper} from "./utils/positionsHelper";
 import {justWait, waitForCondition} from "./utils/waiters";
 
 describe('Margin Forex/CFD/Crypto', () => {
-    let sdk: QuadcodeClientSdk;
+    let sdk: ClientSdk;
     let user: User;
     let quotes: Quotes;
     let demoBalance: Balance;
@@ -28,7 +28,7 @@ describe('Margin Forex/CFD/Crypto', () => {
     beforeAll(async () => {
         user = getUserByTitle('margin_user') as User;
 
-        sdk = await QuadcodeClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
+        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
         const balances = await sdk.balances();
         quotes = await sdk.quotes();
         demoBalance = balances.getBalances().filter(value => value.type === "demo")[0];

@@ -3,7 +3,7 @@ import WebSocket from "isomorphic-ws"
 /**
  * This is the entry point of this SDK for your application. Use it to implement the business logic of your application.
  */
-export class QuadcodeClientSdk {
+export class ClientSdk {
     /**
      * Refreshable user profile class instance.
      */
@@ -95,16 +95,16 @@ export class QuadcodeClientSdk {
 
     /**
      * Creates instance of SDK entry point class.
-     * This method establishes and authenticates connection to Quadcode system API.
-     * @param apiUrl - URL to Quadcode system API. Usually it has the following format: `wss://ws.trade.{brand_domain}/echo/websocket`.
-     * @param platformId - Identification number of your application. You can get platform ID from Quadcode representatives.
+     * This method establishes and authenticates connection to system API.
+     * @param apiUrl - URL to system API. Usually it has the following format: `wss://ws.trade.{brand_domain}/echo/websocket`.
+     * @param platformId - Identification number of your application.
      * @param authMethod - Authentication method used for connection authentication.
      */
-    public static async create(apiUrl: string, platformId: number, authMethod: AuthMethod): Promise<QuadcodeClientSdk> {
+    public static async create(apiUrl: string, platformId: number, authMethod: AuthMethod): Promise<ClientSdk> {
         const wsApiClient = new WsApiClient(apiUrl, platformId, authMethod)
         await wsApiClient.connect()
         const userProfile = await UserProfile.create(wsApiClient)
-        return new QuadcodeClientSdk(userProfile, wsApiClient)
+        return new ClientSdk(userProfile, wsApiClient)
     }
 
     /**
@@ -252,7 +252,7 @@ export class QuadcodeClientSdk {
 }
 
 /**
- * Authenticates user in Quadcode system APIs.
+ * Authenticates user in system APIs.
  */
 export interface AuthMethod {
     /**
@@ -268,8 +268,6 @@ export interface AuthMethod {
 export class SsidAuthMethod implements AuthMethod {
     /**
      * Accepts SSID for authentication.
-     *
-     * B2B-client's application can retrieve SSID over b2b-gateway API: [/v1/b2b-gateway/users/{user_id}/sessions](https://github.com/quadcode/b2b-gateway-api/blob/ec176e29fcf8a60e94398ce9a0120a23802a83dd/quadcode-internal-balance-openapi.yaml#L104).
      *
      * @param ssid - User's session ID.
      */
@@ -320,7 +318,7 @@ export class LoginPasswordAuthMethod implements AuthMethod {
 }
 
 /**
- * Don't use this class directly from your code. Use {@link QuadcodeClientSdk.userProfile} field instead.
+ * Don't use this class directly from your code. Use {@link ClientSdk.userProfile} field instead.
  *
  * User profile facade class. Stores information about the user on whose behalf your application is working.
  */
@@ -345,7 +343,7 @@ export class UserProfile {
 }
 
 /**
- * Don't use this class directly from your code. Use {@link QuadcodeClientSdk.balances} static method instead.
+ * Don't use this class directly from your code. Use {@link ClientSdk.balances} static method instead.
  *
  * Balances facade class. Stores information about user's balances. Keeps balances' information up to date.
  */
@@ -670,7 +668,7 @@ export enum BalanceType {
 }
 
 /**
- * Don't use this class directly from your code. Use {@link QuadcodeClientSdk.quotes} static method instead.
+ * Don't use this class directly from your code. Use {@link ClientSdk.quotes} static method instead.
  *
  * Quotes facade class. Stores information about quotes (market data). Keeps quotes' information up to date.
  */
@@ -835,7 +833,7 @@ export type CallbackForCurrentQuoteUpdate = (currentQuote: CurrentQuote) => void
 /**
  * Don't use this class directly from your code. Use the following methods instead:
  *
- * * {@link QuadcodeClientSdk.positions}
+ * * {@link ClientSdk.positions}
  *
  * Positions facade class. Stores information about opened positions. Keeps positions' information up to date.
  */
@@ -1128,7 +1126,7 @@ export class Positions {
 /**
  * Don't use this class directly from your code. Use the following methods instead:
  *
- * * {@link QuadcodeClientSdk.orders}
+ * * {@link ClientSdk.orders}
  *
  * Orders facade class. Stores information about opened orders. Keeps order's information up to date.
  */
@@ -1772,7 +1770,7 @@ export class Position {
 }
 
 /**
- * Don't use this class directly from your code. Use {@link QuadcodeClientSdk.blitzOptions} static method instead.
+ * Don't use this class directly from your code. Use {@link ClientSdk.blitzOptions} static method instead.
  *
  * Blitz options facade class.
  */
@@ -2124,7 +2122,7 @@ export class BlitzOptionsOption {
 }
 
 /**
- * Don't use this class directly from your code. Use {@link QuadcodeClientSdk.turboOptions} static method instead.
+ * Don't use this class directly from your code. Use {@link ClientSdk.turboOptions} static method instead.
  *
  * Turbo options facade class.
  */
@@ -2669,7 +2667,7 @@ export class TurboOptionsOption {
 }
 
 /**
- * Don't use this class directly from your code. Use {@link QuadcodeClientSdk.binaryOptions} static method instead.
+ * Don't use this class directly from your code. Use {@link ClientSdk.binaryOptions} static method instead.
  *
  * Binary options facade class.
  */
@@ -3287,7 +3285,7 @@ export class BinaryOptionsOption {
 }
 
 /**
- * Don't use this class directly from your code. Use {@link QuadcodeClientSdk.digitalOptions} static method instead.
+ * Don't use this class directly from your code. Use {@link ClientSdk.digitalOptions} static method instead.
  *
  * Digital options facade class.
  */
@@ -5012,7 +5010,7 @@ class WsApiClient {
                 }
             })
         } else {
-            document.cookie = `platform=${this.platformId};user-agent=quadcode-client-sdk-js/0.1.3;`;
+            document.cookie = `platform=${this.platformId};`;
             this.connection = new WebSocket(this.apiUrl);
         }
 

@@ -1,4 +1,4 @@
-import {Order, Orders, Position, Positions, QuadcodeClientSdk} from "../../src";
+import {Order, Orders, Position, Positions, ClientSdk} from "../../src";
 
 export class PositionsHelper {
 
@@ -8,13 +8,13 @@ export class PositionsHelper {
     private constructor() {
     }
 
-    public static async create(sdk: QuadcodeClientSdk): Promise<PositionsHelper> {
+    public static async create(sdk: ClientSdk): Promise<PositionsHelper> {
         const instance = new PositionsHelper();
         await instance.initialize(sdk);
         return instance;
     }
 
-    private async initialize(sdk: QuadcodeClientSdk) {
+    private async initialize(sdk: ClientSdk) {
         this.positions = await sdk.positions();
         this.orders = await sdk.orders();
     }

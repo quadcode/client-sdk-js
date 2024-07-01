@@ -9,7 +9,7 @@ import {
     DigitalOptionsDirection,
     DigitalOptionsUnderlyingInstrument,
     LoginPasswordAuthMethod,
-    QuadcodeClientSdk,
+    ClientSdk,
     TurboOptions,
     TurboOptionsActiveInstrument,
     TurboOptionsDirection
@@ -21,7 +21,7 @@ import {justWait, waitForCondition} from "./utils/waiters";
 import {PositionsHelper} from "./utils/positionsHelper";
 
 describe('Options', () => {
-    let sdk: QuadcodeClientSdk;
+    let sdk: ClientSdk;
     let positionsHelper: PositionsHelper;
     let demoBalance: Balance;
     let realBalance: Balance;
@@ -29,7 +29,7 @@ describe('Options', () => {
     beforeAll(async () => {
         const user = getUserByTitle('regular_user') as User;
 
-        sdk = await QuadcodeClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
+        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
         const balances = await sdk.balances();
         demoBalance = balances.getBalances().filter(value => value.type === "demo")[0];
         realBalance = balances.getBalances().filter(value => value.type === "real")[0];

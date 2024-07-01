@@ -1,14 +1,14 @@
-import {LoginPasswordAuthMethod, QuadcodeClientSdk} from "../src";
+import {LoginPasswordAuthMethod, ClientSdk} from "../src";
 import {API_URL, User, WS_URL} from "./vars";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {getUserByTitle} from "./utils/userUtils";
 
 describe('Authentication with login and password', () => {
-    let sdk: QuadcodeClientSdk;
+    let sdk: ClientSdk;
     const user = getUserByTitle("regular_user") as User;
 
     beforeAll(async () => {
-        sdk = await QuadcodeClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
+        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
     })
 
     afterAll(async function () {
@@ -21,7 +21,7 @@ describe('Authentication with login and password', () => {
     });
 
     it('should not authenticate user with invalid credentials', async () => {
-        await expect(QuadcodeClientSdk.create(
+        await expect(ClientSdk.create(
             WS_URL,
             82,
             new LoginPasswordAuthMethod(API_URL, user.email, "invalid_password"))).rejects.toThrow("authentication is failed")
