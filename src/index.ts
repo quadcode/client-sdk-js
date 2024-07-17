@@ -154,6 +154,11 @@ export interface AuthMethod {
      * @param wsApiClient - Instance of WebSocket API client.
      */
     authenticateWsApiClient(wsApiClient: WsApiClient): Promise<boolean>
+
+    /**
+     * Should implement session id fetching logic.
+     */
+    fetchSsid(): Promise<string>
 }
 
 /**
@@ -177,6 +182,13 @@ export class SsidAuthMethod implements AuthMethod {
     public async authenticateWsApiClient(wsApiClient: WsApiClient): Promise<boolean> {
         const authResponse = await wsApiClient.doRequest<Authenticated>(new Authenticate(this.ssid))
         return authResponse.isSuccessful
+    }
+
+    /**
+     * Returns session id.
+     */
+    public async fetchSsid(): Promise<string> {
+        return this.ssid
     }
 }
 
@@ -2830,16 +2842,18 @@ class WsApiClient {
         this.authMethod = authMethod
     }
 
-    connect(): Promise<void> {
+    async connect(): Promise<void> {
+        const ssid = await this.authMethod.fetchSsid()
+
         if (!this.isBrowser) {
             this.connection = new WebSocket(this.apiUrl, {
                 headers: {
-                    'cookie': `platform=${this.platformId}`,
+                    'cookie': `ssid=${ssid};platform=${this.platformId}`,
                     'user-agent': 'quadcode-client-sdk-js/0.1.4'
                 }
             })
         } else {
-            document.cookie = `platform=${this.platformId};user-agent=quadcode-client-sdk-js/0.1.4;`;
+            document.cookie = `ssid=${ssid};platform=${this.platformId};user-agent=quadcode-client-sdk-js/0.1.4;`;
             this.connection = new WebSocket(this.apiUrl);
         }
 
