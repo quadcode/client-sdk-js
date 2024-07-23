@@ -2853,7 +2853,16 @@ class WsApiClient {
                 }
             })
         } else {
-            document.cookie = `ssid=${ssid};platform=${this.platformId};user-agent=quadcode-client-sdk-js/0.1.5;`;
+            try {
+                await fetch(`https://api.${this.apiUrl.replace("wss://ws.", "").replace("/echo/websocket", "")}/v1/logout`, {
+                    method: "POST",
+                    mode: "cors",
+                    credentials: "include",
+                })
+            } catch {
+                // ignore fetch error
+            }
+
             this.connection = new WebSocket(this.apiUrl);
         }
 
