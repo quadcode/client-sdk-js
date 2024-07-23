@@ -2849,7 +2849,7 @@ class WsApiClient {
             this.connection = new WebSocket(this.apiUrl, {
                 headers: {
                     'cookie': `ssid=${ssid};platform=${this.platformId}`,
-                    'user-agent': 'quadcode-client-sdk-js/0.1.5'
+                    'user-agent': 'quadcode-client-sdk-js/0.1.6'
                 }
             })
         } else {
