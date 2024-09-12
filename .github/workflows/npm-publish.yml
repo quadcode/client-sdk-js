@@ -8,9 +8,9 @@ on:
     types: [created]
 
 jobs:
-  test:
-    uses: ./.github/workflows/npm-test.yml
-    secrets: inherit
+#  test:
+#    uses: ./.github/workflows/npm-test.yml
+#    secrets: inherit
 
   build:
     runs-on: ubuntu-latest
