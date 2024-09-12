@@ -1153,7 +1153,7 @@ export class Orders {
      * List of supported instrument types.
      * @private
      */
-    private instrumentTypes: string[] = ["digital-option","marginal-cfd", "marginal-crypto", "marginal-forex"]
+    private instrumentTypes: string[] = ["digital-option", "marginal-cfd", "marginal-crypto", "marginal-forex"]
 
 
     /**
@@ -5057,6 +5057,12 @@ class WsApiClient {
                 }
             } else if (frame.name && frame.name === 'timeSync') {
                 this.currentTime.unixMilliTime = frame.msg
+            } else if (frame.name && frame.name === 'authenticated' && frame.msg === false) {
+                for (const [, requestMetaData] of this.requests) {
+                    if (requestMetaData.request instanceof Authenticate) {
+                        requestMetaData.reject(new Error('authentication is failed'))
+                    }
+                }
             }
         }
 
