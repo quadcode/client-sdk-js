@@ -4108,6 +4108,7 @@ export class MarginForex {
      * @param balance - The balance from which the initial investment will be written off and upon successful closing of the position, profit will be credited to this balance.
      * @param stopLoss
      * @param takeProfit
+     * @param leverage
      */
     public async buy(
         instrument: MarginUnderlyingInstrument,
@@ -4116,14 +4117,19 @@ export class MarginForex {
         balance: Balance,
         stopLoss: MarginTradingTPSL | null = null,
         takeProfit: MarginTradingTPSL | null = null,
+        leverage: number | null = null,
     ): Promise<MarginOrder> {
+        if (leverage === null) {
+            leverage = instrument.calculateLeverageProfile(balance)
+        }
+
         const request = new CallMarginPlaceMarketOrderV1(
             direction,
             balance.id,
             count.toString(),
             instrument.id,
             instrument.activeId,
-            instrument.calculateLeverageProfile(balance).toString(),
+            leverage.toString(),
             "forex",
             stopLoss,
             takeProfit,
@@ -4142,6 +4148,7 @@ export class MarginForex {
      * @param stopPrice
      * @param takeProfit
      * @param stopLoss
+     * @param leverage
      */
     public async buyStop(
         instrument: MarginUnderlyingInstrument,
@@ -4151,7 +4158,12 @@ export class MarginForex {
         stopPrice: number,
         stopLoss: MarginTradingTPSL | null = null,
         takeProfit: MarginTradingTPSL | null = null,
+        leverage: number | null = null,
     ): Promise<MarginOrder> {
+        if (leverage === null) {
+            leverage = instrument.calculateLeverageProfile(balance)
+        }
+
         const request = new CallMarginPlaceStopOrderV1(
             direction,
             balance.id,
@@ -4159,7 +4171,7 @@ export class MarginForex {
             stopPrice.toString(),
             instrument.id,
             instrument.activeId,
-            instrument.calculateLeverageProfile(balance).toString(),
+            leverage.toString(),
             'forex',
             stopLoss,
             takeProfit,
@@ -4178,6 +4190,7 @@ export class MarginForex {
      * @param limitPrice
      * @param stopLoss
      * @param takeProfit
+     * @param leverage
      */
     public async buyLimit(
         instrument: MarginUnderlyingInstrument,
@@ -4187,7 +4200,12 @@ export class MarginForex {
         limitPrice: number,
         stopLoss: MarginTradingTPSL | null = null,
         takeProfit: MarginTradingTPSL | null = null,
+        leverage: number | null = null,
     ): Promise<MarginOrder> {
+        if (leverage === null) {
+            leverage = instrument.calculateLeverageProfile(balance)
+        }
+
         const request = new CallMarginPlaceLimitOrderV1(
             direction,
             balance.id,
@@ -4195,7 +4213,7 @@ export class MarginForex {
             limitPrice.toString(),
             instrument.id,
             instrument.activeId,
-            instrument.calculateLeverageProfile(balance).toString(),
+            leverage.toString(),
             'forex',
             stopLoss,
             takeProfit,
@@ -4288,6 +4306,7 @@ export class MarginCfd {
      * @param balance - The balance from which the initial investment will be written off and upon successful closing of the position, profit will be credited to this balance.
      * @param takeProfit
      * @param stopLoss
+     * @param leverage
      */
     public async buy(
         instrument: MarginUnderlyingInstrument,
@@ -4296,14 +4315,19 @@ export class MarginCfd {
         balance: Balance,
         stopLoss: MarginTradingTPSL | null = null,
         takeProfit: MarginTradingTPSL | null = null,
+        leverage: number | null = null,
     ): Promise<MarginOrder> {
+        if (leverage === null) {
+            leverage = instrument.calculateLeverageProfile(balance)
+        }
+
         const request = new CallMarginPlaceMarketOrderV1(
             direction,
             balance.id,
             count.toString(),
             instrument.id,
             instrument.activeId,
-            instrument.calculateLeverageProfile(balance).toString(),
+            leverage.toString(),
             "cfd",
             stopLoss,
             takeProfit,
@@ -4322,6 +4346,7 @@ export class MarginCfd {
      * @param stopPrice
      * @param takeProfit
      * @param stopLoss
+     * @param leverage
      */
     public async buyStop(
         instrument: MarginUnderlyingInstrument,
@@ -4331,7 +4356,12 @@ export class MarginCfd {
         stopPrice: number,
         stopLoss: MarginTradingTPSL | null = null,
         takeProfit: MarginTradingTPSL | null = null,
+        leverage: number | null = null,
     ): Promise<MarginOrder> {
+        if (leverage === null) {
+            leverage = instrument.calculateLeverageProfile(balance)
+        }
+
         const request = new CallMarginPlaceStopOrderV1(
             direction,
             balance.id,
@@ -4339,7 +4369,7 @@ export class MarginCfd {
             stopPrice.toString(),
             instrument.id,
             instrument.activeId,
-            instrument.calculateLeverageProfile(balance).toString(),
+            leverage.toString(),
             'cfd',
             stopLoss,
             takeProfit,
@@ -4358,6 +4388,7 @@ export class MarginCfd {
      * @param limitPrice
      * @param stopLoss
      * @param takeProfit
+     * @param leverage
      */
     public async buyLimit(
         instrument: MarginUnderlyingInstrument,
@@ -4367,7 +4398,12 @@ export class MarginCfd {
         limitPrice: number,
         stopLoss: MarginTradingTPSL | null = null,
         takeProfit: MarginTradingTPSL | null = null,
+        leverage: number | null = null,
     ): Promise<MarginOrder> {
+        if (leverage === null) {
+            leverage = instrument.calculateLeverageProfile(balance)
+        }
+
         const request = new CallMarginPlaceLimitOrderV1(
             direction,
             balance.id,
@@ -4375,7 +4411,7 @@ export class MarginCfd {
             limitPrice.toString(),
             instrument.id,
             instrument.activeId,
-            instrument.calculateLeverageProfile(balance).toString(),
+            leverage.toString(),
             'cfd',
             stopLoss,
             takeProfit,
@@ -4468,6 +4504,7 @@ export class MarginCrypto {
      * @param balance - The balance from which the initial investment will be written off and upon successful closing of the position, profit will be credited to this balance.
      * @param stopLoss
      * @param takeProfit
+     * @param leverage
      */
     public async buy(
         instrument: MarginUnderlyingInstrument,
@@ -4476,14 +4513,19 @@ export class MarginCrypto {
         balance: Balance,
         stopLoss: MarginTradingTPSL | null = null,
         takeProfit: MarginTradingTPSL | null = null,
+        leverage: number | null = null,
     ): Promise<MarginOrder> {
+        if (leverage === null) {
+            leverage = instrument.calculateLeverageProfile(balance)
+        }
+
         const request = new CallMarginPlaceMarketOrderV1(
             direction,
             balance.id,
             count.toString(),
             instrument.id,
             instrument.activeId,
-            instrument.calculateLeverageProfile(balance).toString(),
+            leverage.toString(),
             "crypto",
             stopLoss,
             takeProfit,
@@ -4502,6 +4544,7 @@ export class MarginCrypto {
      * @param stopPrice
      * @param takeProfit
      * @param stopLoss
+     * @param leverage
      */
     public async buyStop(
         instrument: MarginUnderlyingInstrument,
@@ -4511,7 +4554,12 @@ export class MarginCrypto {
         stopPrice: number,
         stopLoss: MarginTradingTPSL | null = null,
         takeProfit: MarginTradingTPSL | null = null,
+        leverage: number | null = null,
     ): Promise<MarginOrder> {
+        if (leverage === null) {
+            leverage = instrument.calculateLeverageProfile(balance)
+        }
+
         const request = new CallMarginPlaceStopOrderV1(
             direction,
             balance.id,
@@ -4519,7 +4567,7 @@ export class MarginCrypto {
             stopPrice.toString(),
             instrument.id,
             instrument.activeId,
-            instrument.calculateLeverageProfile(balance).toString(),
+            leverage.toString(),
             'crypto',
             stopLoss,
             takeProfit,
@@ -4538,6 +4586,7 @@ export class MarginCrypto {
      * @param limitPrice
      * @param stopLoss
      * @param takeProfit
+     * @param leverage
      */
     public async buyLimit(
         instrument: MarginUnderlyingInstrument,
@@ -4547,7 +4596,12 @@ export class MarginCrypto {
         limitPrice: number,
         stopLoss: MarginTradingTPSL | null = null,
         takeProfit: MarginTradingTPSL | null = null,
+        leverage: number | null = null,
     ): Promise<MarginOrder> {
+        if (leverage === null) {
+            leverage = instrument.calculateLeverageProfile(balance)
+        }
+
         const request = new CallMarginPlaceLimitOrderV1(
             direction,
             balance.id,
@@ -4555,7 +4609,7 @@ export class MarginCrypto {
             limitPrice.toString(),
             instrument.id,
             instrument.activeId,
-            instrument.calculateLeverageProfile(balance).toString(),
+            leverage.toString(),
             'crypto',
             stopLoss,
             takeProfit,
