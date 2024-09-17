@@ -7813,7 +7813,6 @@ class MarginInstrumentsInstrumentsListV1 {
         if (data.dynamic_leverage_profiles) {
             for (const index in data.dynamic_leverage_profiles) {
                 const dynamicLeverageProfile = data.dynamic_leverage_profiles[index]
-                console.log(dynamicLeverageProfile)
                 dynamicLeverageProfiles.set(dynamicLeverageProfile.id, dynamicLeverageProfile.items)
             }
         }
