@@ -4788,7 +4788,7 @@ export class MarginUnderlyingInstruments {
         for (const index in msg.items) {
             const instrument = msg.items[index]
             instrumentIds.push(instrument.id)
-            this.syncInstrumentFromResponse(instrument, msg.dynamicLeverageProfiles)
+            this.syncInstrumentFromResponse(instrument)
         }
 
         for (const [index] of this.instruments) {
@@ -4801,17 +4801,13 @@ export class MarginUnderlyingInstruments {
     /**
      * Updates the instance from DTO.
      * @param msg - Instrument data transfer object.
-     * @param dynamicLeverageProfiles
      * @private
      */
-    private syncInstrumentFromResponse(
-        msg: MarginInstrumentsInstrumentsListV1Item,
-        dynamicLeverageProfiles: MarginInstrumentsInstrumentsListV1DynamicLeverageProfile[]
-    ) {
+    private syncInstrumentFromResponse(msg: MarginInstrumentsInstrumentsListV1Item) {
         if (!this.instruments.has(msg.id)) {
-            this.instruments.set(msg.id, new MarginUnderlyingInstrument(msg, dynamicLeverageProfiles))
+            this.instruments.set(msg.id, new MarginUnderlyingInstrument(msg))
         } else {
-            this.instruments.get(msg.id)!.sync(msg, dynamicLeverageProfiles)
+            this.instruments.get(msg.id)!.sync(msg)
         }
     }
 }
@@ -4878,11 +4874,10 @@ export class MarginUnderlyingInstrument {
     /**
      * Creates instance from DTO.
      * @param msg - Instrument data transfer object.
-     * @param dynamicLeverageProfiles
      * @internal
      * @private
      */
-    public constructor(msg: MarginInstrumentsInstrumentsListV1Item, dynamicLeverageProfiles: MarginInstrumentsInstrumentsListV1DynamicLeverageProfile[]) {
+    public constructor(msg: MarginInstrumentsInstrumentsListV1Item) {
         this.id = msg.id
         this.activeId = msg.activeId
         this.allowLongPosition = msg.allowLongPosition
@@ -4893,7 +4888,7 @@ export class MarginUnderlyingInstrument {
         this.minQty = parseFloat(msg.minQty)
         this.qtyStep = parseFloat(msg.qtyStep)
         this.tradable = new MarginUnderlyingInstrumentTradable(msg.tradable.from, msg.tradable.to)
-        this.dynamicLeverageProfiles = dynamicLeverageProfiles
+        this.dynamicLeverageProfiles = msg.dynamicLeverageProfile
     }
 
     /**
@@ -4918,7 +4913,7 @@ export class MarginUnderlyingInstrument {
         return this.tradable.to.getTime() - currentTime.getTime();
     }
 
-    sync(msg: MarginInstrumentsInstrumentsListV1Item, dynamicLeverageProfiles: MarginInstrumentsInstrumentsListV1DynamicLeverageProfile[]): void {
+    sync(msg: MarginInstrumentsInstrumentsListV1Item): void {
         this.id = msg.id
         this.activeId = msg.activeId
         this.allowLongPosition = msg.allowLongPosition
@@ -4929,7 +4924,7 @@ export class MarginUnderlyingInstrument {
         this.minQty = parseFloat(msg.minQty)
         this.qtyStep = parseFloat(msg.qtyStep)
         this.tradable = new MarginUnderlyingInstrumentTradable(msg.tradable.from, msg.tradable.to)
-        this.dynamicLeverageProfiles = dynamicLeverageProfiles
+        this.dynamicLeverageProfiles = msg.dynamicLeverageProfile
     }
 
     public calculateLeverageProfile(balance: Balance): number {
@@ -7811,19 +7806,25 @@ class MarginInstrumentsUnderlyingListV1Item {
 }
 
 class MarginInstrumentsInstrumentsListV1 {
-    dynamicLeverageProfiles: MarginInstrumentsInstrumentsListV1DynamicLeverageProfile[] = []
     items: MarginInstrumentsInstrumentsListV1Item[] = []
 
     constructor(data: any) {
-        for (const index in data.items) {
-            const instrument = data.items[index]
-            this.items.push(new MarginInstrumentsInstrumentsListV1Item(instrument))
-        }
-
+        const dynamicLeverageProfiles = new Map<number, MarginInstrumentsInstrumentsListV1DynamicLeverageProfile[]>()
         if (data.dynamic_leverage_profiles) {
             for (const index in data.dynamic_leverage_profiles) {
                 const dynamicLeverageProfile = data.dynamic_leverage_profiles[index]
-                this.dynamicLeverageProfiles.push(new MarginInstrumentsInstrumentsListV1DynamicLeverageProfile(dynamicLeverageProfile))
+                console.log(dynamicLeverageProfile)
+                dynamicLeverageProfiles.set(dynamicLeverageProfile.id, dynamicLeverageProfile.items)
+            }
+        }
+
+        for (const index in data.items) {
+            const instrument = data.items[index]
+
+            if (dynamicLeverageProfiles.has(instrument.leverage_profile)) {
+                this.items.push(new MarginInstrumentsInstrumentsListV1Item(instrument, dynamicLeverageProfiles.get(instrument.leverage_profile)))
+            } else {
+                this.items.push(new MarginInstrumentsInstrumentsListV1Item(instrument))
             }
         }
     }
@@ -7846,18 +7847,20 @@ class MarginInstrumentsInstrumentsListV1Item {
     allowShortPosition: boolean
     defaultLeverage: number
     leverageProfile: number
+    dynamicLeverageProfile: MarginInstrumentsInstrumentsListV1DynamicLeverageProfile[] = []
     isSuspended: boolean
     minQty: string
     qtyStep: string
     tradable: MarginInstrumentsInstrumentsListV1Tradable
 
-    constructor(msg: any) {
+    constructor(msg: any, dynamicLeverageProfile: MarginInstrumentsInstrumentsListV1DynamicLeverageProfile[] = []) {
         this.id = msg.id
         this.activeId = msg.active_id
         this.allowLongPosition = msg.allow_long_position
         this.allowShortPosition = msg.allow_short_position
         this.defaultLeverage = msg.default_leverage
         this.leverageProfile = msg.leverage_profile
+        this.dynamicLeverageProfile = dynamicLeverageProfile
         this.isSuspended = msg.is_suspended
         this.minQty = msg.min_qty
         this.qtyStep = msg.qty_step
