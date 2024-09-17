@@ -4936,11 +4936,18 @@ export class MarginUnderlyingInstrument {
             return this.defaultLeverage
         }
 
+        if (this.dynamicLeverageProfiles.length === 1) {
+            return this.dynamicLeverageProfiles[0].leverage
+        }
+
+        let leverage = this.defaultLeverage
         for (const index in this.dynamicLeverageProfiles) {
             const profile = this.dynamicLeverageProfiles[index]
 
             if (balance.equity <= profile.equity) {
-                return profile.leverage
+                return leverage
+            } else {
+                leverage = profile.leverage
             }
         }
 
