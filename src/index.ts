@@ -4123,7 +4123,7 @@ export class MarginForex {
             count.toString(),
             instrument.id,
             instrument.activeId,
-            instrument.defaultLeverage.toString(),
+            instrument.calculateLeverageProfile(balance).toString(),
             "forex",
             stopLoss,
             takeProfit,
@@ -4159,7 +4159,7 @@ export class MarginForex {
             stopPrice.toString(),
             instrument.id,
             instrument.activeId,
-            instrument.defaultLeverage.toString(),
+            instrument.calculateLeverageProfile(balance).toString(),
             'forex',
             stopLoss,
             takeProfit,
@@ -4195,7 +4195,7 @@ export class MarginForex {
             limitPrice.toString(),
             instrument.id,
             instrument.activeId,
-            instrument.defaultLeverage.toString(),
+            instrument.calculateLeverageProfile(balance).toString(),
             'forex',
             stopLoss,
             takeProfit,
@@ -4303,7 +4303,7 @@ export class MarginCfd {
             count.toString(),
             instrument.id,
             instrument.activeId,
-            instrument.defaultLeverage.toString(),
+            instrument.calculateLeverageProfile(balance).toString(),
             "cfd",
             stopLoss,
             takeProfit,
@@ -4339,7 +4339,7 @@ export class MarginCfd {
             stopPrice.toString(),
             instrument.id,
             instrument.activeId,
-            instrument.defaultLeverage.toString(),
+            instrument.calculateLeverageProfile(balance).toString(),
             'cfd',
             stopLoss,
             takeProfit,
@@ -4375,7 +4375,7 @@ export class MarginCfd {
             limitPrice.toString(),
             instrument.id,
             instrument.activeId,
-            instrument.defaultLeverage.toString(),
+            instrument.calculateLeverageProfile(balance).toString(),
             'cfd',
             stopLoss,
             takeProfit,
@@ -4483,7 +4483,7 @@ export class MarginCrypto {
             count.toString(),
             instrument.id,
             instrument.activeId,
-            instrument.defaultLeverage.toString(),
+            instrument.calculateLeverageProfile(balance).toString(),
             "crypto",
             stopLoss,
             takeProfit,
@@ -4519,7 +4519,7 @@ export class MarginCrypto {
             stopPrice.toString(),
             instrument.id,
             instrument.activeId,
-            instrument.defaultLeverage.toString(),
+            instrument.calculateLeverageProfile(balance).toString(),
             'crypto',
             stopLoss,
             takeProfit,
@@ -4555,7 +4555,7 @@ export class MarginCrypto {
             limitPrice.toString(),
             instrument.id,
             instrument.activeId,
-            instrument.defaultLeverage.toString(),
+            instrument.calculateLeverageProfile(balance).toString(),
             'crypto',
             stopLoss,
             takeProfit,
@@ -4788,7 +4788,7 @@ export class MarginUnderlyingInstruments {
         for (const index in msg.items) {
             const instrument = msg.items[index]
             instrumentIds.push(instrument.id)
-            this.syncInstrumentFromResponse(instrument)
+            this.syncInstrumentFromResponse(instrument, msg.dynamicLeverageProfiles)
         }
 
         for (const [index] of this.instruments) {
@@ -4801,13 +4801,17 @@ export class MarginUnderlyingInstruments {
     /**
      * Updates the instance from DTO.
      * @param msg - Instrument data transfer object.
+     * @param dynamicLeverageProfiles
      * @private
      */
-    private syncInstrumentFromResponse(msg: MarginInstrumentsInstrumentsListV1Item) {
+    private syncInstrumentFromResponse(
+        msg: MarginInstrumentsInstrumentsListV1Item,
+        dynamicLeverageProfiles: MarginInstrumentsInstrumentsListV1DynamicLeverageProfile[]
+    ) {
         if (!this.instruments.has(msg.id)) {
-            this.instruments.set(msg.id, new MarginUnderlyingInstrument(msg))
+            this.instruments.set(msg.id, new MarginUnderlyingInstrument(msg, dynamicLeverageProfiles))
         } else {
-            this.instruments.get(msg.id)!.sync(msg)
+            this.instruments.get(msg.id)!.sync(msg, dynamicLeverageProfiles)
         }
     }
 }
@@ -4867,12 +4871,18 @@ export class MarginUnderlyingInstrument {
     public tradable: MarginUnderlyingInstrumentTradable
 
     /**
+     * Dynamic leverage profiles.
+     */
+    public dynamicLeverageProfiles: MarginInstrumentsInstrumentsListV1DynamicLeverageProfile[]
+
+    /**
      * Creates instance from DTO.
      * @param msg - Instrument data transfer object.
+     * @param dynamicLeverageProfiles
      * @internal
      * @private
      */
-    public constructor(msg: MarginInstrumentsInstrumentsListV1Item) {
+    public constructor(msg: MarginInstrumentsInstrumentsListV1Item, dynamicLeverageProfiles: MarginInstrumentsInstrumentsListV1DynamicLeverageProfile[]) {
         this.id = msg.id
         this.activeId = msg.activeId
         this.allowLongPosition = msg.allowLongPosition
@@ -4883,6 +4893,7 @@ export class MarginUnderlyingInstrument {
         this.minQty = parseFloat(msg.minQty)
         this.qtyStep = parseFloat(msg.qtyStep)
         this.tradable = new MarginUnderlyingInstrumentTradable(msg.tradable.from, msg.tradable.to)
+        this.dynamicLeverageProfiles = dynamicLeverageProfiles
     }
 
     /**
@@ -4907,7 +4918,7 @@ export class MarginUnderlyingInstrument {
         return this.tradable.to.getTime() - currentTime.getTime();
     }
 
-    sync(msg: MarginInstrumentsInstrumentsListV1Item): void {
+    sync(msg: MarginInstrumentsInstrumentsListV1Item, dynamicLeverageProfiles: MarginInstrumentsInstrumentsListV1DynamicLeverageProfile[]): void {
         this.id = msg.id
         this.activeId = msg.activeId
         this.allowLongPosition = msg.allowLongPosition
@@ -4918,6 +4929,27 @@ export class MarginUnderlyingInstrument {
         this.minQty = parseFloat(msg.minQty)
         this.qtyStep = parseFloat(msg.qtyStep)
         this.tradable = new MarginUnderlyingInstrumentTradable(msg.tradable.from, msg.tradable.to)
+        this.dynamicLeverageProfiles = dynamicLeverageProfiles
+    }
+
+    public calculateLeverageProfile(balance: Balance): number {
+        if (!this.dynamicLeverageProfiles) {
+            return this.defaultLeverage
+        }
+
+        if (!balance.equity) {
+            return this.defaultLeverage
+        }
+
+        for (const index in this.dynamicLeverageProfiles) {
+            const profile = this.dynamicLeverageProfiles[index]
+
+            if (balance.equity <= profile.equity) {
+                return profile.leverage
+            }
+        }
+
+        return this.dynamicLeverageProfiles[this.dynamicLeverageProfiles.length - 1].leverage
     }
 }
 
@@ -7779,6 +7811,7 @@ class MarginInstrumentsUnderlyingListV1Item {
 }
 
 class MarginInstrumentsInstrumentsListV1 {
+    dynamicLeverageProfiles: MarginInstrumentsInstrumentsListV1DynamicLeverageProfile[] = []
     items: MarginInstrumentsInstrumentsListV1Item[] = []
 
     constructor(data: any) {
@@ -7786,6 +7819,23 @@ class MarginInstrumentsInstrumentsListV1 {
             const instrument = data.items[index]
             this.items.push(new MarginInstrumentsInstrumentsListV1Item(instrument))
         }
+
+        if (data.dynamic_leverage_profiles) {
+            for (const index in data.dynamic_leverage_profiles) {
+                const dynamicLeverageProfile = data.dynamic_leverage_profiles[index]
+                this.dynamicLeverageProfiles.push(new MarginInstrumentsInstrumentsListV1DynamicLeverageProfile(dynamicLeverageProfile))
+            }
+        }
+    }
+}
+
+class MarginInstrumentsInstrumentsListV1DynamicLeverageProfile {
+    equity: number
+    leverage: number
+
+    constructor(data: any) {
+        this.equity = data.equity
+        this.leverage = data.leverage
     }
 }
 
