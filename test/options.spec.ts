@@ -319,7 +319,7 @@ describe('Options', () => {
                     'Strikes should not have ask/bid prices').lengthOf(0)
 
                 await instrument.subscribeOnStrikesAskBidPrices();
-                await new Promise(resolve => setTimeout(resolve, 1000)) // wait 1 sec
+                await justWait(2000) // wait 2 sec
 
                 const strikesWithPrices = Array.from(instrument.strikes.values())
                     .filter(value => value.bid !== undefined || value.ask !== undefined);
