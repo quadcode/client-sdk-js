@@ -6,6 +6,7 @@ name: Tests
 on:
   push:
   workflow_call: # workflow can be called by another workflow
+  workflow_dispatch: # workflow can be called manually
 
 jobs:
 
