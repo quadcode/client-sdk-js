@@ -5090,6 +5090,7 @@ class WsApiClient {
             this.connection = new WebSocket(this.apiUrl);
         }
 
+        // @ts-expect-error ignore
         this.connection!.onmessage = ({data}: { data: string }) => {
             const frame: {
                 request_id: string
