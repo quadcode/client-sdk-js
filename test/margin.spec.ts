@@ -245,7 +245,7 @@ describe('Margin Forex/CFD/Crypto', () => {
             const currentQuoteAsk = (await getCurrentQuote(instrument.activeId)).ask;
             const marginOrder = await openLimitPriceOrder(instrument, MarginDirection.Sell, currentQuoteAsk! + 0.1);
             const order = await positionsHelper.waitForOrder(order => order.id === marginOrder.id);
-            await order.cancel()
+            await order.cancel();
             expect(await waitForCondition(() => order.status === 'canceled'), "Invalid order status, must be canceled").true;
         });
 
@@ -350,7 +350,7 @@ describe('Margin Forex/CFD/Crypto', () => {
             const currentQuoteAsk = (await getCurrentQuote(instrument.activeId)).ask;
             const marginOrder = await openLimitPriceOrder(instrument, MarginDirection.Sell, currentQuoteAsk! + 0.1);
             const order = await positionsHelper.waitForOrder(order => order.id === marginOrder.id);
-            await order.cancel()
+            await order.cancel();
             expect(await waitForCondition(() => order.status === 'canceled'), "Invalid order status, must be canceled").true;
         });
 
