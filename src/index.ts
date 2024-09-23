@@ -5082,7 +5082,7 @@ class WsApiClient {
             this.connection = new WebSocket(this.apiUrl, {
                 headers: {
                     'cookie': `platform=${this.platformId}`,
-                    'user-agent': 'quadcode-client-sdk-js/1.1.0'
+                    'user-agent': 'quadcode-client-sdk-js/1.2.0'
                 }
             })
         } else {
@@ -5090,6 +5090,7 @@ class WsApiClient {
             this.connection = new WebSocket(this.apiUrl);
         }
 
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-expect-error ignore
         this.connection!.onmessage = ({data}: { data: string }) => {
             const frame: {
