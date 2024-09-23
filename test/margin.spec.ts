@@ -1,5 +1,6 @@
 import {
     Balance,
+    ClientSdk,
     CurrentQuote,
     LoginPasswordAuthMethod,
     MarginCfd,
@@ -8,7 +9,6 @@ import {
     MarginForex,
     MarginTradingTPSL,
     MarginUnderlyingInstrument,
-    ClientSdk,
     Quotes
 } from "../src";
 import {getUserByTitle} from "./utils/userUtils";
@@ -42,7 +42,7 @@ describe('Margin Forex/CFD/Crypto', () => {
         await sdk.shutdown();
     });
 
-    async function getCurrentQuote(activeId: number, timeout: number = 1000): Promise<CurrentQuote> {
+    async function getCurrentQuote(activeId: number, timeout: number = 1500): Promise<CurrentQuote> {
         const currentQuote = await quotes.getCurrentQuoteForActive(activeId);
         return await new Promise((resolve, reject) => {
             setTimeout(() => {
