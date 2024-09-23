@@ -5158,6 +5158,17 @@ class WsApiClient {
                         return reject(new Error('setOptions operation is failed'))
                     }
 
+                    try {
+                        const response = await this.doRequest<FeaturesV2>(new CallGetFeaturesV2());
+                        for (const feature of response.features) {
+                            if (feature.name === 'client-sdk' && feature.status === 'disabled') {
+                                return reject(new Error('platform does not support'))
+                            }
+                        }
+                    } catch (error) {
+                        // it's okay
+                    }
+
                     this.connection!.onclose = () => {
                         this.reconnect()
                     }
@@ -7686,6 +7697,58 @@ class SubscribeMarginPortfolioBalanceChangedV1 implements SubscribeRequest<Margi
 
     createEvent(data: any): MarginPortfolioBalanceV1 {
         return new MarginPortfolioBalanceV1(data)
+    }
+}
+
+class CallGetFeaturesV2 implements Request<FeaturesV2> {
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: 'features.get-features',
+            version: '2.0',
+            body: {
+                category: 'client-sdk-js',
+            }
+        }
+    }
+
+    createResponse(data: any): FeaturesV2 {
+        return new FeaturesV2(data)
+    }
+
+    resultOnly(): boolean {
+        return false
+    }
+}
+
+class FeaturesV2 {
+    features: FeaturesV2Item[] = []
+
+    constructor(data: any) {
+        for (const index in data.features) {
+            this.features.push(new FeaturesV2Item(data.features[index]))
+        }
+    }
+}
+
+class FeaturesV2Item {
+    id: number
+    name: string
+    category: string
+    version: string
+    status: string
+    params: any
+
+    constructor(msg: any) {
+        this.id = msg.id
+        this.name = msg.name
+        this.category = msg.category
+        this.version = msg.version
+        this.status = msg.status
+        this.params = msg.params
     }
 }
 
