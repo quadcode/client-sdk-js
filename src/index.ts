@@ -5159,6 +5159,7 @@ class WsApiClient {
                         return reject(new Error('setOptions operation is failed'))
                     }
 
+                    // BEGIN_EXCLUDE
                     try {
                         const response = await this.doRequest<FeaturesV2>(new CallGetFeaturesV2());
                         for (const feature of response.features) {
@@ -5169,6 +5170,7 @@ class WsApiClient {
                     } catch (error) {
                         // it's okay
                     }
+                    // END_EXCLUDE
 
                     this.connection!.onclose = () => {
                         this.reconnect()
