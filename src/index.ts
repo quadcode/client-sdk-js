@@ -744,7 +744,7 @@ export class Candles {
                                 onlyClosed?: boolean
                                 kind?: string,
                                 splitNormalization?: boolean,
-                            }
+                            } | undefined = undefined
     ): Promise<Candle[]> {
         const response = await this.wsApiClient.doRequest<QuotesHistoryCandlesV2>(new CallQuotesHistoryGetCandlesV2({
             activeId,
@@ -7119,20 +7119,22 @@ class CallQuotesHistoryGetCandlesV2 implements Request<QuotesHistoryCandlesV2> {
             onlyClosed?: boolean,
             kind?: string,
             splitNormalization?: boolean,
-        }
+        } | undefined
     }) {
         this.activeId = data.activeId;
         this.size = data.size;
 
-        this.from = data.options.from;
-        this.to = data.options.to;
-        this.fromId = data.options.fromId;
-        this.toId = data.options.toId;
-        this.count = data.options.count;
-        this.backoff = data.options.backoff;
-        this.onlyClosed = data.options.onlyClosed;
-        this.kind = data.options.kind;
-        this.splitNormalization = data.options.splitNormalization;
+        if (data.options) {
+            this.from = data.options.from;
+            this.to = data.options.to;
+            this.fromId = data.options.fromId;
+            this.toId = data.options.toId;
+            this.count = data.options.count;
+            this.backoff = data.options.backoff;
+            this.onlyClosed = data.options.onlyClosed;
+            this.kind = data.options.kind;
+            this.splitNormalization = data.options.splitNormalization;
+        }
     }
 
     messageName() {
