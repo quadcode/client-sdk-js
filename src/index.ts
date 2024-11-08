@@ -82,6 +82,12 @@ export class ClientSdk {
     private marginCryptoFacade: MarginCrypto | undefined
 
     /**
+     * Candles facade cache
+     * @private
+     */
+    private candlesFacade: Candles | undefined
+
+    /**
      * Creates instance of class.
      * @param userProfile - Information about the user on whose behalf your application is working.
      * @param wsApiClient - Instance of WebSocket API client.
@@ -241,6 +247,14 @@ export class ClientSdk {
             this.ordersFacade = await Orders.create(this.wsApiClient, this.userProfile.userId, balanceIds)
         }
         return this.ordersFacade
+    }
+
+    public async candles(): Promise<Candles> {
+        if (!this.candlesFacade) {
+            this.candlesFacade = new Candles(this.wsApiClient)
+        }
+
+        return this.candlesFacade
     }
 
     /**
@@ -686,6 +700,96 @@ export class Balance {
         }
 
         return undefined
+    }
+}
+
+/**
+ * Don't use this class directly from your code. Use {@link ClientSdk.candles} static method instead.
+ *
+ * Candles facade class.
+ */
+export class Candles {
+    /**
+     * Instance of WebSocket API client.
+     * @private
+     */
+    private wsApiClient: WsApiClient
+
+    /**
+     * Creates class instance.
+     * @param wsApiClient - Instance of WebSocket API client.
+     * @internal
+     * @private
+     */
+    public constructor(wsApiClient: WsApiClient) {
+        this.wsApiClient = wsApiClient
+    }
+
+
+    /**
+     * Get candles for specified active.
+     * @param activeId
+     * @param size
+     * @param options
+     */
+    public async getCandles(activeId: number,
+                            size: number,
+                            options: {
+                                from?: number,
+                                to?: number,
+                                fromId?: number,
+                                toId?: number,
+                                count?: number,
+                                backoff?: number
+                                onlyClosed?: boolean
+                                kind?: string,
+                                splitNormalization?: boolean,
+                            } | undefined = undefined
+    ): Promise<Candle[]> {
+        const response = await this.wsApiClient.doRequest<QuotesHistoryCandlesV2>(new CallQuotesHistoryGetCandlesV2({
+            activeId,
+            size,
+            options
+        }));
+
+        return response.candles
+    }
+}
+
+/**
+ * Candle data transfer object.
+ */
+export class Candle {
+    id: number
+    from: number
+    to: number
+    open: number
+    close: number
+    min: number
+    max: number
+    volume: number
+    at: number | undefined
+
+    constructor(data: {
+        id: number,
+        from: number,
+        to: number,
+        open: number,
+        close: number,
+        min: number,
+        max: number,
+        volume: number,
+        at: number | undefined
+    }) {
+        this.id = data.id
+        this.from = data.from
+        this.to = data.to
+        this.open = data.open
+        this.close = data.close
+        this.min = data.min
+        this.max = data.max
+        this.volume = data.volume
+        this.at = data.at
     }
 }
 
@@ -6985,6 +7089,94 @@ class CallPortfolioGetHistoryPositionsV2 implements Request<PortfolioPositionsHi
 
     resultOnly(): boolean {
         return false
+    }
+}
+
+class CallQuotesHistoryGetCandlesV2 implements Request<QuotesHistoryCandlesV2> {
+    private readonly activeId: number;
+    private readonly size: number;
+
+    private readonly from: number | undefined;
+    private readonly to: number | undefined;
+    private readonly fromId: number | undefined;
+    private readonly toId: number | undefined;
+    private readonly count: number | undefined;
+    private readonly backoff: number | undefined;
+    private readonly onlyClosed: boolean | undefined;
+    private readonly kind: string | undefined;
+    private readonly splitNormalization: boolean | undefined;
+
+    constructor(data: {
+        activeId: number,
+        size: number,
+        options: {
+            from?: number,
+            to?: number,
+            fromId?: number,
+            toId?: number,
+            count?: number,
+            backoff?: number,
+            onlyClosed?: boolean,
+            kind?: string,
+            splitNormalization?: boolean,
+        } | undefined
+    }) {
+        this.activeId = data.activeId;
+        this.size = data.size;
+
+        if (data.options) {
+            this.from = data.options.from;
+            this.to = data.options.to;
+            this.fromId = data.options.fromId;
+            this.toId = data.options.toId;
+            this.count = data.options.count;
+            this.backoff = data.options.backoff;
+            this.onlyClosed = data.options.onlyClosed;
+            this.kind = data.options.kind;
+            this.splitNormalization = data.options.splitNormalization;
+        }
+    }
+
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: 'quotes-history.get-candles',
+            version: '2.0',
+            body: {
+                active_id: this.activeId,
+                size: this.size,
+                from: this.from,
+                to: this.to,
+                from_id: this.fromId,
+                to_id: this.toId,
+                count: this.count,
+                backoff: this.backoff,
+                only_closed: this.onlyClosed,
+                kind: this.kind,
+                split_normalization: this.splitNormalization,
+            }
+        }
+    }
+
+    createResponse(data: any): QuotesHistoryCandlesV2 {
+        return new QuotesHistoryCandlesV2(data)
+    }
+
+    resultOnly(): boolean {
+        return false
+    }
+}
+
+class QuotesHistoryCandlesV2 {
+    candles: Candle[] = []
+
+    constructor(data: any) {
+        for (const index in data.candles) {
+            this.candles.push(new Candle(data.candles[index]))
+        }
     }
 }
 

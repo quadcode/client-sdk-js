@@ -1,7 +1,6 @@
 import {
     Balance,
     ClientSdk,
-    CurrentQuote,
     LoginPasswordAuthMethod,
     MarginCfd,
     MarginCrypto,
@@ -16,6 +15,7 @@ import {API_URL, User, WS_URL} from "./vars";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {PositionsHelper} from "./utils/positionsHelper";
 import {justWait, waitForCondition} from "./utils/waiters";
+import {getCurrentQuote} from "./utils/utils";
 
 describe('Margin Forex/CFD/Crypto', () => {
     let sdk: ClientSdk;
@@ -41,18 +41,6 @@ describe('Margin Forex/CFD/Crypto', () => {
     afterAll(async function () {
         await sdk.shutdown();
     });
-
-    async function getCurrentQuote(activeId: number, timeout: number = 1500): Promise<CurrentQuote> {
-        const currentQuote = await quotes.getCurrentQuoteForActive(activeId);
-        return await new Promise((resolve, reject) => {
-            setTimeout(() => {
-                reject(new Error("Quote not found within timeout " + timeout));
-            }, timeout);
-            currentQuote.subscribeOnUpdate((quote) => {
-                resolve(quote)
-            })
-        });
-    }
 
     describe('Margin CFD', async () => {
         let marginCFD: MarginCfd;
@@ -117,14 +105,14 @@ describe('Margin Forex/CFD/Crypto', () => {
 
         it('should open stop price order', async () => {
             const instrument = await getUnderlyingInstrument();
-            const currentQuoteAsk = (await getCurrentQuote(instrument.activeId)).ask;
+            const currentQuoteAsk = (await getCurrentQuote(quotes, instrument.activeId)).ask;
             const marginOrder = await openStopPriceOrder(instrument, MarginDirection.Buy, currentQuoteAsk! + 0.001);
             expect(marginOrder.id, "Order doesn't present").to.be.not.undefined;
         });
 
         it('should cancel stop price order', async () => {
             const instrument = await getUnderlyingInstrument();
-            const currentQuoteAsk = (await getCurrentQuote(instrument.activeId)).ask;
+            const currentQuoteAsk = (await getCurrentQuote(quotes, instrument.activeId)).ask;
             const marginOrder = await openStopPriceOrder(instrument, MarginDirection.Buy, currentQuoteAsk! + 0.1);
             const order = await positionsHelper.waitForOrder(order => order.id === marginOrder.id);
             await order.cancel();
@@ -133,14 +121,14 @@ describe('Margin Forex/CFD/Crypto', () => {
 
         it('should open limit price order', async () => {
             const instrument = await getUnderlyingInstrument();
-            const currentQuoteAsk = (await getCurrentQuote(instrument.activeId)).ask;
+            const currentQuoteAsk = (await getCurrentQuote(quotes, instrument.activeId)).ask;
             const marginOrder = await openLimitPriceOrder(instrument, MarginDirection.Sell, currentQuoteAsk! + 0.001);
             expect(marginOrder.id, "Order doesn't present").to.be.not.undefined;
         });
 
         it('should cancel limit price order', async () => {
             const instrument = await getUnderlyingInstrument();
-            const currentQuoteAsk = (await getCurrentQuote(instrument.activeId)).ask;
+            const currentQuoteAsk = (await getCurrentQuote(quotes, instrument.activeId)).ask;
             const marginOrder = await openLimitPriceOrder(instrument, MarginDirection.Sell, currentQuoteAsk! + 0.1);
             const order = await positionsHelper.waitForOrder(order => order.id === marginOrder.id);
             await order.cancel();
@@ -219,14 +207,14 @@ describe('Margin Forex/CFD/Crypto', () => {
 
         it('should open stop price order', async () => {
             const instrument = await getUnderlyingInstrument();
-            const currentQuoteAsk = (await getCurrentQuote(instrument.activeId)).ask;
+            const currentQuoteAsk = (await getCurrentQuote(quotes, instrument.activeId)).ask;
             const marginOrder = await openStopPriceOrder(instrument, MarginDirection.Buy, currentQuoteAsk! + 0.001);
             expect(marginOrder.id, "Order doesn't present").to.be.not.undefined;
         });
 
         it('should cancel stop price order', async () => {
             const instrument = await getUnderlyingInstrument();
-            const currentQuoteAsk = (await getCurrentQuote(instrument.activeId)).ask;
+            const currentQuoteAsk = (await getCurrentQuote(quotes, instrument.activeId)).ask;
             const marginOrder = await openStopPriceOrder(instrument, MarginDirection.Buy, currentQuoteAsk! + 0.1);
             const order = await positionsHelper.waitForOrder(order => order.id === marginOrder.id);
             await order.cancel()
@@ -235,14 +223,14 @@ describe('Margin Forex/CFD/Crypto', () => {
 
         it('should open limit price order', async () => {
             const instrument = await getUnderlyingInstrument();
-            const currentQuoteAsk = (await getCurrentQuote(instrument.activeId)).ask;
+            const currentQuoteAsk = (await getCurrentQuote(quotes, instrument.activeId)).ask;
             const marginOrder = await openLimitPriceOrder(instrument, MarginDirection.Sell, currentQuoteAsk! + 0.001);
             expect(marginOrder.id, "Order doesn't present").to.be.not.undefined;
         });
 
         it('should cancel limit price order', async () => {
             const instrument = await getUnderlyingInstrument();
-            const currentQuoteAsk = (await getCurrentQuote(instrument.activeId)).ask;
+            const currentQuoteAsk = (await getCurrentQuote(quotes, instrument.activeId)).ask;
             const marginOrder = await openLimitPriceOrder(instrument, MarginDirection.Sell, currentQuoteAsk! + 0.1);
             const order = await positionsHelper.waitForOrder(order => order.id === marginOrder.id);
             await order.cancel();
@@ -324,14 +312,14 @@ describe('Margin Forex/CFD/Crypto', () => {
 
         it('should open stop price order', async () => {
             const instrument = await getUnderlyingInstrument();
-            const currentQuoteAsk = (await getCurrentQuote(instrument.activeId)).ask;
+            const currentQuoteAsk = (await getCurrentQuote(quotes, instrument.activeId)).ask;
             const marginOrder = await openStopPriceOrder(instrument, MarginDirection.Buy, currentQuoteAsk! + 0.001);
             expect(marginOrder.id, "Order doesn't present").to.be.not.undefined;
         });
 
         it('should cancel stop price order', async () => {
             const instrument = await getUnderlyingInstrument();
-            const currentQuoteAsk = (await getCurrentQuote(instrument.activeId)).ask;
+            const currentQuoteAsk = (await getCurrentQuote(quotes, instrument.activeId)).ask;
             const marginOrder = await openStopPriceOrder(instrument, MarginDirection.Buy, currentQuoteAsk! + 0.1);
             const order = await positionsHelper.waitForOrder(order => order.id === marginOrder.id);
             await order.cancel()
@@ -340,14 +328,14 @@ describe('Margin Forex/CFD/Crypto', () => {
 
         it('should open limit price order', async () => {
             const instrument = await getUnderlyingInstrument();
-            const currentQuoteAsk = (await getCurrentQuote(instrument.activeId)).ask;
+            const currentQuoteAsk = (await getCurrentQuote(quotes, instrument.activeId)).ask;
             const marginOrder = await openLimitPriceOrder(instrument, MarginDirection.Sell, currentQuoteAsk! + 0.001);
             expect(marginOrder.id, "Order doesn't present").to.be.not.undefined;
         });
 
         it('should cancel limit price order', async () => {
             const instrument = await getUnderlyingInstrument();
-            const currentQuoteAsk = (await getCurrentQuote(instrument.activeId)).ask;
+            const currentQuoteAsk = (await getCurrentQuote(quotes, instrument.activeId)).ask;
             const marginOrder = await openLimitPriceOrder(instrument, MarginDirection.Sell, currentQuoteAsk! + 0.1);
             const order = await positionsHelper.waitForOrder(order => order.id === marginOrder.id);
             await order.cancel();
