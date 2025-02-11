@@ -36,7 +36,6 @@ describe('Candles', () => {
         const activeId = binaryOptionsActive.id;
         const size = 15;
         const from = Math.floor(Date.now() / 1000) - 5 * 60; // minus 35 minutes in seconds
-        console.log(from)
         const candleArray = await candles.getCandles(activeId, size, {
             count: 3,
             from: from,
@@ -45,7 +44,6 @@ describe('Candles', () => {
             backoff: 10,
             splitNormalization: true
         });
-        console.log(candleArray)
         expect(candleArray.length, "Invalid candle array length").eq(3)
         expect(candleArray[0].from, "Invalid first candle From time").eq(Math.ceil(from / size) * size)
         const candle = candleArray[Math.trunc(candleArray.length / 2)];
