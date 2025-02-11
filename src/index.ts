@@ -961,7 +961,7 @@ export class CurrentQuote {
         phase: string
     }): void {
         this.activeId = msg.activeId
-        this.time = new Date(msg.time * 1000)
+        this.time = new Date(msg.time)
         this.ask = msg.ask
         this.bid = msg.bid
         this.value = msg.value

@@ -33,7 +33,7 @@ describe('Balances', () => {
 
     async function openOption(balance: Balance, amount: number) {
         const turboOptions = await sdk.turboOptions();
-        const turboOptionsActiveInstruments = await turboOptions.getActives()[0].instruments();
+        const turboOptionsActiveInstruments = await turboOptions.getActives().filter((a) => !a.isSuspended)[0].instruments();
         const availableForBuyAt = turboOptionsActiveInstruments.getAvailableForBuyAt(sdk.currentTime())[0];
         await turboOptions.buy(availableForBuyAt, TurboOptionsDirection.Put, amount, balance)
     }

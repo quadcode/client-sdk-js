@@ -25,8 +25,7 @@ describe('Quotes', () => {
         const activeId = binaryOptionsActive.id;
         const currentQuote = await getCurrentQuote(quotes, activeId);
         if (currentQuote.time) {
-            const quoteTime = Math.floor(currentQuote.time.getTime() / 1000);
-            expect(Math.abs(quoteTime - Date.now()), "Invalid quote current time").toBeLessThanOrEqual(1000); // +-1 sec
+            expect(Math.abs(currentQuote.time.getTime() - Date.now()), "Invalid quote current time").toBeLessThanOrEqual(1000); // +-1 sec
         } else {
             throw new Error('currentQuote.time is undefined');
         }

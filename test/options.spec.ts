@@ -55,7 +55,7 @@ describe('Options', () => {
             let instruments: BinaryOptionsActiveInstrument[];
 
             beforeAll(async () => {
-                const actives = binaryOptions.getActives();
+                const actives = binaryOptions.getActives().filter((a) => !a.isSuspended);
                 const first = actives[0];
                 const binaryOptionsActiveInstruments = await first.instruments();
                 const currentTime = sdk.currentTime()
@@ -135,14 +135,14 @@ describe('Options', () => {
         });
 
         it('should return turbo option actives', async () => {
-            expect(turboOptions.getActives().length).to.be.above(0);
+            expect(turboOptions.getActives().filter((a) => !a.isSuspended).length).to.be.above(0);
         });
 
         describe('Getting turbo-option instruments', async () => {
             let instruments: TurboOptionsActiveInstrument[];
 
             beforeAll(async () => {
-                const actives = turboOptions.getActives();
+                const actives = turboOptions.getActives().filter((a) => !a.isSuspended);
                 const first = actives[0];
                 const turboOptionsActiveInstruments = await first.instruments();
                 const currentTime = sdk.currentTime()
@@ -220,20 +220,20 @@ describe('Options', () => {
         });
 
         it('should return blitz option actives', async () => {
-            expect(blitzOptions.getActives().length, 'Invalid blitz-option actives count').to.be.above(0);
+            expect(blitzOptions.getActives().filter((a) => !a.isSuspended).length, 'Invalid blitz-option actives count').to.be.above(0);
         });
 
         describe('Buy option', () => {
 
             it('insufficient funds for this transaction', async () => {
-                const active = blitzOptions.getActives()[0];
+                const active = blitzOptions.getActives().filter((a) => !a.isSuspended)[0];
                 const expirationSize = active.expirationTimes[0];
                 await expect(blitzOptions.buy(active, BlitzOptionsDirection.Put, expirationSize, 10, realBalance))
                     .rejects.toThrow("Insufficient funds for this transaction.")
             });
 
             async function openOption() {
-                const active = blitzOptions.getActives()[0];
+                const active = blitzOptions.getActives().filter((a) => !a.isSuspended)[0];
                 expect(active.profitCommissionPercent, 'ProfitCommissionPercent is not specified').not.to.be.null
                 const expirationSize = active.expirationTimes[0];
                 const blitzOption = await blitzOptions.buy(active, BlitzOptionsDirection.Call, expirationSize, 10, demoBalance);
