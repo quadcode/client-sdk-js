@@ -6886,7 +6886,7 @@ class CallDigitalOptionInstrumentsGetInstrumentsV3 implements Request<DigitalOpt
     messageBody() {
         return {
             name: 'digital-option-instruments.get-instruments',
-            version: '1.0',
+            version: '3.0',
             body: {
                 asset_id: this.assetId
             }
