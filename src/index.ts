@@ -1465,7 +1465,7 @@ export class Orders {
     }
 
     /**
-     * Checks if a given position associated with a order.
+     * Checks if a given position associated with an order.
      * @param position
      * @param order
      */
@@ -2642,6 +2642,21 @@ export class TurboOptionsActive {
     }
 
     /**
+     * Checks whether an option on an active can be purchased at a specified time.
+     * @param at - Time for which the check is performed.
+     */
+    public canBeBoughtAt(at: Date): boolean {
+        if (this.isSuspended) {
+            return false
+        }
+
+        const atUnixTimeMilli = at.getTime()
+        return this.schedule.findIndex((session: TurboOptionsActiveTradingSession): boolean => {
+            return session.from.getTime() <= atUnixTimeMilli && session.to.getTime() >= atUnixTimeMilli
+        }) >= 0
+    }
+
+    /**
      * Closes the instance.
      */
     public close() {
@@ -2694,21 +2709,13 @@ export class TurboOptionsActiveInstruments {
 
     /**
      * Creates class instance.
-     * @param activeId - Active ID.
-     * @param deadtime - Deadtime.
-     * @param optionCount - Options count.
-     * @param expirationTimes - Expiration sizes.
-     * @param profitCommissionPercent - Profit commission percent.
+     * @param active - Active.
      * @param currentTime - An object with the current time obtained from WebSocket API.
      * @internal
      * @private
      */
     private constructor(
-        private activeId: number,
-        private deadtime: number,
-        private optionCount: number,
-        private expirationTimes: number[],
-        private profitCommissionPercent: number,
+        private active: TurboOptionsActive,
         private readonly currentTime: WsApiClientCurrentTime,
     ) {
     }
@@ -2720,11 +2727,7 @@ export class TurboOptionsActiveInstruments {
      */
     public static async create(active: TurboOptionsActive, currentTime: WsApiClientCurrentTime): Promise<TurboOptionsActiveInstruments> {
         const instrumentsFacade = new TurboOptionsActiveInstruments(
-            active.id,
-            active.deadtime,
-            active.optionCount,
-            active.expirationTimes,
-            active.profitCommissionPercent,
+            active,
             currentTime,
         )
 
@@ -2756,27 +2759,31 @@ export class TurboOptionsActiveInstruments {
      * @private
      */
     private generateInstruments(): void {
+        if (!this.active.canBeBoughtAt(new Date(this.currentTime.unixMilliTime))) {
+            return
+        }
+
         const generatedInstrumentsKeys = []
         const nowUnixTime = Math.trunc(this.currentTime.unixMilliTime / 1000)
 
-        for (const index in this.expirationTimes) {
-            const expirationSize = this.expirationTimes[index]
+        for (const index in this.active.expirationTimes) {
+            const expirationSize = this.active.expirationTimes[index]
             let instrumentExpirationUnixTime = nowUnixTime + expirationSize - nowUnixTime % expirationSize
-            for (let i = 0; i < this.optionCount; i++) {
-                const key = `${this.activeId},${expirationSize},${instrumentExpirationUnixTime}`
+            for (let i = 0; i < this.active.optionCount; i++) {
+                const key = `${this.active.id},${expirationSize},${instrumentExpirationUnixTime}`
                 generatedInstrumentsKeys.push(key)
                 if (!this.instruments.has(key)) {
                     this.instruments.set(key,
                         new TurboOptionsActiveInstrument(
-                            this.activeId,
+                            this.active.id,
                             expirationSize,
                             new Date(instrumentExpirationUnixTime * 1000),
-                            this.deadtime,
-                            this.profitCommissionPercent,
+                            this.active.deadtime,
+                            this.active.profitCommissionPercent,
                         )
                     )
                 } else {
-                    this.instruments.get(key)!.update(this.deadtime)
+                    this.instruments.get(key)!.update(this.active.deadtime)
                 }
                 instrumentExpirationUnixTime += expirationSize
             }
@@ -3204,6 +3211,21 @@ export class BinaryOptionsActive {
     }
 
     /**
+     * Checks whether an option on an active can be purchased at a specified time.
+     * @param at - Time for which the check is performed.
+     */
+    public canBeBoughtAt(at: Date): boolean {
+        if (this.isSuspended) {
+            return false
+        }
+
+        const atUnixTimeMilli = at.getTime()
+        return this.schedule.findIndex((session: BinaryOptionsActiveTradingSession): boolean => {
+            return session.from.getTime() <= atUnixTimeMilli && session.to.getTime() >= atUnixTimeMilli
+        }) >= 0
+    }
+
+    /**
      * Closes the instance.
      */
     public close() {
@@ -3256,23 +3278,13 @@ export class BinaryOptionsActiveInstruments {
 
     /**
      * Creates class instance.
-     * @param activeId - Active ID.
-     * @param deadtime - Deadtime.
-     * @param optionCount - Options count.
-     * @param optionSpecial - Special instruments.
-     * @param expirationTimes - Expiration sizes.
-     * @param profitCommissionPercent - Profit commission percent.
+     * @param active - Active.
      * @param currentTime - An object with the current time obtained from WebSocket API.
      * @internal
      * @private
      */
     private constructor(
-        private activeId: number,
-        private deadtime: number,
-        private optionCount: number,
-        private optionSpecial: BinaryOptionsActiveSpecialInstrument[],
-        private expirationTimes: number[],
-        private profitCommissionPercent: number,
+        private active: BinaryOptionsActive,
         private readonly currentTime: WsApiClientCurrentTime,
     ) {
     }
@@ -3284,12 +3296,7 @@ export class BinaryOptionsActiveInstruments {
      */
     public static async create(active: BinaryOptionsActive, currentTime: WsApiClientCurrentTime): Promise<BinaryOptionsActiveInstruments> {
         const instrumentsFacade = new BinaryOptionsActiveInstruments(
-            active.id,
-            active.deadtime,
-            active.optionCount,
-            active.optionSpecial,
-            active.expirationTimes,
-            active.profitCommissionPercent,
+            active,
             currentTime,
         )
 
@@ -3321,51 +3328,55 @@ export class BinaryOptionsActiveInstruments {
      * @private
      */
     private generateInstruments(): void {
+        if (!this.active.canBeBoughtAt(new Date(this.currentTime.unixMilliTime))) {
+            return
+        }
+
         const generatedInstrumentsKeys = []
         const nowUnixTime = Math.trunc(this.currentTime.unixMilliTime / 1000)
 
-        for (const index in this.expirationTimes) {
-            const expirationSize = this.expirationTimes[index]
+        for (const index in this.active.expirationTimes) {
+            const expirationSize = this.active.expirationTimes[index]
             let instrumentExpirationUnixTime = nowUnixTime + expirationSize - nowUnixTime % expirationSize
-            for (let i = 0; i < this.optionCount; i++) {
-                const key = `${this.activeId},${expirationSize},${instrumentExpirationUnixTime}`
+            for (let i = 0; i < this.active.optionCount; i++) {
+                const key = `${this.active.id},${expirationSize},${instrumentExpirationUnixTime}`
                 generatedInstrumentsKeys.push(key)
                 if (!this.instruments.has(key)) {
                     this.instruments.set(key,
                         new BinaryOptionsActiveInstrument(
-                            this.activeId,
+                            this.active.id,
                             expirationSize,
                             new Date(instrumentExpirationUnixTime * 1000),
-                            this.deadtime,
-                            this.profitCommissionPercent,
+                            this.active.deadtime,
+                            this.active.profitCommissionPercent,
                         )
                     )
                 }
-                this.instruments.get(key)!.update(this.deadtime)
+                this.instruments.get(key)!.update(this.active.deadtime)
                 instrumentExpirationUnixTime += expirationSize
             }
         }
 
-        for (const index in this.optionSpecial) {
-            const specialInstrument = this.optionSpecial[index]
+        for (const index in this.active.optionSpecial) {
+            const specialInstrument = this.active.optionSpecial[index]
             if (!specialInstrument.isEnabled) {
                 continue
             }
             const expirationSize = specialInstrument.title
-            const key = `${this.activeId},${expirationSize},${specialInstrument.expiredAt.toISOString()}`
+            const key = `${this.active.id},${expirationSize},${specialInstrument.expiredAt.toISOString()}`
             generatedInstrumentsKeys.push(key)
             if (!this.instruments.has(key)) {
                 this.instruments.set(key,
                     new BinaryOptionsActiveInstrument(
-                        this.activeId,
+                        this.active.id,
                         expirationSize,
                         specialInstrument.expiredAt,
-                        this.deadtime,
-                        this.profitCommissionPercent,
+                        this.active.deadtime,
+                        this.active.profitCommissionPercent,
                     )
                 )
             }
-            this.instruments.get(key)!.update(this.deadtime)
+            this.instruments.get(key)!.update(this.active.deadtime)
         }
 
         for (const index in this.instruments) {
