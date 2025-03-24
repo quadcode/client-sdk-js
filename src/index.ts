@@ -1974,6 +1974,8 @@ export class Position {
         this.status = msg.status
         this.userId = msg.userId
         this.orderIds = msg.orderIds
+        this.direction = msg.direction
+        this.expirationTime = msg.expirationTime !== undefined ? new Date(msg.expirationTime) : undefined
     }
 
     /**
