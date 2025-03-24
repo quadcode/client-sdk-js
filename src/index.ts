@@ -3321,7 +3321,7 @@ export class BinaryOptionsActiveInstruments {
 
     private scheduleNextGeneration(): void {
         let nextGenerationTime: number | null = null;
-        const now = Date.now();
+        const now = this.currentTime.unixMilliTime
 
         for (const instrument of this.instruments.values()) {
             const triggerTime = instrument.expiredAt.getTime() - instrument.deadtime * 1000;
