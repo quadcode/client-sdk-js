@@ -188,7 +188,7 @@ positions.subscribeOnUpdatePosition((position) => {
 ```js
 const binaryOptions = await sdk.binaryOptions()
 
-const actives = binaryOptions.getActives().getActives().filter((active) => {
+const actives = binaryOptions.getActives().filter((active) => {
 	active.canBeBoughtAt(new Date())
 })
 

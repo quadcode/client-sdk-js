@@ -3338,6 +3338,10 @@ export class BinaryOptionsActiveInstruments {
         for (const index in this.active.expirationTimes) {
             const expirationSize = this.active.expirationTimes[index]
             let instrumentExpirationUnixTime = nowUnixTime + expirationSize - nowUnixTime % expirationSize
+            if (instrumentExpirationUnixTime - this.active.deadtime < nowUnixTime) {
+                instrumentExpirationUnixTime += expirationSize
+            }
+
             for (let i = 0; i < this.active.optionCount; i++) {
                 const key = `${this.active.id},${expirationSize},${instrumentExpirationUnixTime}`
                 generatedInstrumentsKeys.push(key)
