@@ -3302,10 +3302,6 @@ export class BinaryOptionsActiveInstruments {
 
         instrumentsFacade.generateInstruments()
 
-        instrumentsFacade.intervalId = setInterval(() => {
-            instrumentsFacade.generateInstruments()
-        }, 30000)
-
         return instrumentsFacade
     }
 
@@ -3323,12 +3319,33 @@ export class BinaryOptionsActiveInstruments {
         return list
     }
 
+    private scheduleNextGeneration(): void {
+        let nextGenerationTime: number | null = null;
+        const now = Date.now();
+
+        for (const instrument of this.instruments.values()) {
+            const triggerTime = instrument.expiredAt.getTime() - instrument.deadtime * 1000;
+            if (triggerTime > now && (nextGenerationTime === null || triggerTime < nextGenerationTime)) {
+                nextGenerationTime = triggerTime;
+            }
+        }
+
+        if (nextGenerationTime !== null) {
+            const delay = nextGenerationTime - now;
+            this.intervalId = setTimeout(() => this.generateInstruments(), delay);
+        } else {
+            this.intervalId = setTimeout(() => this.generateInstruments(), 30000);
+        }
+    }
+
     /**
      * Generates instruments.
      * @private
      */
     private generateInstruments(): void {
         if (!this.active.canBeBoughtAt(new Date(this.currentTime.unixMilliTime))) {
+            this.intervalId = setTimeout(() => this.generateInstruments(), 30000);
+
             return
         }
 
@@ -3388,6 +3405,8 @@ export class BinaryOptionsActiveInstruments {
                 this.instruments.delete(index)
             }
         }
+
+        this.scheduleNextGeneration()
     }
 
     /**
