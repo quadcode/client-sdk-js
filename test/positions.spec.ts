@@ -1,21 +1,47 @@
-import {LoginPasswordAuthMethod, ClientSdk} from "../src";
+import {BinaryOptionsDirection, ClientSdk, LoginPasswordAuthMethod} from "../src";
 import {getUserByTitle} from "./utils/userUtils";
 import {API_URL, User, WS_URL} from "./vars";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {PositionsHelper} from "./utils/positionsHelper";
 
 describe('Positions', () => {
-    let sdk: ClientSdk;
-    let positionsHelper: PositionsHelper;
+    let user: User
+    let sdk: ClientSdk
+    let positionsHelper: PositionsHelper
 
     beforeAll(async () => {
-        const user = getUserByTitle('positions_user') as User;
-        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
-        positionsHelper = await PositionsHelper.create(sdk);
+        user = getUserByTitle('positions_user') as User
+        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password))
+        positionsHelper = await PositionsHelper.create(sdk)
     });
 
     afterAll(async function () {
         await sdk.shutdown();
+    });
+
+    async function openBinaryOption() {
+        const balances = await sdk.balances()
+        const demoBalance = balances.getBalances().find(value => value.type === "demo")
+        const binaryOptions = await sdk.binaryOptions()
+        const binaryOptionsActive = binaryOptions.getActives().filter(value => value.canBeBoughtAt(sdk.currentTime()))[0]
+        const availableForBuyAt = (await binaryOptionsActive.instruments()).getAvailableForBuyAt(sdk.currentTime())[0]
+        return await binaryOptions.buy(availableForBuyAt, BinaryOptionsDirection.Call, 10, demoBalance!)
+    }
+
+    it(`Position should contains direction and expiration time (subscribe on updated position before opening)`, async () => {
+        const binaryOptionsOption = await openBinaryOption()
+        const position = await positionsHelper.waitForPosition(position => position.orderIds.includes(binaryOptionsOption.id))
+        expect(position!.direction, "Direction should be define in position object").to.be.not.undefined
+        expect(position!.expirationTime, "Expiration time should be define in position object").to.be.not.undefined
+    });
+
+    it(`Position should contains direction and expiration time (subscribe on updated position after opening)`, async () => {
+        const binaryOptionsOption = await openBinaryOption()
+        const sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password))
+        const positionsHelper = await PositionsHelper.create(sdk)
+        const position = await positionsHelper.waitForPosition(position => position.orderIds.includes(binaryOptionsOption.id))
+        expect(position.direction, "Direction should be define in position object").to.be.not.undefined
+        expect(position.expirationTime, "Expiration time should be define in position object").to.be.not.undefined
     });
 
     describe('History positions', () => {

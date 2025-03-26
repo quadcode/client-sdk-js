@@ -48,18 +48,20 @@ describe('Options', () => {
         });
 
         it('should return binary option actives', async () => {
-            expect(binaryOptions.getActives().length).to.be.above(0);
+            expect(binaryOptions.getActives().length, 'Invalid binary-option actives count').to.be.above(0);
         });
 
         describe('Getting binary-option instruments', async () => {
             let instruments: BinaryOptionsActiveInstrument[];
 
             beforeAll(async () => {
-                const actives = binaryOptions.getActives().filter((a) => !a.isSuspended);
-                const first = actives[0];
-                const binaryOptionsActiveInstruments = await first.instruments();
                 const currentTime = sdk.currentTime()
-                instruments = binaryOptionsActiveInstruments.getAvailableForBuyAt(currentTime);
+                const actives = binaryOptions.getActives();
+                const active = actives.find(value => value.canBeBoughtAt(currentTime));
+                if (active) {
+                    const binaryOptionsActiveInstruments = await active.instruments();
+                    instruments = binaryOptionsActiveInstruments.getAvailableForBuyAt(currentTime);
+                }
             });
 
             function getAvailableInstrument() {
@@ -135,18 +137,20 @@ describe('Options', () => {
         });
 
         it('should return turbo option actives', async () => {
-            expect(turboOptions.getActives().filter((a) => !a.isSuspended).length).to.be.above(0);
+            expect(turboOptions.getActives().length, 'Invalid turbo-option actives count').to.be.above(0);
         });
 
         describe('Getting turbo-option instruments', async () => {
             let instruments: TurboOptionsActiveInstrument[];
 
             beforeAll(async () => {
-                const actives = turboOptions.getActives().filter((a) => !a.isSuspended);
-                const first = actives[0];
-                const turboOptionsActiveInstruments = await first.instruments();
                 const currentTime = sdk.currentTime()
-                instruments = turboOptionsActiveInstruments.getAvailableForBuyAt(currentTime);
+                const actives = turboOptions.getActives();
+                const active = actives.find(value => value.canBeBoughtAt(currentTime));
+                if (active) {
+                    const turboOptionsActiveInstruments = await active.instruments();
+                    instruments = turboOptionsActiveInstruments.getAvailableForBuyAt(currentTime);
+                }
             });
 
             function getAvailableInstrument() {
@@ -220,23 +224,23 @@ describe('Options', () => {
         });
 
         it('should return blitz option actives', async () => {
-            expect(blitzOptions.getActives().filter((a) => !a.isSuspended).length, 'Invalid blitz-option actives count').to.be.above(0);
+            expect(blitzOptions.getActives().length, 'Invalid blitz-option actives count').to.be.above(0);
         });
 
         describe('Buy option', () => {
 
             it('insufficient funds for this transaction', async () => {
-                const active = blitzOptions.getActives().filter((a) => !a.isSuspended)[0];
-                const expirationSize = active.expirationTimes[0];
-                await expect(blitzOptions.buy(active, BlitzOptionsDirection.Put, expirationSize, 10, realBalance))
+                const active = blitzOptions.getActives().find((a) => a.canBeBoughtAt(sdk.currentTime()));
+                const expirationSize = active!.expirationTimes[0];
+                await expect(blitzOptions.buy(active!, BlitzOptionsDirection.Put, expirationSize, 10, realBalance))
                     .rejects.toThrow("Insufficient funds for this transaction.")
             });
 
             async function openOption() {
-                const active = blitzOptions.getActives().filter((a) => !a.isSuspended)[0];
-                expect(active.profitCommissionPercent, 'ProfitCommissionPercent is not specified').not.to.be.null
-                const expirationSize = active.expirationTimes[0];
-                const blitzOption = await blitzOptions.buy(active, BlitzOptionsDirection.Call, expirationSize, 10, demoBalance);
+                const active = blitzOptions.getActives().find((a) => a.canBeBoughtAt(sdk.currentTime()))
+                expect(active!.profitCommissionPercent, 'ProfitCommissionPercent is not specified').not.to.be.null
+                const expirationSize = active!.expirationTimes[0];
+                const blitzOption = await blitzOptions.buy(active!, BlitzOptionsDirection.Call, expirationSize, 10, demoBalance);
                 expect(blitzOption.id, 'Option id should be not null').to.be.not.null
                 return await positionsHelper.waitForPosition((position) => position.orderIds.includes(blitzOption.id), 5000);
             }

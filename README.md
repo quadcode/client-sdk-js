@@ -149,7 +149,7 @@ console.log(position.sellProfit)
 ```js
 const turboOptions = await sdk.turboOptions()
 
-const actives = turboOptions.getActives()
+const actives = turboOptions.getActives().filter((active) => active.canBeBoughtAt(new Date()))
 
 const firstActive = actives[0]
 
@@ -186,7 +186,7 @@ positions.subscribeOnUpdatePosition((position) => {
 ```js
 const binaryOptions = await sdk.binaryOptions()
 
-const actives = binaryOptions.getActives()
+const actives = binaryOptions.getActives().filter((active) => active.canBeBoughtAt(new Date()))
 
 const firstActive = actives[0]
 

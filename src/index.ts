@@ -40,6 +40,12 @@ export class ClientSdk {
     private quotesFacade: Quotes | undefined
 
     /**
+     *  Actives facade cache.
+     *  @private
+     */
+    private activesFacade: Actives | undefined
+
+    /**
      * Blitz options facade cache.
      * @private
      */
@@ -150,11 +156,25 @@ export class ClientSdk {
         return this.balancesFacade
     }
 
+    /**
+     * Returns positions facade class.
+     */
     public async positions(): Promise<Positions> {
         if (!this.positionsFacade) {
-            this.positionsFacade = await Positions.create(this.wsApiClient, this.userProfile.userId)
+            const actives = await this.actives()
+            this.positionsFacade = await Positions.create(this.wsApiClient, this.userProfile.userId, actives)
         }
         return this.positionsFacade
+    }
+
+    /**
+     * Returns actives facade class.
+     */
+    public async actives(): Promise<Actives> {
+        if (!this.activesFacade) {
+            this.activesFacade = new Actives(this.wsApiClient)
+        }
+        return this.activesFacade
     }
 
     /**
@@ -813,6 +833,50 @@ export enum BalanceType {
     Demo = 'demo',
 }
 
+
+/**
+ * Don't use this class directly from your code. Use {@link ClientSdk.actives} static method instead.
+ *
+ * Actives facade class. Stores information about actives. Keeps actives' information up to date.
+ */
+export class Actives {
+    private wsApiClient: WsApiClient;
+    private activeCache = new Map<number, Promise<ActiveV5>>();
+    private activeData = new Map<number, ActiveV5>();
+
+    public constructor(wsApiClient: WsApiClient) {
+        this.wsApiClient = wsApiClient;
+    }
+
+    /**
+     * Returns active data with caching.
+     * @param activeId - Active ID.
+     */
+    public async getActive(activeId: number): Promise<ActiveV5> {
+        if (this.activeData.has(activeId)) {
+            return this.activeData.get(activeId)!;
+        }
+
+        if (this.activeCache.has(activeId)) {
+            return this.activeCache.get(activeId)!;
+        }
+
+        const activePromise = this.wsApiClient.doRequest<ActiveV5>(new CallGetActiveV5(activeId))
+            .then((active) => {
+                this.activeData.set(activeId, active);
+                this.activeCache.delete(activeId);
+                return active;
+            })
+            .catch((error) => {
+                this.activeCache.delete(activeId);
+                throw error;
+            });
+
+        this.activeCache.set(activeId, activePromise);
+        return activePromise;
+    }
+}
+
 /**
  * Don't use this class directly from your code. Use {@link ClientSdk.quotes} static method instead.
  *
@@ -1027,6 +1091,18 @@ export class Positions {
     private wsApiClient: WsApiClient | undefined
 
     /**
+     * Actives facade.
+     * @private
+     */
+    private actives: Actives | undefined
+
+    /**
+     * Digital options facade.
+     * @private
+     */
+    private digitalOptions: DigitalOptions | undefined
+
+    /**
      * List of supported instrument types.
      * @private
      */
@@ -1043,10 +1119,12 @@ export class Positions {
     /**
      * Subscribes on opened positions' updates, requests current state of opened positions, puts the current state to instance of class Positions and returns it.
      * @param wsApiClient - Instance of WebSocket API client.
-     * @param userId
+     * @param userId - User's identification number.
+     * @param actives - Actives facade.
      */
-    public static async create(wsApiClient: WsApiClient, userId: number): Promise<Positions> {
+    public static async create(wsApiClient: WsApiClient, userId: number, actives: Actives): Promise<Positions> {
         const positionsFacade = new Positions()
+        positionsFacade.actives = actives
         positionsFacade.wsApiClient = wsApiClient
         positionsFacade.positionsHistoryFacade = new PositionsHistory(wsApiClient, userId, positionsFacade.positionsHistory)
         await positionsFacade.syncOldActivePositions()
@@ -1210,6 +1288,12 @@ export class Positions {
             this.subscribePositions()
         }
 
+        if (!position.active && position.activeId) {
+            this.actives!.getActive(position.activeId).then((active) => {
+                position.active = active
+            })
+        }
+
         if (position.status === "closed") {
             this.positions.delete(msg.externalId)
             this.positionsIds.delete(`${msg.instrumentType}-${msg.internalId}`)
@@ -1238,6 +1322,12 @@ export class Positions {
 
         if (isNewPosition) {
             this.subscribePositions()
+        }
+
+        if (!position.active && position.activeId) {
+            this.actives!.getActive(position.activeId).then((active) => {
+                position.active = active
+            })
         }
 
         if (position.status === "closed") {
@@ -1375,7 +1465,7 @@ export class Orders {
     }
 
     /**
-     * Checks if a given position associated with a order.
+     * Checks if a given position associated with an order.
      * @param position
      * @param order
      */
@@ -1776,6 +1866,21 @@ export class Position {
     public orderIds: number[] = []
 
     /**
+     * Active information.
+     */
+    public active: ActiveV5 | undefined
+
+    /**
+     * Expiration time for the position.
+     */
+    public expirationTime: Date | undefined
+
+    /**
+     * Direction of the position.
+     */
+    public direction: string | undefined
+
+    /**
      * Version of position. Used for filter old versions of position's state.
      * @private
      */
@@ -1811,6 +1916,8 @@ export class Position {
         this.status = msg.status
         this.userId = msg.userId
         this.orderIds = msg.orderIds
+        this.direction = msg.direction
+        this.expirationTime = msg.expirationTime !== undefined ? new Date(msg.expirationTime) : undefined
     }
 
     /**
@@ -1867,6 +1974,8 @@ export class Position {
         this.status = msg.status
         this.userId = msg.userId
         this.orderIds = msg.orderIds
+        this.direction = msg.direction
+        this.expirationTime = msg.expirationTime !== undefined ? new Date(msg.expirationTime) : undefined
     }
 
     /**
@@ -2535,6 +2644,21 @@ export class TurboOptionsActive {
     }
 
     /**
+     * Checks whether an option on an active can be purchased at a specified time.
+     * @param at - Time for which the check is performed.
+     */
+    public canBeBoughtAt(at: Date): boolean {
+        if (this.isSuspended) {
+            return false
+        }
+
+        const atUnixTimeMilli = at.getTime()
+        return this.schedule.findIndex((session: TurboOptionsActiveTradingSession): boolean => {
+            return session.from.getTime() <= atUnixTimeMilli && session.to.getTime() >= atUnixTimeMilli
+        }) >= 0
+    }
+
+    /**
      * Closes the instance.
      */
     public close() {
@@ -2587,21 +2711,13 @@ export class TurboOptionsActiveInstruments {
 
     /**
      * Creates class instance.
-     * @param activeId - Active ID.
-     * @param deadtime - Deadtime.
-     * @param optionCount - Options count.
-     * @param expirationTimes - Expiration sizes.
-     * @param profitCommissionPercent - Profit commission percent.
+     * @param active - Active.
      * @param currentTime - An object with the current time obtained from WebSocket API.
      * @internal
      * @private
      */
     private constructor(
-        private activeId: number,
-        private deadtime: number,
-        private optionCount: number,
-        private expirationTimes: number[],
-        private profitCommissionPercent: number,
+        private active: TurboOptionsActive,
         private readonly currentTime: WsApiClientCurrentTime,
     ) {
     }
@@ -2613,11 +2729,7 @@ export class TurboOptionsActiveInstruments {
      */
     public static async create(active: TurboOptionsActive, currentTime: WsApiClientCurrentTime): Promise<TurboOptionsActiveInstruments> {
         const instrumentsFacade = new TurboOptionsActiveInstruments(
-            active.id,
-            active.deadtime,
-            active.optionCount,
-            active.expirationTimes,
-            active.profitCommissionPercent,
+            active,
             currentTime,
         )
 
@@ -2649,27 +2761,31 @@ export class TurboOptionsActiveInstruments {
      * @private
      */
     private generateInstruments(): void {
+        if (!this.active.canBeBoughtAt(new Date(this.currentTime.unixMilliTime))) {
+            return
+        }
+
         const generatedInstrumentsKeys = []
         const nowUnixTime = Math.trunc(this.currentTime.unixMilliTime / 1000)
 
-        for (const index in this.expirationTimes) {
-            const expirationSize = this.expirationTimes[index]
+        for (const index in this.active.expirationTimes) {
+            const expirationSize = this.active.expirationTimes[index]
             let instrumentExpirationUnixTime = nowUnixTime + expirationSize - nowUnixTime % expirationSize
-            for (let i = 0; i < this.optionCount; i++) {
-                const key = `${this.activeId},${expirationSize},${instrumentExpirationUnixTime}`
+            for (let i = 0; i < this.active.optionCount; i++) {
+                const key = `${this.active.id},${expirationSize},${instrumentExpirationUnixTime}`
                 generatedInstrumentsKeys.push(key)
                 if (!this.instruments.has(key)) {
                     this.instruments.set(key,
                         new TurboOptionsActiveInstrument(
-                            this.activeId,
+                            this.active.id,
                             expirationSize,
                             new Date(instrumentExpirationUnixTime * 1000),
-                            this.deadtime,
-                            this.profitCommissionPercent,
+                            this.active.deadtime,
+                            this.active.profitCommissionPercent,
                         )
                     )
                 } else {
-                    this.instruments.get(key)!.update(this.deadtime)
+                    this.instruments.get(key)!.update(this.active.deadtime)
                 }
                 instrumentExpirationUnixTime += expirationSize
             }
@@ -3097,6 +3213,21 @@ export class BinaryOptionsActive {
     }
 
     /**
+     * Checks whether an option on an active can be purchased at a specified time.
+     * @param at - Time for which the check is performed.
+     */
+    public canBeBoughtAt(at: Date): boolean {
+        if (this.isSuspended) {
+            return false
+        }
+
+        const atUnixTimeMilli = at.getTime()
+        return this.schedule.findIndex((session: BinaryOptionsActiveTradingSession): boolean => {
+            return session.from.getTime() <= atUnixTimeMilli && session.to.getTime() >= atUnixTimeMilli
+        }) >= 0
+    }
+
+    /**
      * Closes the instance.
      */
     public close() {
@@ -3149,23 +3280,13 @@ export class BinaryOptionsActiveInstruments {
 
     /**
      * Creates class instance.
-     * @param activeId - Active ID.
-     * @param deadtime - Deadtime.
-     * @param optionCount - Options count.
-     * @param optionSpecial - Special instruments.
-     * @param expirationTimes - Expiration sizes.
-     * @param profitCommissionPercent - Profit commission percent.
+     * @param active - Active.
      * @param currentTime - An object with the current time obtained from WebSocket API.
      * @internal
      * @private
      */
     private constructor(
-        private activeId: number,
-        private deadtime: number,
-        private optionCount: number,
-        private optionSpecial: BinaryOptionsActiveSpecialInstrument[],
-        private expirationTimes: number[],
-        private profitCommissionPercent: number,
+        private active: BinaryOptionsActive,
         private readonly currentTime: WsApiClientCurrentTime,
     ) {
     }
@@ -3177,20 +3298,11 @@ export class BinaryOptionsActiveInstruments {
      */
     public static async create(active: BinaryOptionsActive, currentTime: WsApiClientCurrentTime): Promise<BinaryOptionsActiveInstruments> {
         const instrumentsFacade = new BinaryOptionsActiveInstruments(
-            active.id,
-            active.deadtime,
-            active.optionCount,
-            active.optionSpecial,
-            active.expirationTimes,
-            active.profitCommissionPercent,
+            active,
             currentTime,
         )
 
         instrumentsFacade.generateInstruments()
-
-        instrumentsFacade.intervalId = setInterval(() => {
-            instrumentsFacade.generateInstruments()
-        }, 30000)
 
         return instrumentsFacade
     }
@@ -3209,56 +3321,85 @@ export class BinaryOptionsActiveInstruments {
         return list
     }
 
+    private scheduleNextGeneration(): void {
+        let nextGenerationTime: number | null = null;
+        const now = this.currentTime.unixMilliTime
+
+        for (const instrument of this.instruments.values()) {
+            const triggerTime = instrument.expiredAt.getTime() - instrument.deadtime * 1000;
+            if (triggerTime > now && (nextGenerationTime === null || triggerTime < nextGenerationTime)) {
+                nextGenerationTime = triggerTime;
+            }
+        }
+
+        if (nextGenerationTime !== null) {
+            const delay = nextGenerationTime - now;
+            this.intervalId = setTimeout(() => this.generateInstruments(), delay);
+        } else {
+            this.intervalId = setTimeout(() => this.generateInstruments(), 30000);
+        }
+    }
+
     /**
      * Generates instruments.
      * @private
      */
     private generateInstruments(): void {
+        if (!this.active.canBeBoughtAt(new Date(this.currentTime.unixMilliTime))) {
+            this.intervalId = setTimeout(() => this.generateInstruments(), 30000);
+
+            return
+        }
+
         const generatedInstrumentsKeys = []
         const nowUnixTime = Math.trunc(this.currentTime.unixMilliTime / 1000)
 
-        for (const index in this.expirationTimes) {
-            const expirationSize = this.expirationTimes[index]
+        for (const index in this.active.expirationTimes) {
+            const expirationSize = this.active.expirationTimes[index]
             let instrumentExpirationUnixTime = nowUnixTime + expirationSize - nowUnixTime % expirationSize
-            for (let i = 0; i < this.optionCount; i++) {
-                const key = `${this.activeId},${expirationSize},${instrumentExpirationUnixTime}`
+            if (instrumentExpirationUnixTime - this.active.deadtime < nowUnixTime) {
+                instrumentExpirationUnixTime += expirationSize
+            }
+
+            for (let i = 0; i < this.active.optionCount; i++) {
+                const key = `${this.active.id},${expirationSize},${instrumentExpirationUnixTime}`
                 generatedInstrumentsKeys.push(key)
                 if (!this.instruments.has(key)) {
                     this.instruments.set(key,
                         new BinaryOptionsActiveInstrument(
-                            this.activeId,
+                            this.active.id,
                             expirationSize,
                             new Date(instrumentExpirationUnixTime * 1000),
-                            this.deadtime,
-                            this.profitCommissionPercent,
+                            this.active.deadtime,
+                            this.active.profitCommissionPercent,
                         )
                     )
                 }
-                this.instruments.get(key)!.update(this.deadtime)
+                this.instruments.get(key)!.update(this.active.deadtime)
                 instrumentExpirationUnixTime += expirationSize
             }
         }
 
-        for (const index in this.optionSpecial) {
-            const specialInstrument = this.optionSpecial[index]
+        for (const index in this.active.optionSpecial) {
+            const specialInstrument = this.active.optionSpecial[index]
             if (!specialInstrument.isEnabled) {
                 continue
             }
             const expirationSize = specialInstrument.title
-            const key = `${this.activeId},${expirationSize},${specialInstrument.expiredAt.toISOString()}`
+            const key = `${this.active.id},${expirationSize},${specialInstrument.expiredAt.toISOString()}`
             generatedInstrumentsKeys.push(key)
             if (!this.instruments.has(key)) {
                 this.instruments.set(key,
                     new BinaryOptionsActiveInstrument(
-                        this.activeId,
+                        this.active.id,
                         expirationSize,
                         specialInstrument.expiredAt,
-                        this.deadtime,
-                        this.profitCommissionPercent,
+                        this.active.deadtime,
+                        this.active.profitCommissionPercent,
                     )
                 )
             }
-            this.instruments.get(key)!.update(this.deadtime)
+            this.instruments.get(key)!.update(this.active.deadtime)
         }
 
         for (const index in this.instruments) {
@@ -3266,6 +3407,8 @@ export class BinaryOptionsActiveInstruments {
                 this.instruments.delete(index)
             }
         }
+
+        this.scheduleNextGeneration()
     }
 
     /**
@@ -6023,6 +6166,8 @@ class PortfolioPositionChangedV3 {
     userId: number
     userBalanceId: number
     version: number
+    direction: string | undefined
+    expirationTime: number | undefined
     orderIds: number[]
 
     constructor(data: {
@@ -6075,9 +6220,17 @@ class PortfolioPositionChangedV3 {
                 case InstrumentType.TurboOption:
                 case InstrumentType.BlitzOption:
                     order_ids = data.raw_event.binary_options_option_changed1!.order_ids
+                    this.direction = data.raw_event.binary_options_option_changed1!.direction
+                    if (data.raw_event.binary_options_option_changed1!.expiration_time) {
+                        this.expirationTime = data.raw_event.binary_options_option_changed1!.expiration_time * 1000
+                    }
                     break;
                 case InstrumentType.DigitalOption:
                     order_ids = data.raw_event.digital_options_position_changed1!.order_ids
+                    this.direction = data.raw_event.digital_options_position_changed1!.instrument_dir
+                    if (data.raw_event.digital_options_position_changed1!.instrument_expiration) {
+                        this.expirationTime = data.raw_event.digital_options_position_changed1!.instrument_expiration
+                    }
                     break;
                 case InstrumentType.MarginCfd:
                     order_ids = data.raw_event.marginal_cfd_position_changed1!.order_ids
@@ -6300,6 +6453,8 @@ class PortfolioPositionsV4Position {
     userId: number
     userBalanceId: number
     orderIds: number[]
+    expirationTime: number | undefined
+    direction: string | undefined
 
     constructor(data: {
         active_id: number
@@ -6339,9 +6494,17 @@ class PortfolioPositionsV4Position {
                 case InstrumentType.TurboOption:
                 case InstrumentType.BlitzOption:
                     order_ids = data.raw_event.binary_options_option_changed1!.order_ids
+                    this.direction = data.raw_event.binary_options_option_changed1!.direction
+                    if (data.raw_event.binary_options_option_changed1!.expiration_time) {
+                        this.expirationTime = data.raw_event.binary_options_option_changed1!.expiration_time * 1000
+                    }
                     break;
                 case InstrumentType.DigitalOption:
                     order_ids = data.raw_event.digital_options_position_changed1!.order_ids
+                    this.direction = data.raw_event.digital_options_position_changed1!.instrument_dir
+                    if (data.raw_event.digital_options_position_changed1!.instrument_expiration) {
+                        this.expirationTime = data.raw_event.digital_options_position_changed1!.instrument_expiration
+                    }
                     break;
                 case InstrumentType.MarginCfd:
                     order_ids = data.raw_event.marginal_cfd_position_changed1!.order_ids
@@ -6366,15 +6529,23 @@ class PortfolioPositionsV4Position {
 }
 
 class PositionsRawEvent {
-    binary_options_option_changed1: PositionsRawEventItem | undefined
+    binary_options_option_changed1: BinaryOptionsRawEventItem | undefined
     digital_options_position_changed1: PositionsRawEventItem | undefined
     marginal_forex_position_changed1: PositionsRawEventItem | undefined
     marginal_cfd_position_changed1: PositionsRawEventItem | undefined
     marginal_crypto_position_changed1: PositionsRawEventItem | undefined
 }
 
+class BinaryOptionsRawEventItem {
+    order_ids: number[] | undefined
+    direction: string | undefined
+    expiration_time: number | undefined
+}
+
 class PositionsRawEventItem {
     order_ids: number[] | undefined
+    instrument_dir: string | undefined
+    instrument_expiration: number | undefined
 }
 
 class PortfolioOrdersV2 {
@@ -7892,6 +8063,73 @@ class SubscribeMarginPortfolioBalanceChangedV1 implements SubscribeRequest<Margi
 
     createEvent(data: any): MarginPortfolioBalanceV1 {
         return new MarginPortfolioBalanceV1(data)
+    }
+}
+
+class CallGetActiveV5 implements Request<ActiveV5> {
+    constructor(private readonly activeId: number) {
+    }
+
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: 'get-active',
+            version: '5.0',
+            body: {
+                id: this.activeId
+            }
+        }
+    }
+
+    createResponse(data: any): ActiveV5 {
+        return new ActiveV5(data)
+    }
+
+    resultOnly(): boolean {
+        return false
+    }
+}
+
+class ActiveV5 {
+    id: number
+    name: string
+    image: string
+    isOtc: boolean
+    timeFrom: string
+    timeTo: string
+    precision: number
+    pipScale: number
+    spreadPlus: number
+    spreadMinus: number
+    expirationDays: number[]
+    currencyLeftSide: string
+    currencyRightSide: string
+    type: string
+    minQty: number
+    qtyStep: number
+    typeQty: string
+
+    constructor(data: any) {
+        this.id = data.id
+        this.name = data.name
+        this.image = data.image
+        this.isOtc = data.is_otc
+        this.timeFrom = data.time_from
+        this.timeTo = data.time_to
+        this.precision = data.precision
+        this.pipScale = data.pip_scale
+        this.spreadPlus = data.spread_plus
+        this.spreadMinus = data.spread_minus
+        this.expirationDays = data.expiration_days
+        this.currencyLeftSide = data.currency_left_side
+        this.currencyRightSide = data.currency_right_side
+        this.type = data.type
+        this.minQty = data.min_qty
+        this.qtyStep = data.qty_step
+        this.typeQty = data.type_qty
     }
 }
 
