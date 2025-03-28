@@ -94,15 +94,26 @@ export class ClientSdk {
     private candlesFacade: Candles | undefined
 
     /**
+     * Host for static resources.
+     * @private
+     */
+    private readonly staticHost: string = 'https://static.cdnroute.io'
+
+    /**
      * Creates instance of class.
      * @param userProfile - Information about the user on whose behalf your application is working.
      * @param wsApiClient - Instance of WebSocket API client.
+     * @param options
      * @internal
      * @private
      */
-    private constructor(userProfile: UserProfile, wsApiClient: WsApiClient) {
+    private constructor(userProfile: UserProfile, wsApiClient: WsApiClient, options?: ClientSDKAdditionalOptions) {
         this.userProfile = userProfile
         this.wsApiClient = wsApiClient
+
+        if (options && options.staticHost) {
+            this.staticHost = options.staticHost
+        }
     }
 
     /**
@@ -111,12 +122,13 @@ export class ClientSdk {
      * @param apiUrl - URL to system API. Usually it has the following format: `wss://ws.trade.{brand_domain}/echo/websocket`.
      * @param platformId - Identification number of your application.
      * @param authMethod - Authentication method used for connection authentication.
+     * @param options
      */
-    public static async create(apiUrl: string, platformId: number, authMethod: AuthMethod): Promise<ClientSdk> {
+    public static async create(apiUrl: string, platformId: number, authMethod: AuthMethod, options?: ClientSDKAdditionalOptions): Promise<ClientSdk> {
         const wsApiClient = new WsApiClient(apiUrl, platformId, authMethod)
         await wsApiClient.connect()
         const userProfile = await UserProfile.create(wsApiClient)
-        return new ClientSdk(userProfile, wsApiClient)
+        return new ClientSdk(userProfile, wsApiClient, options)
     }
 
     /**
@@ -172,7 +184,7 @@ export class ClientSdk {
      */
     public async actives(): Promise<Actives> {
         if (!this.activesFacade) {
-            this.activesFacade = new Actives(this.wsApiClient)
+            this.activesFacade = new Actives(this.wsApiClient, this.staticHost)
         }
         return this.activesFacade
     }
@@ -283,6 +295,10 @@ export class ClientSdk {
     public currentTime(): Date {
         return new Date(this.wsApiClient.currentTime.unixMilliTime)
     }
+}
+
+export interface ClientSDKAdditionalOptions {
+    staticHost?: string;
 }
 
 /**
@@ -841,18 +857,20 @@ export enum BalanceType {
  */
 export class Actives {
     private wsApiClient: WsApiClient;
-    private activeCache = new Map<number, Promise<ActiveV5>>();
-    private activeData = new Map<number, ActiveV5>();
+    private activeCache = new Map<number, Promise<Active>>();
+    private activeData = new Map<number, Active>();
+    private staticHost: string;
 
-    public constructor(wsApiClient: WsApiClient) {
+    public constructor(wsApiClient: WsApiClient, staticHost: string) {
         this.wsApiClient = wsApiClient;
+        this.staticHost = staticHost;
     }
 
     /**
      * Returns active data with caching.
      * @param activeId - Active ID.
      */
-    public async getActive(activeId: number): Promise<ActiveV5> {
+    public async getActive(activeId: number): Promise<Active> {
         if (this.activeData.has(activeId)) {
             return this.activeData.get(activeId)!;
         }
@@ -862,7 +880,8 @@ export class Actives {
         }
 
         const activePromise = this.wsApiClient.doRequest<ActiveV5>(new CallGetActiveV5(activeId))
-            .then((active) => {
+            .then((response) => {
+                const active = new Active(response, this.staticHost)
                 this.activeData.set(activeId, active);
                 this.activeCache.delete(activeId);
                 return active;
@@ -876,6 +895,117 @@ export class Actives {
         return activePromise;
     }
 }
+
+/**
+ * Active data transfer object.
+ */
+export class Active {
+    /**
+     * Active ID.
+     */
+    id: number
+
+    /**
+     * Active name.
+     */
+    name: string
+
+    /**
+     * Active image URL.
+     */
+    imageUrl: string
+
+    /**
+     * Is active OTC.
+     */
+    isOtc: boolean
+
+    /**
+     * Trading time from.
+     */
+    timeFrom: string
+
+    /**
+     * Trading time to.
+     */
+    timeTo: string
+
+    /**
+     * Active precision.
+     */
+    precision: number
+
+    /**
+     * Active pip scale.
+     */
+    pipScale: number
+
+    /**
+     * Active spread plus.
+     */
+    spreadPlus: number
+
+    /**
+     * Active spread minus.
+     */
+    spreadMinus: number
+
+    /**
+     * Active expiration days.
+     */
+    expirationDays: number[]
+
+    /**
+     * Active currency left side.
+     */
+    currencyLeftSide: string
+
+    /**
+     * Active currency right side.
+     */
+    currencyRightSide: string
+
+    /**
+     * Active type.
+     */
+    type: string
+
+    /**
+     * Active min quantity.
+     */
+    minQty: number
+
+    /**
+     * Active quantity step.
+     */
+    qtyStep: number
+
+    /**
+     * Active quantity type.
+     */
+    typeQty: string
+
+    constructor(response: ActiveV5, staticHost: string) {
+        this.id = response.id
+        this.name = response.name
+        this.imageUrl = `${staticHost}/files/${response.image}`
+        this.isOtc = response.isOtc
+        this.timeFrom = response.timeFrom
+        this.timeTo = response.timeTo
+        this.precision = response.precision
+        this.pipScale = response.pipScale
+        this.spreadPlus = response.spreadPlus
+        this.spreadMinus = response.spreadMinus
+        this.expirationDays = response.expirationDays
+        this.currencyLeftSide = response.currencyLeftSide
+        this.currencyRightSide = response.currencyRightSide
+        this.type = response.type
+        this.minQty = response.minQty
+        this.qtyStep = response.qtyStep
+        this.typeQty = response.typeQty
+    }
+}
+
 
 /**
  * Don't use this class directly from your code. Use {@link ClientSdk.quotes} static method instead.
@@ -1868,7 +1998,7 @@ export class Position {
     /**
      * Active information.
      */
-    public active: ActiveV5 | undefined
+    public active: Active | undefined
 
     /**
      * Expiration time for the position.
