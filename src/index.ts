@@ -97,7 +97,7 @@ export class ClientSdk {
      * Host for static resources.
      * @private
      */
-    private readonly staticHost: string = 'https://static.cdnroute.io'
+    private readonly staticHost: string = 'https://static.cdnroute.io/files'
 
     /**
      * Creates instance of class.
@@ -988,7 +988,7 @@ export class Active {
     constructor(response: ActiveV5, staticHost: string) {
         this.id = response.id
         this.name = response.name
-        this.imageUrl = `${staticHost}/files/${response.image}`
+        this.imageUrl = `${staticHost}/${response.image}`
         this.isOtc = response.isOtc
         this.timeFrom = response.timeFrom
         this.timeTo = response.timeTo
