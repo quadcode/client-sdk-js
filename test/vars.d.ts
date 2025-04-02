@@ -1,5 +1,6 @@
-export const API_URL;
-export const WS_URL;
+declare const IS_BROWSER: boolean;
+export const API_URL: string;
+export const WS_URL: string;
 
 export interface User {
     id: number;
