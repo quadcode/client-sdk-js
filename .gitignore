@@ -6,4 +6,4 @@
 /package-lock.json
 /users.json
 /.env.test
-/test/vars.ts
+/test/vars.js
