@@ -40,23 +40,27 @@ describe('Balances', () => {
         const balanceAmount = balance.amount;
         const defaultBalanceAmount = 10000;
         const amount = balanceAmount - defaultBalanceAmount + 1;
-        const value = balanceAmount - amount;
+        const balanceAmountAfterOpen = balanceAmount - amount;
         if (balanceAmount >= defaultBalanceAmount) {
             await openOption(balance, amount);
             await waitForCondition(() => balance.amount !== balanceAmount, 3000);
-            expect(balance.amount, "Balance amount should be changed").eq(value);
+            expect(balance.amount, "Balance amount should be changed").eq(balanceAmountAfterOpen);
         }
         await balance.resetDemoBalance();
-        await waitForCondition(() => balance.amount !== value, 3000);
+        await waitForCondition(() => balance.amount !== balanceAmountAfterOpen, 3000);
         expect(balance.amount, "Resent is not working, balance wasn't changed").eq(defaultBalanceAmount);
     });
 
     it('balance should changed', async () => {
+        const user = getUserByTitle('balance_user1') as User;
+        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
+        balances = await sdk.balances();
         const balance = getBalance(BalanceType.Demo);
         let balanceAmount: number = 0;
         balances.subscribeOnUpdateBalance(balance.id, (balance) => {
             balanceAmount = balance.amount;
         })
+        await openOption(balance, 1);
         expect(await waitForCondition(() => balanceAmount !== 0, 3000)).to.be.true;
     });
 
