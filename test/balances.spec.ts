@@ -28,7 +28,10 @@ describe('Balances', () => {
         const options = await sdk.binaryOptions();
         const activeInstruments = await options.getActives()
             .filter(active => active.canBeBoughtAt(sdk.currentTime()))[0].instruments();
-        const availableForBuyAt = activeInstruments.getAvailableForBuyAt(sdk.currentTime())[0];
+        const availableInstruments = activeInstruments.getAvailableForBuyAt(sdk.currentTime());
+        const availableForBuyAt = availableInstruments.reduce((prev, curr) => {
+            return prev.expiredAt > curr.expiredAt ? prev : curr;
+        });
         await options.buy(availableForBuyAt, BinaryOptionsDirection.Put, amount, balance)
     }
 
@@ -37,14 +40,29 @@ describe('Balances', () => {
         const balanceAmount = balance.amount;
         const defaultBalanceAmount = 10000;
         const amount = balanceAmount - defaultBalanceAmount + 1;
+        const value = balanceAmount - amount;
         if (balanceAmount >= defaultBalanceAmount) {
             await openOption(balance, amount);
-            await waitForCondition(() => balance.amount !== defaultBalanceAmount, 3000);
-            expect(balance.amount, "Balance amount should be changed").eq(balanceAmount - amount);
+            await waitForCondition(() => balance.amount !== balanceAmount, 3000);
+            expect(balance.amount, "Balance amount should be changed").eq(value);
         }
         await balance.resetDemoBalance();
-        await waitForCondition(() => balance.amount !== balanceAmount - amount, 3000);
+        await waitForCondition(() => balance.amount !== value, 3000);
         expect(balance.amount, "Resent is not working, balance wasn't changed").eq(defaultBalanceAmount);
+    });
+
+    it('balance should changed', async () => {
+        const balance = getBalance(BalanceType.Demo);
+        let balanceAmount: number = 0;
+        balances.subscribeOnUpdateBalance(balance.id, (balance) => {
+            balanceAmount = balance.amount;
+        })
+        expect(await waitForCondition(() => balanceAmount !== 0, 3000)).to.be.true;
+    });
+
+    it('error should be present when subscribe with invalid balance id', async () => {
+        expect(() => balances.subscribeOnUpdateBalance(123, () => {
+        })).toThrowError("balance with id '123' is not found")
     });
 
     it('cannot reset normal balance', async () => {
