@@ -577,6 +577,34 @@ export class Balances {
     }
 
     /**
+     * Adds specified callback to balance update subscribers' list.
+     *
+     * @param balanceId
+     * @param callback
+     */
+    public subscribeOnUpdateBalance(balanceId: number, callback: CallbackForBalanceUpdate): void {
+        if (!this.balances.has(balanceId)) {
+            throw new Error(`balance with id '${balanceId}' is not found`)
+        }
+
+        this.balances.get(balanceId)!.subscribeOnUpdate(callback)
+    }
+
+    /**
+     * Removes specified callback from balance update subscribers' list.
+     *
+     * @param balanceId
+     * @param callback
+     */
+    public unsubscribeOnUpdateBalance(balanceId: number, callback: CallbackForBalanceUpdate): void {
+        if (!this.balances.has(balanceId)) {
+            throw new Error(`balance with id '${balanceId}' is not found`)
+        }
+
+        this.balances.get(balanceId)!.unsubscribeOnUpdate(callback)
+    }
+
+    /**
      * Updates instance from DTO.
      * @param balanceChangedMsg - Balances data transfer object.
      * @private
