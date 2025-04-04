@@ -42,6 +42,18 @@ describe('Margin Forex/CFD/Crypto', () => {
         await sdk.shutdown();
     });
 
+    it('Margin CFD instrument should be available', async () => {
+        expect(await sdk.marginCfdIsAvailable(), 'Margin CFD must be available').to.be.true;
+    });
+
+    it('Margin Crypto instrument should be available', async () => {
+        expect(await sdk.marginCryptoIsAvailable(), 'Margin Crypto must be available').to.be.true;
+    });
+
+    it('Margin Forex instrument should be available', async () => {
+        expect(await sdk.marginForexIsAvailable(), 'Margin Forex must be available').to.be.true;
+    });
+
     describe('Margin CFD', async () => {
         let marginCFD: MarginCfd;
 

@@ -40,6 +40,22 @@ describe('Options', () => {
         await sdk.shutdown();
     });
 
+    it('should binary option instrument be available', async () => {
+        expect(await sdk.binaryOptionsIsAvailable(), 'Binary-option must be available').to.be.true;
+    });
+
+    it('should turbo option instrument be available', async () => {
+        expect(await sdk.turboOptionsIsAvailable(), 'Turbo-option must be available').to.be.true;
+    });
+
+    it('should blitz option instrument be available', async () => {
+        expect(await sdk.blitzOptionsIsAvailable(), 'Blitz-option must be available').to.be.true;
+    });
+
+    it('should digital option instrument be available', async () => {
+        expect(await sdk.digitalOptionsIsAvailable(), 'Digital-option must be available').to.be.true;
+    });
+
     describe('Binary-options', () => {
         let binaryOptions: BinaryOptions;
 

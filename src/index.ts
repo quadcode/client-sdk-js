@@ -100,6 +100,12 @@ export class ClientSdk {
     private readonly staticHost: string = 'https://static.cdnroute.io/files'
 
     /**
+     * Instruments availability cache.
+     * @private
+     */
+    private instrumentsIsAvailable: Map<string, boolean> = new Map<string, boolean>()
+
+    /**
      * Creates instance of class.
      * @param userProfile - Information about the user on whose behalf your application is working.
      * @param wsApiClient - Instance of WebSocket API client.
@@ -204,9 +210,20 @@ export class ClientSdk {
      */
     public async blitzOptions(): Promise<BlitzOptions> {
         if (!this.blitzOptionsFacade) {
+            if (!await this.blitzOptionsIsAvailable()) {
+                throw new Error('Blitz options are not available')
+            }
+
             this.blitzOptionsFacade = await BlitzOptions.create(this.wsApiClient)
         }
         return this.blitzOptionsFacade
+    }
+
+    /**
+     * Blitz options availability check.
+     */
+    public async blitzOptionsIsAvailable(): Promise<boolean> {
+        return this.instrumentIsAvailable('blitz-instrument')
     }
 
     /**
@@ -214,9 +231,20 @@ export class ClientSdk {
      */
     public async turboOptions(): Promise<TurboOptions> {
         if (!this.turboOptionsFacade) {
+            if (!await this.turboOptionsIsAvailable()) {
+                throw new Error('Turbo options are not available')
+            }
+
             this.turboOptionsFacade = await TurboOptions.create(this.wsApiClient)
         }
         return this.turboOptionsFacade
+    }
+
+    /**
+     * Turbo options availability check.
+     */
+    public async turboOptionsIsAvailable(): Promise<boolean> {
+        return this.instrumentIsAvailable('turbo-instrument')
     }
 
     /**
@@ -224,9 +252,20 @@ export class ClientSdk {
      */
     public async binaryOptions(): Promise<BinaryOptions> {
         if (!this.binaryOptionsFacade) {
+            if (!await this.binaryOptionsIsAvailable()) {
+                throw new Error('Binary options are not available')
+            }
+
             this.binaryOptionsFacade = await BinaryOptions.create(this.wsApiClient)
         }
         return this.binaryOptionsFacade
+    }
+
+    /**
+     * Binary options availability check.
+     */
+    public async binaryOptionsIsAvailable(): Promise<boolean> {
+        return this.instrumentIsAvailable('binary-instrument')
     }
 
     /**
@@ -234,9 +273,20 @@ export class ClientSdk {
      */
     public async digitalOptions(): Promise<DigitalOptions> {
         if (!this.digitalOptionsFacade) {
+            if (!await this.digitalOptionsIsAvailable()) {
+                throw new Error('Digital options are not available')
+            }
+
             this.digitalOptionsFacade = await DigitalOptions.create(this.wsApiClient)
         }
         return this.digitalOptionsFacade
+    }
+
+    /**
+     * Digital options availability check.
+     */
+    public async digitalOptionsIsAvailable(): Promise<boolean> {
+        return this.instrumentIsAvailable('digital-instrument')
     }
 
     /**
@@ -244,9 +294,20 @@ export class ClientSdk {
      */
     public async marginForex(): Promise<MarginForex> {
         if (!this.marginForexFacade) {
+            if (!await this.marginForexIsAvailable()) {
+                throw new Error('Margin forex is not available')
+            }
+
             this.marginForexFacade = await MarginForex.create(this.wsApiClient)
         }
         return this.marginForexFacade
+    }
+
+    /**
+     * Margin forex availability check.
+     */
+    public async marginForexIsAvailable(): Promise<boolean> {
+        return this.instrumentIsAvailable('margin-forex-instrument')
     }
 
     /**
@@ -254,9 +315,20 @@ export class ClientSdk {
      */
     public async marginCfd(): Promise<MarginCfd> {
         if (!this.marginCfdFacade) {
+            if (!await this.marginCfdIsAvailable()) {
+                throw new Error('Margin CFD is not available')
+            }
+
             this.marginCfdFacade = await MarginCfd.create(this.wsApiClient)
         }
         return this.marginCfdFacade
+    }
+
+    /**
+     * Margin cfd availability check.
+     */
+    public async marginCfdIsAvailable(): Promise<boolean> {
+        return this.instrumentIsAvailable('margin-cfd-instrument')
     }
 
     /**
@@ -264,9 +336,37 @@ export class ClientSdk {
      */
     public async marginCrypto(): Promise<MarginCrypto> {
         if (!this.marginCryptoFacade) {
+            if (!await this.marginCryptoIsAvailable()) {
+                throw new Error('Margin crypto is not available')
+            }
+
             this.marginCryptoFacade = await MarginCrypto.create(this.wsApiClient)
         }
         return this.marginCryptoFacade
+    }
+
+    /**
+     * Margin crypto availability check.
+     */
+    public async marginCryptoIsAvailable(): Promise<boolean> {
+        return this.instrumentIsAvailable('margin-crypto-instrument')
+    }
+
+    private async instrumentIsAvailable(instrumentFeature: string): Promise<boolean> {
+        if (this.instrumentsIsAvailable.has(instrumentFeature)) {
+            return this.instrumentsIsAvailable.get(instrumentFeature)!
+        }
+
+        const response = await this.wsApiClient.doRequest<FeaturesV2>(new CallGetFeaturesV2());
+        for (const feature of response.features) {
+            if (feature.name === instrumentFeature && feature.status === 'disabled') {
+                this.instrumentsIsAvailable.set(instrumentFeature, false)
+                return false
+            }
+        }
+
+        this.instrumentsIsAvailable.set(instrumentFeature, true)
+        return true
     }
 
     /**
@@ -474,6 +574,34 @@ export class Balances {
         }
 
         return this.balances.get(balanceId)!
+    }
+
+    /**
+     * Adds specified callback to balance update subscribers' list.
+     *
+     * @param balanceId
+     * @param callback
+     */
+    public subscribeOnUpdateBalance(balanceId: number, callback: CallbackForBalanceUpdate): void {
+        if (!this.balances.has(balanceId)) {
+            throw new Error(`balance with id '${balanceId}' is not found`)
+        }
+
+        this.balances.get(balanceId)!.subscribeOnUpdate(callback)
+    }
+
+    /**
+     * Removes specified callback from balance update subscribers' list.
+     *
+     * @param balanceId
+     * @param callback
+     */
+    public unsubscribeOnUpdateBalance(balanceId: number, callback: CallbackForBalanceUpdate): void {
+        if (!this.balances.has(balanceId)) {
+            throw new Error(`balance with id '${balanceId}' is not found`)
+        }
+
+        this.balances.get(balanceId)!.unsubscribeOnUpdate(callback)
     }
 
     /**
