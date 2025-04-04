@@ -373,13 +373,20 @@ export class LoginPasswordAuthMethod implements AuthMethod {
  * User profile facade class. Stores information about the user on whose behalf your application is working.
  */
 export class UserProfile {
+    public readonly userId: number
+    public readonly firstName: string
+    public readonly lastName: string
+
     /**
      * Creates instance of class {@link UserProfile}.
-     * @param userId - User's identification number.
      * @internal
      * @private
+     * @param profile
      */
-    private constructor(public readonly userId: number) {
+    private constructor(profile: CoreProfileV1) {
+        this.userId = profile.userId
+        this.firstName = profile.firstName
+        this.lastName = profile.lastName
     }
 
     /**
@@ -388,7 +395,7 @@ export class UserProfile {
      */
     public static async create(wsApiClient: WsApiClient): Promise<UserProfile> {
         const userProfile = await wsApiClient.doRequest<CoreProfileV1>(new CallCoreGetProfileV1())
-        return new UserProfile(userProfile.userId)
+        return new UserProfile(userProfile)
     }
 }
 
@@ -5789,13 +5796,19 @@ class BinaryOptionsOptionV1 {
 
 class CoreProfileV1 {
     userId: number
+    firstName: string
+    lastName: string
 
     constructor(data: {
         result: {
             user_id: number
+            first_name: string
+            last_name: string
         }
     }) {
         this.userId = data.result.user_id
+        this.firstName = data.result.first_name
+        this.lastName = data.result.last_name
     }
 }
 
