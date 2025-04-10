@@ -7,10 +7,14 @@ export default defineConfig({
     test: {
         browser: {
             provider: "webdriverio",
-            name: "chrome",
-            enabled: true,
             headless: true,
+            enabled: true,
+            instances: [
+                {
+                    browser: 'chrome',
+                }
+            ],
         },
         include: ['./test/*.spec.{ts,js}'],
-    },
+    }
 })
