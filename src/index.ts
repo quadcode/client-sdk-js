@@ -46,6 +46,12 @@ export class ClientSdk {
     private activesFacade: Actives | undefined
 
     /**
+     * Currencies facade cache.
+     * @private
+     */
+    private currenciesFacade: Currencies | undefined
+
+    /**
      * Blitz options facade cache.
      * @private
      */
@@ -193,6 +199,13 @@ export class ClientSdk {
             this.activesFacade = new Actives(this.wsApiClient, this.staticHost)
         }
         return this.activesFacade
+    }
+
+    public async currencies(): Promise<Currencies> {
+        if (!this.currenciesFacade) {
+            this.currenciesFacade = new Currencies(this.wsApiClient, this.staticHost)
+        }
+        return this.currenciesFacade
     }
 
     /**
@@ -1141,6 +1154,161 @@ export class Active {
     }
 }
 
+/**
+ * Don't use this class directly from your code. Use {@link ClientSdk.currencies} static method instead.
+ *
+ * Currencies facade class. Stores information about currencies. Keeps currencies information up to date.
+ */
+export class Currencies {
+    private wsApiClient: WsApiClient;
+    private currencyCache = new Map<string, Promise<Currency>>();
+    private currencyData = new Map<string, Currency>();
+    private staticHost: string;
+
+    public constructor(wsApiClient: WsApiClient, staticHost: string) {
+        this.wsApiClient = wsApiClient;
+        this.staticHost = staticHost;
+    }
+
+    /**
+     * Returns currency data with caching.
+     * @param currencyCode - Currency code (example: USD).
+     */
+    public async getCurrency(currencyCode: string): Promise<Currency> {
+        if (this.currencyData.has(currencyCode)) {
+            return this.currencyData.get(currencyCode)!;
+        }
+
+        if (this.currencyCache.has(currencyCode)) {
+            return this.currencyCache.get(currencyCode)!;
+        }
+
+        const currencyPromise = this.wsApiClient.doRequest<CurrencyV5>(new CallGetCurrencyV5(currencyCode))
+            .then((response) => {
+                const currency = new Currency(response, this.staticHost)
+                this.currencyData.set(currencyCode, currency);
+                this.currencyCache.delete(currencyCode);
+                return currency;
+            })
+            .catch((error) => {
+                this.currencyCache.delete(currencyCode);
+                throw error;
+            });
+
+        this.currencyCache.set(currencyCode, currencyPromise);
+        return currencyPromise;
+    }
+}
+
+/**
+ * Currency data transfer object.
+ */
+export class Currency {
+    /**
+     * Currency ID.
+     */
+    id: number
+
+    /**
+     * Currency name.
+     */
+    name: string
+
+    /**
+     * Currency description.
+     */
+    description: string
+
+    /**
+     * Currency symbol ($).
+     */
+    symbol: string
+
+    /**
+     * Currency mask ($%s).
+     */
+    mask: string
+
+    /**
+     * Currency is tradable.
+     */
+    isTradable: boolean
+
+    /**
+     * Currency code
+     */
+    code: string
+
+    /**
+     * Currency unit.
+     */
+    unit: number
+
+    /**
+     * Currency rate.
+     */
+    rate: number
+
+    /**
+     * Currency rate in USD.
+     */
+    rateUsd: number
+
+    /**
+     * Currency min deal amount.
+     */
+    minDealAmount: number
+
+    /**
+     * Currency max deal amount.
+     */
+    maxDealAmount: number
+
+    /**
+     * Currency minor units.
+     */
+    minorUnits: number
+
+    /**
+     * Currency image URL.
+     */
+    imageUrl: string
+
+    /**
+     * Currency is crypto.
+     */
+    isCrypto: boolean
+
+    /**
+     * Currency is inout.
+     */
+    isInout: boolean
+
+    /**
+     * Currency interest rate.
+     */
+    interestRate: number
+
+    constructor(response: CurrencyV5, staticHost: string) {
+        this.id = response.id
+        this.name = response.name
+        this.description = response.description
+        this.symbol = response.symbol
+        this.mask = response.mask
+        this.isTradable = response.isTradable
+        this.code = response.code
+        this.unit = response.unit
+        this.rate = response.rate
+        this.rateUsd = response.rateUsd
+        this.minDealAmount = response.minDealAmount
+        this.maxDealAmount = response.maxDealAmount
+        this.minorUnits = response.minorUnits
+        this.imageUrl = `${staticHost}/${response.image}`
+        this.isCrypto = response.isCrypto
+        this.isInout = response.isInout
+        this.interestRate = response.interestRate
+    }
+}
 
 /**
  * Don't use this class directly from your code. Use {@link ClientSdk.quotes} static method instead.
@@ -8336,6 +8504,76 @@ class SubscribeMarginPortfolioBalanceChangedV1 implements SubscribeRequest<Margi
         return new MarginPortfolioBalanceV1(data)
     }
 }
+
+class CallGetCurrencyV5 implements Request<CurrencyV5> {
+    constructor(private readonly currencyCode: string) {
+    }
+
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: 'get-currency',
+            version: '5.0',
+            body: {
+                name: this.currencyCode
+            }
+        }
+    }
+
+    createResponse(data: any): CurrencyV5 {
+        return new CurrencyV5(data)
+    }
+
+    resultOnly(): boolean {
+        return false
+    }
+}
+
+class CurrencyV5 {
+    id: number
+    name: string
+    description: string
+    symbol: string
+    isVisible: boolean
+    mask: string
+    isTradable: boolean
+    code: string
+    unit: number
+    rate: number
+    rateUsd: number
+    minDealAmount: number
+    maxDealAmount: number
+    minorUnits: number
+    image: string
+    isCrypto: boolean
+    isInout: boolean
+    interestRate: number
+
+    constructor(data: any) {
+        this.id = data.id
+        this.name = data.name
+        this.description = data.description
+        this.symbol = data.symbol
+        this.isVisible = data.is_visible
+        this.mask = data.mask
+        this.isTradable = data.is_tradable
+        this.code = data.code
+        this.unit = data.unit
+        this.rate = data.rate
+        this.rateUsd = data.rate_usd
+        this.minDealAmount = data.min_deal_amount
+        this.maxDealAmount = data.max_deal_amount
+        this.minorUnits = data.minor_units
+        this.image = data.image
+        this.isCrypto = data.is_crypto
+        this.isInout = data.is_inout
+        this.interestRate = data.interest_rate
+    }
+}
+
 
 class CallGetActiveV5 implements Request<ActiveV5> {
     constructor(private readonly activeId: number) {
