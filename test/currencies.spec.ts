@@ -18,7 +18,6 @@ describe('Currencies', () => {
     it(`should currency present `, async () => {
         const currencies = await sdk.currencies()
         const brl = await currencies.getCurrency("BRL");
-        console.log(brl)
         expect(brl.id, "invalid currency id").eq(6)
         expect(brl.name, "invalid currency name").eq("BRL")
         expect(brl.symbol, "invalid currency symbol").eq("R$")
