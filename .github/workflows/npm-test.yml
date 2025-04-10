@@ -8,12 +8,15 @@ on:
   workflow_call: # workflow can be called by another workflow
   workflow_dispatch: # workflow can be called manually
 
+concurrency:
+  group: test-group
+  cancel-in-progress: false
+
 jobs:
 
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    resource_group: test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,7 +35,6 @@ jobs:
   test_browser:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    resource_group: test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
