@@ -1136,7 +1136,7 @@ export class Active {
     constructor(response: ActiveV5, staticHost: string) {
         this.id = response.id
         this.name = response.name
-        this.imageUrl = `${staticHost}/${response.image}`
+        this.imageUrl = `${staticHost}${response.image}`
         this.isOtc = response.isOtc
         this.timeFrom = response.timeFrom
         this.timeTo = response.timeTo
