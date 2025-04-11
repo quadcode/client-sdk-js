@@ -2377,6 +2377,7 @@ export class Position {
         this.status = msg.status
         this.userId = msg.userId
         this.orderIds = msg.orderIds
+        this.direction = msg.direction
     }
 
     /**
@@ -6725,6 +6726,7 @@ class PortfolioPositionsHistoryV2Position {
     pnlRealized: number
     pnlNet: number
     orderIds: number[]
+    direction: string | undefined
 
     constructor(data: {
         active_id: number
@@ -6775,9 +6777,11 @@ class PortfolioPositionsHistoryV2Position {
                 case InstrumentType.TurboOption:
                 case InstrumentType.BlitzOption:
                     order_ids = data.raw_event.binary_options_option_changed1!.order_ids
+                    this.direction = data.raw_event.binary_options_option_changed1!.direction
                     break;
                 case InstrumentType.DigitalOption:
                     order_ids = data.raw_event.digital_options_position_changed1!.order_ids
+                    this.direction = data.raw_event.digital_options_position_changed1!.instrument_dir
                     break;
                 case InstrumentType.MarginCfd:
                     order_ids = data.raw_event.marginal_cfd_position_changed1!.order_ids
