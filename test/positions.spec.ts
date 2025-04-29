@@ -43,17 +43,30 @@ describe('Positions', () => {
         expect(position.direction, "Direction should be define in position object").to.be.not.undefined
         expect(position.expirationTime, "Expiration time should be define in position object").to.be.not.undefined
     });
+});
 
-    describe('History positions', () => {
-        const pages = [{page: 1, count: 30}, {page: 2, count: 90}]
+describe('History positions', () => {
+    let user: User
+    let sdk: ClientSdk
+    let positionsHelper: PositionsHelper
 
-        pages.forEach(({page, count}) => {
-
-            it(`${page} more pages should be loaded, positions count ${count}`, async () => {
-                const historyPositions = await positionsHelper.loadHistoryPositions(page);
-                expect(historyPositions.length, 'History positions count must be ' + count).eq(count);
-            });
-        })
-
+    beforeAll(async () => {
+        user = getUserByTitle('history_positions_user') as User
+        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password))
+        positionsHelper = await PositionsHelper.create(sdk)
     });
+
+    afterAll(async function () {
+        await sdk.shutdown();
+    });
+
+    const pages = [{page: 1, count: 30}, {page: 2, count: 90}]
+
+    pages.forEach(({page, count}) => {
+
+        it(`${page} more pages should be loaded, positions count ${count}`, async () => {
+            const historyPositions = await positionsHelper.loadHistoryPositions(page);
+            expect(historyPositions.length, 'History positions count must be ' + count).eq(count);
+        });
+    })
 });
