@@ -904,17 +904,32 @@ export class Balance {
 }
 
 /**
+ * WebSocket connection state enum.
+ */
+export enum WsConnectionStateEnum {
+    /**
+     * WebSocket is connected and ready to use
+     */
+    Connected = 'connected',
+
+    /**
+     * WebSocket is disconnected
+     */
+    Disconnected = 'disconnected',
+}
+
+/**
  * Do not use this class directly from your code. Use {@link ClientSdk.wsConnectionState} static method instead.
  * 
  * WebSocket connection state facade.
  */
 export class WsConnectionState {
     private readonly wsApiClient: WsApiClient
-    private onStateChangedObserver: Observable<string> = new Observable<string>()
+    private onStateChangedObserver: Observable<WsConnectionStateEnum> = new Observable<WsConnectionStateEnum>()
 
     private constructor(wsApiClient: WsApiClient) {
         this.wsApiClient = wsApiClient
-        this.wsApiClient.onConnectionStateChanged = (state: string) => {
+        this.wsApiClient.onConnectionStateChanged = (state: WsConnectionStateEnum) => {
             this.onStateChangedObserver.notify(state)
         }
     }
@@ -927,7 +942,7 @@ export class WsConnectionState {
      * Subscribe to WebSocket connection state changes.
      * @param callback - Callback function that will be called when the state changes.
      */
-    public subscribeOnStateChanged(callback: (state: string) => void): void {
+    public subscribeOnStateChanged(callback: (state: WsConnectionStateEnum) => void): void {
         this.onStateChangedObserver.subscribe(callback)
     }
 
@@ -935,7 +950,7 @@ export class WsConnectionState {
      * Unsubscribe from WebSocket connection state changes.
      * @param callback - Callback function to unsubscribe.
      */
-    public unsubscribeOnStateChanged(callback: (state: string) => void): void {
+    public unsubscribeOnStateChanged(callback: (state: WsConnectionStateEnum) => void): void {
         this.onStateChangedObserver.unsubscribe(callback)
     }
 }
@@ -5804,7 +5819,7 @@ class WsApiClient {
     private lastRequestId: number = 0
     private requests: Map<string, RequestMetaData> = new Map<string, RequestMetaData>()
     private subscriptions: Map<string, SubscriptionMetaData[]> = new Map<string, SubscriptionMetaData[]>()
-    public onConnectionStateChanged: ((state: string) => void) | undefined
+    public onConnectionStateChanged: ((state: WsConnectionStateEnum) => void) | undefined
     private timeSyncInterval: NodeJS.Timeout | undefined
     private lastTimeSyncReceived: number = 0
     private reconnectTimeoutHandle: NodeJS.Timeout | undefined = undefined;
@@ -5952,7 +5967,7 @@ class WsApiClient {
                         this.reconnect()
                     }
 
-                    this.onConnectionStateChanged?.('connected')
+                    this.onConnectionStateChanged?.(WsConnectionStateEnum.Connected)
                     this.startTimeSyncMonitoring()
 
                     return resolve()
@@ -5973,7 +5988,7 @@ class WsApiClient {
 
         this.stopTimeSyncMonitoring();
         this.forceCloseConnection();
-        this.onConnectionStateChanged?.('disconnected');
+        this.onConnectionStateChanged?.(WsConnectionStateEnum.Disconnected);
         this.reconnecting = false;
         this.lastRequestId = 0;
         this.requests.clear();
@@ -6001,7 +6016,7 @@ class WsApiClient {
         }
 
         this.reconnecting = true;
-        this.onConnectionStateChanged?.('disconnected')
+        this.onConnectionStateChanged?.(WsConnectionStateEnum.Disconnected)
 
         const attemptReconnect = async () => {
             if (this.disconnecting) {
