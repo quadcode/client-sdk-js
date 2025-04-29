@@ -904,6 +904,43 @@ export class Balance {
 }
 
 /**
+ * Do not use this class directly from your code. Use {@link ClientSdk.wsConnectionState} static method instead.
+ * 
+ * WebSocket connection state facade.
+ */
+export class WsConnectionState {
+    private readonly wsApiClient: WsApiClient
+    private onStateChangedObserver: Observable<string> = new Observable<string>()
+
+    private constructor(wsApiClient: WsApiClient) {
+        this.wsApiClient = wsApiClient
+        this.wsApiClient.onConnectionStateChanged = (state: string) => {
+            this.onStateChangedObserver.notify(state)
+        }
+    }
+
+    public static async create(wsApiClient: WsApiClient): Promise<WsConnectionState> {
+        return new WsConnectionState(wsApiClient)
+    }
+
+    /**
+     * Subscribe to WebSocket connection state changes.
+     * @param callback - Callback function that will be called when the state changes.
+     */
+    public subscribeOnStateChanged(callback: (state: string) => void): void {
+        this.onStateChangedObserver.subscribe(callback)
+    }
+
+    /**
+     * Unsubscribe from WebSocket connection state changes.
+     * @param callback - Callback function to unsubscribe.
+     */
+    public unsubscribeOnStateChanged(callback: (state: string) => void): void {
+        this.onStateChangedObserver.unsubscribe(callback)
+    }
+}
+
+/**
  * Don't use this class directly from your code. Use {@link ClientSdk.candles} static method instead.
  *
  * Candles facade class.
@@ -8968,40 +9005,5 @@ class MarginInstrumentsInstrumentsListV1Item {
 
 class MarginInstrumentsInstrumentsListV1Tradable {
     constructor(public from: number, public to: number) {
-    }
-}
-
-/**
- * WebSocket connection state facade.
- */
-export class WsConnectionState {
-    private readonly wsApiClient: WsApiClient
-    private onStateChangedObserver: Observable<string> = new Observable<string>()
-
-    private constructor(wsApiClient: WsApiClient) {
-        this.wsApiClient = wsApiClient
-        this.wsApiClient.onConnectionStateChanged = (state: string) => {
-            this.onStateChangedObserver.notify(state)
-        }
-    }
-
-    public static async create(wsApiClient: WsApiClient): Promise<WsConnectionState> {
-        return new WsConnectionState(wsApiClient)
-    }
-
-    /**
-     * Subscribe to WebSocket connection state changes.
-     * @param callback - Callback function that will be called when the state changes.
-     */
-    public subscribeOnStateChanged(callback: (state: string) => void): void {
-        this.onStateChangedObserver.subscribe(callback)
-    }
-
-    /**
-     * Unsubscribe from WebSocket connection state changes.
-     * @param callback - Callback function to unsubscribe.
-     */
-    public unsubscribeOnStateChanged(callback: (state: string) => void): void {
-        this.onStateChangedObserver.unsubscribe(callback)
     }
 }
