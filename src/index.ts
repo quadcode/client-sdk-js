@@ -16,6 +16,12 @@ export class ClientSdk {
     private readonly wsApiClient: WsApiClient
 
     /**
+     * WebSocket connection state facade.
+     * @private
+     */
+    private wsConnectionStateFacade: WsConnectionState | undefined
+
+    /**
      * Balances facade cache.
      * @private
      */
@@ -407,6 +413,16 @@ export class ClientSdk {
      */
     public currentTime(): Date {
         return new Date(this.wsApiClient.currentTime.unixMilliTime)
+    }
+
+    /**
+     * Get WebSocket connection state facade.
+     */
+    public async wsConnectionState(): Promise<WsConnectionState> {
+        if (this.wsConnectionStateFacade === undefined) {
+            this.wsConnectionStateFacade = await WsConnectionState.create(this.wsApiClient)
+        }
+        return this.wsConnectionStateFacade
     }
 }
 
@@ -888,6 +904,58 @@ export class Balance {
 }
 
 /**
+ * WebSocket connection state enum.
+ */
+export enum WsConnectionStateEnum {
+    /**
+     * WebSocket is connected and ready to use
+     */
+    Connected = 'connected',
+
+    /**
+     * WebSocket is disconnected
+     */
+    Disconnected = 'disconnected',
+}
+
+/**
+ * Do not use this class directly from your code. Use {@link ClientSdk.wsConnectionState} static method instead.
+ * 
+ * WebSocket connection state facade.
+ */
+export class WsConnectionState {
+    private readonly wsApiClient: WsApiClient
+    private onStateChangedObserver: Observable<WsConnectionStateEnum> = new Observable<WsConnectionStateEnum>()
+
+    private constructor(wsApiClient: WsApiClient) {
+        this.wsApiClient = wsApiClient
+        this.wsApiClient.onConnectionStateChanged = (state: WsConnectionStateEnum) => {
+            this.onStateChangedObserver.notify(state)
+        }
+    }
+
+    public static async create(wsApiClient: WsApiClient): Promise<WsConnectionState> {
+        return new WsConnectionState(wsApiClient)
+    }
+
+    /**
+     * Subscribe to WebSocket connection state changes.
+     * @param callback - Callback function that will be called when the state changes.
+     */
+    public subscribeOnStateChanged(callback: (state: WsConnectionStateEnum) => void): void {
+        this.onStateChangedObserver.subscribe(callback)
+    }
+
+    /**
+     * Unsubscribe from WebSocket connection state changes.
+     * @param callback - Callback function to unsubscribe.
+     */
+    public unsubscribeOnStateChanged(callback: (state: WsConnectionStateEnum) => void): void {
+        this.onStateChangedObserver.unsubscribe(callback)
+    }
+}
+
+/**
  * Don't use this class directly from your code. Use {@link ClientSdk.candles} static method instead.
  *
  * Candles facade class.
@@ -917,18 +985,18 @@ export class Candles {
      * @param options
      */
     public async getCandles(activeId: number,
-                            size: number,
-                            options: {
-                                from?: number,
-                                to?: number,
-                                fromId?: number,
-                                toId?: number,
-                                count?: number,
-                                backoff?: number
-                                onlyClosed?: boolean
-                                kind?: string,
-                                splitNormalization?: boolean,
-                            } | undefined = undefined
+        size: number,
+        options: {
+            from?: number,
+            to?: number,
+            fromId?: number,
+            toId?: number,
+            count?: number,
+            backoff?: number
+            onlyClosed?: boolean
+            kind?: string,
+            splitNormalization?: boolean,
+        } | undefined = undefined
     ): Promise<Candle[]> {
         const response = await this.wsApiClient.doRequest<QuotesHistoryCandlesV2>(new CallQuotesHistoryGetCandlesV2({
             activeId,
@@ -1591,7 +1659,7 @@ export class Positions {
             (event: PortfolioPositionsStateV1) => {
                 this.syncPositionsStateFromEvent(event)
             }).then(() => {
-        })
+            })
 
         this.intervalId = setInterval(async () => {
             await this.wsApiClient!.unsubscribe<PortfolioPositionsStateV1>(new SubscribePortfolioPositionsStateV1())
@@ -5746,10 +5814,15 @@ class WsApiClient {
     private reconnectTimeout: number = 100
 
     private disconnecting = false
+    private reconnecting = false
     private connection: WebSocket | undefined
     private lastRequestId: number = 0
     private requests: Map<string, RequestMetaData> = new Map<string, RequestMetaData>()
     private subscriptions: Map<string, SubscriptionMetaData[]> = new Map<string, SubscriptionMetaData[]>()
+    public onConnectionStateChanged: ((state: WsConnectionStateEnum) => void) | undefined
+    private timeSyncInterval: NodeJS.Timeout | undefined
+    private lastTimeSyncReceived: number = 0
+    private reconnectTimeoutHandle: NodeJS.Timeout | undefined = undefined;
 
     constructor(apiUrl: string, platformId: number, authMethod: AuthMethod) {
         this.currentTime = new WsApiClientCurrentTime(new Date().getTime())
@@ -5758,74 +5831,105 @@ class WsApiClient {
         this.authMethod = authMethod
     }
 
-    connect(): Promise<void> {
-        if (!this.isBrowser) {
-            this.connection = new WebSocket(this.apiUrl, {
-                headers: {
-                    'cookie': `platform=${this.platformId}`,
-                    'user-agent': 'quadcode-client-sdk-js/1.3.4'
-                }
-            })
-        } else {
-            document.cookie = `platform=${this.platformId};`;
-            this.connection = new WebSocket(this.apiUrl);
-        }
-
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-expect-error ignore
-        this.connection!.onmessage = ({data}: { data: string }) => {
-            const frame: {
-                request_id: string
-                name: string
-                msg: any
-                microserviceName: string
-                status: number
-            } = JSON.parse(data)
-            if (frame.request_id) {
-                if (this.requests.has(frame.request_id)) {
-                    const requestMetaData = this.requests.get(frame.request_id)!
-                    if (frame.status >= 4000) {
-                        requestMetaData.reject(new Error(`request is failed with status ${frame.status} and message: ${frame.msg.message}`))
-                        return
-                    }
-
-                    if (frame.name === 'result' && !requestMetaData.request.resultOnly()) {
-                        const result = new Result(frame.msg)
-                        if (!result.success) {
-                            requestMetaData.reject(`request result is not successful`)
-                        }
-                        return
-                    }
-                    try {
-                        const response = requestMetaData.request.createResponse(frame.msg)
-                        requestMetaData.resolve(response)
-                    } catch (e) {
-                        requestMetaData.reject(e)
-                    } finally {
-                        this.requests.delete(frame.request_id)
-                    }
-                }
-            } else if (frame.microserviceName && frame.name) {
-                const subscriptionKey = `${frame.microserviceName},${frame.name}`
-                if (this.subscriptions.has(subscriptionKey)) {
-                    const subscriptions = this.subscriptions.get(subscriptionKey)!
-                    for (const index in subscriptions) {
-                        const subscriptionMetaData = subscriptions[index]
-                        subscriptionMetaData.callback(subscriptionMetaData.request.createEvent(frame.msg))
-                    }
-                }
-            } else if (frame.name && frame.name === 'timeSync') {
-                this.currentTime.unixMilliTime = frame.msg
-            } else if (frame.name && frame.name === 'authenticated' && frame.msg === false) {
-                for (const [, requestMetaData] of this.requests) {
-                    if (requestMetaData.request instanceof Authenticate) {
-                        requestMetaData.reject(new Error('authentication is failed'))
-                    }
-                }
+    private startTimeSyncMonitoring(): void {
+        this.stopTimeSyncMonitoring()
+        this.lastTimeSyncReceived = Date.now()
+        this.timeSyncInterval = setInterval(() => {
+            if (Date.now() - this.lastTimeSyncReceived > 60000 && !this.reconnecting) {
+                this.forceCloseConnection()
+                this.reconnect()
             }
+        }, 10000)
+    }
+
+    private stopTimeSyncMonitoring(): void {
+        if (this.timeSyncInterval) {
+            clearInterval(this.timeSyncInterval)
+            this.timeSyncInterval = undefined
+        }
+    }
+
+    async connect(): Promise<void> {
+        if (this.connection !== undefined || this.disconnecting) {
+            return
         }
 
         return new Promise((resolve, reject) => {
+            try {
+                if (!this.isBrowser) {
+                    this.connection = new WebSocket(this.apiUrl, {
+                        headers: {
+                            'cookie': `platform=${this.platformId}`,
+                            'user-agent': 'quadcode-client-sdk-js/1.3.4'
+                        }
+                    });
+                } else {
+                    document.cookie = `platform=${this.platformId};`;
+                    this.connection = new WebSocket(this.apiUrl);
+                }
+                this.connection!.onerror = (err) => {
+                    this.forceCloseConnection()
+                    return reject(err);
+                }
+            } catch (err) {
+                return reject(err);
+            }
+
+            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+            // @ts-expect-error ignore
+            this.connection!.onmessage = ({ data }: { data: string }) => {
+                const frame: {
+                    request_id: string
+                    name: string
+                    msg: any
+                    microserviceName: string
+                    status: number
+                } = JSON.parse(data)
+                if (frame.request_id) {
+                    if (this.requests.has(frame.request_id)) {
+                        const requestMetaData = this.requests.get(frame.request_id)!
+                        if (frame.status >= 4000) {
+                            requestMetaData.reject(new Error(`request is failed with status ${frame.status} and message: ${frame.msg.message}`))
+                            return
+                        }
+
+                        if (frame.name === 'result' && !requestMetaData.request.resultOnly()) {
+                            const result = new Result(frame.msg)
+                            if (!result.success) {
+                                requestMetaData.reject(`request result is not successful`)
+                            }
+                            return
+                        }
+                        try {
+                            const response = requestMetaData.request.createResponse(frame.msg)
+                            requestMetaData.resolve(response)
+                        } catch (e) {
+                            requestMetaData.reject(e)
+                        } finally {
+                            this.requests.delete(frame.request_id)
+                        }
+                    }
+                } else if (frame.microserviceName && frame.name) {
+                    const subscriptionKey = `${frame.microserviceName},${frame.name}`
+                    if (this.subscriptions.has(subscriptionKey)) {
+                        const subscriptions = this.subscriptions.get(subscriptionKey)!
+                        for (const index in subscriptions) {
+                            const subscriptionMetaData = subscriptions[index]
+                            subscriptionMetaData.callback(subscriptionMetaData.request.createEvent(frame.msg))
+                        }
+                    }
+                } else if (frame.name && frame.name === 'timeSync') {
+                    this.currentTime.unixMilliTime = frame.msg
+                    this.lastTimeSyncReceived = Date.now()
+                } else if (frame.name && frame.name === 'authenticated' && frame.msg === false) {
+                    for (const [, requestMetaData] of this.requests) {
+                        if (requestMetaData.request instanceof Authenticate) {
+                            requestMetaData.reject(new Error('authentication is failed'))
+                        }
+                    }
+                }
+            }
+
             this.connection!.onopen = async () => {
                 try {
                     const isSuccessful = await this.authMethod.authenticateWsApiClient(this)
@@ -5854,12 +5958,17 @@ class WsApiClient {
                     // END_EXCLUDE
 
                     this.connection!.onclose = () => {
+                        this.forceCloseConnection()
                         this.reconnect()
                     }
 
                     this.connection!.onerror = () => {
+                        this.forceCloseConnection()
                         this.reconnect()
                     }
+
+                    this.onConnectionStateChanged?.(WsConnectionStateEnum.Connected)
+                    this.startTimeSyncMonitoring()
 
                     return resolve()
                 } catch (e) {
@@ -5870,37 +5979,62 @@ class WsApiClient {
     }
 
     disconnect() {
-        this.disconnecting = true
-        if (this.connection) {
-            if (!this.isBrowser) {
-                this.connection!.terminate()
-            } else {
-                this.connection!.close()
-            }
+        this.disconnecting = true;
+
+        if (this.reconnectTimeoutHandle) {
+            clearTimeout(this.reconnectTimeoutHandle);
+            this.reconnectTimeoutHandle = undefined;
         }
-        this.connection = undefined
-        this.lastRequestId = 0
-        this.requests.clear()
-        this.subscriptions.clear()
+
+        this.stopTimeSyncMonitoring();
+        this.forceCloseConnection();
+        this.onConnectionStateChanged?.(WsConnectionStateEnum.Disconnected);
+        this.reconnecting = false;
+        this.lastRequestId = 0;
+        this.requests.clear();
+        this.subscriptions.clear();
     }
 
+    private forceCloseConnection() {
+        if (this.connection) {
+            try {
+                if (!this.isBrowser) {
+                    (this.connection as any).terminate();
+                } else {
+                    this.connection.close();
+                }
+            } finally {
+                this.connection = undefined;
+            }
+        }
+    }
+
+
     reconnect() {
-        if (this.disconnecting) {
-            return
+        if (this.disconnecting || this.reconnecting) {
+            return;
         }
 
-        const attemptReconnect = () => {
+        this.reconnecting = true;
+        this.onConnectionStateChanged?.(WsConnectionStateEnum.Disconnected)
+
+        const attemptReconnect = async () => {
+            if (this.disconnecting) {
+                this.reconnecting = false;
+                return;
+            }
+
             this.connect().then(() => {
-                this.resubscribeAll().then(() => {
-                    this.reconnectTimeout = this.initialReconnectTimeout;
-                })
+                this.resubscribeAll();
+                this.reconnectTimeout = this.initialReconnectTimeout;
+                this.reconnecting = false;
             }).catch(() => {
                 this.reconnectTimeout = Math.min(this.reconnectTimeout * this.reconnectMultiplier, this.maxReconnectTimeout) + this.getJitter();
-                setTimeout(attemptReconnect, this.reconnectTimeout);
-            });
+                this.reconnectTimeoutHandle = setTimeout(attemptReconnect, this.reconnectTimeout);
+            })
         };
 
-        setTimeout(attemptReconnect, this.reconnectTimeout);
+        this.reconnectTimeoutHandle = setTimeout(attemptReconnect, this.reconnectTimeout);
     }
 
     getJitter() {
