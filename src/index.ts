@@ -5906,10 +5906,12 @@ class WsApiClient {
                     // END_EXCLUDE
 
                     this.connection!.onclose = () => {
+                        this.forceCloseConnection()
                         this.reconnect()
                     }
 
                     this.connection!.onerror = () => {
+                        this.forceCloseConnection()
                         this.reconnect()
                     }
 
