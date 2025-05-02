@@ -1105,13 +1105,13 @@ export enum TranslationGroup {
  * Translations facade class.
  */
 export class Translations {
-    private readonly host: string
     private translations: Record<string, Record<string, string>> = {}
     private reloadInterval: NodeJS.Timeout | undefined
     private readonly reloadIntervalMs: number = 10 * 60 * 1000 // 10 minutes
-    
+    private readonly httpApiClient: HttpApiClient
+
     private constructor(host: string) {
-        this.host = host
+        this.httpApiClient = new HttpApiClient(host)
     }
 
     public static async create(host: string): Promise<Translations> {
@@ -1133,15 +1133,12 @@ export class Translations {
      * @param groups - Array of translation groups to fetch
      */
     public async fetchTranslations(lang: string, groups: TranslationGroup[]): Promise<void> {
-        const groupsParam = groups.map(group => `groups[]=${group}`).join('&')
-        const response = await fetch(`https://${this.host}/api/lang/route-translations?${groupsParam}&route=${lang}`)
-        const data = await response.json()
-        
-        if (data.isSuccessful && data.result && data.result[lang]) {
+        const response = await this.httpApiClient.doRequest<HttpGetTranslationsResponse>(new HttpGetTranslationsRequest(lang, groups))
+        if (response.isSuccessful && response.data) {
             if (!this.translations[lang]) {
                 this.translations[lang] = {}
             }
-            this.translations[lang] = { ...this.translations[lang], ...data.result[lang] }
+            this.translations[lang] = { ...this.translations[lang], ...response.data.result[lang] }
         }
     }
 
@@ -5889,35 +5886,31 @@ class HttpApiClient {
         this.apiUrl = apiUrl
     }
 
-    doRequest<T>(request: HttpRequest<T>): Promise<T> {
-        return new Promise((resolve, reject) => {
-            const options = {
-                method: request.method(),
-                headers: {
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'quadcode-client-sdk-js/1.1.0'
-                },
-                body: JSON.stringify(request.messageBody())
-            }
+    async doRequest<T>(request: HttpRequest<T>): Promise<T> {
+        const url = new URL(`https://${this.apiUrl}${request.path()}`)
 
-            fetch(`${this.apiUrl}${request.path()}`, options)
-                .then(async (response) => {
-                    if (!response.ok) {
-                        if (response.status >= 400 && response.status < 500) {
-                            const data = await response.json()
-                            resolve(request.createResponse(response.status, data))
-                        }
+        if (request.method() === 'GET' && request.messageBody()) {
+            Object.entries(request.messageBody()).forEach(([key, value]) => {
+                if (Array.isArray(value)) {
+                    value.forEach(item => url.searchParams.append(`${key}[]`, String(item)))
+                } else {
+                    url.searchParams.append(key, String(value))
+                }
+            })
+        }
 
-                        reject(new Error(`HTTP error: ${response.status}`))
-                    }
 
-                    const data = await response.json()
-                    resolve(request.createResponse(response.status, data))
-                })
-                .catch((error) => {
-                    reject(error)
-                })
+        const response = await fetch(url.toString(), {
+            method: request.method(),
+            headers: {
+                'Content-Type': 'application/json',
+                'User-Agent': 'quadcode-client-sdk-js/1.3.4'
+            },
+            body: request.method() !== 'GET' ? JSON.stringify(request.messageBody()) : undefined
         })
+
+        const data = await response.json()
+        return request.createResponse(response.status, data)
     }
 }
 
@@ -7393,6 +7386,42 @@ class QuoteGeneratedV2 {
 }
 
 // Outbound messages
+
+class HttpGetTranslationsRequest implements HttpRequest<HttpGetTranslationsResponse> {
+    constructor(private readonly lang: string, private readonly groups: string[]) {
+    }
+
+    method(): string {
+        return 'GET'
+    }
+
+    path() {
+        return '/api/lang/route-translations'
+    }
+
+    messageBody() {
+        return {
+            route: this.lang,
+            groups: this.groups
+        }
+    }
+
+    createResponse(status: number, data: any): HttpGetTranslationsResponse {
+        return new HttpGetTranslationsResponse(data)
+    }
+}
+
+class HttpGetTranslationsResponse {
+    isSuccessful: boolean
+    data: {
+        result: Record<string, Record<string, string>>
+    }
+
+    constructor(data: any) {
+        this.isSuccessful = data.isSuccessful
+        this.data = data
+    }
+}
 
 class HttpLoginRequest implements HttpRequest<HttpResponse<HttpLoginResponse>> {
     constructor(private readonly login: string, private readonly password: string) {
