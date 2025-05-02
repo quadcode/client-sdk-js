@@ -1111,7 +1111,7 @@ export class Translations {
     private readonly httpApiClient: HttpApiClient
 
     private constructor(host: string) {
-        this.httpApiClient = new HttpApiClient(host)
+        this.httpApiClient = new HttpApiClient(`https://${host}`)
     }
 
     public static async create(host: string): Promise<Translations> {
@@ -5887,7 +5887,7 @@ class HttpApiClient {
     }
 
     async doRequest<T>(request: HttpRequest<T>): Promise<T> {
-        const url = new URL(`https://${this.apiUrl}${request.path()}`)
+        const url = new URL(`${this.apiUrl}${request.path()}`)
 
         if (request.method() === 'GET' && request.messageBody()) {
             Object.entries(request.messageBody()).forEach(([key, value]) => {
