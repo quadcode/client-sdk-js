@@ -140,27 +140,25 @@ export class ClientSdk {
     private constructor(userProfile: UserProfile, wsApiClient: WsApiClient, options?: ClientSDKAdditionalOptions) {
         this.userProfile = userProfile
         this.wsApiClient = wsApiClient
-
-        if (options && options.host) {
-            this.host = options.host
-        } else {
-            this.host = this.extractHostFromWsUrl(wsApiClient.apiUrl)
-        }
-
-        if (options && options.staticHost) {
-            this.staticHost = options.staticHost
-        }
+        this.host = options?.host ? this.normalizeHost(options.host) : this.extractHostFromWsUrl(wsApiClient.apiUrl)
+        this.staticHost = options?.staticHost || 'https://static.cdnroute.io/files'
     }
 
     /**
      * Extracts host from WebSocket URL.
      * @param wsUrl - WebSocket URL (e.g. wss://trade.broker.com/echo/websocket)
-     * @returns Host without protocol and path (e.g. trade.broker.com)
+     * @returns Host without protocol and path (e.g. https://trade.broker.com)
      * @private
      */
     private extractHostFromWsUrl(wsUrl: string): string {
         const url = new URL(wsUrl)
-        return url.host.replace(/^ws\./, '')
+        const host = url.host.replace(/^ws\./, '')
+        return `https://${host}`
+    }
+
+    private normalizeHost(host: string): string {
+        host = host.replace(/^https?:\/\//, '')
+        return `https://${host}`
     }
 
     /**
@@ -1111,7 +1109,7 @@ export class Translations {
     private readonly httpApiClient: HttpApiClient
 
     private constructor(host: string) {
-        this.httpApiClient = new HttpApiClient(`https://${host}`)
+        this.httpApiClient = new HttpApiClient(host)
     }
 
     public static async create(host: string): Promise<Translations> {

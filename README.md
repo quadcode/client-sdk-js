@@ -28,6 +28,27 @@ const sdk = await ClientSdk.create(
 )
 ```
 
+### Optional SDK Configuration
+
+The `ClientSdk.create` method accepts an optional fourth parameter for additional configuration:
+
+```js
+const sdk = await ClientSdk.create(
+    'wss://ws.trade.example.com/echo/websocket',
+    82,
+    new LoginPasswordAuthMethod('https://api.trade.example.com', "login", "password"),
+    {
+        // Optional: Override the default static files host
+        // Default: 'https://static.cdnroute.io/files'
+        staticHost: 'https://your-static-host.com/files',
+        
+        // Optional: Override the default host for API requests
+        // Default: Extracted from the WebSocket URL
+        host: 'https://trade.example.com'
+    }
+)
+```
+
 ### Get user's first real balance
 
 ```js
