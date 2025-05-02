@@ -16,6 +16,12 @@ export class ClientSdk {
     private readonly wsApiClient: WsApiClient
 
     /**
+     * Host extracted from WebSocket URL.
+     * @private
+     */
+    private readonly host: string
+
+    /**
      * WebSocket connection state facade.
      * @private
      */
@@ -118,6 +124,12 @@ export class ClientSdk {
     private instrumentsIsAvailable: Map<string, boolean> = new Map<string, boolean>()
 
     /**
+     * Translations facade cache.
+     * @private
+     */
+    private translationsFacade: Translations | undefined
+
+    /**
      * Creates instance of class.
      * @param userProfile - Information about the user on whose behalf your application is working.
      * @param wsApiClient - Instance of WebSocket API client.
@@ -129,9 +141,26 @@ export class ClientSdk {
         this.userProfile = userProfile
         this.wsApiClient = wsApiClient
 
+        if (options && options.host) {
+            this.host = options.host
+        } else {
+            this.host = this.extractHostFromWsUrl(wsApiClient.apiUrl)
+        }
+
         if (options && options.staticHost) {
             this.staticHost = options.staticHost
         }
+    }
+
+    /**
+     * Extracts host from WebSocket URL.
+     * @param wsUrl - WebSocket URL (e.g. wss://trade.broker.com/echo/websocket)
+     * @returns Host without protocol and path (e.g. trade.broker.com)
+     * @private
+     */
+    private extractHostFromWsUrl(wsUrl: string): string {
+        const url = new URL(wsUrl)
+        return url.host.replace(/^ws\./, '')
     }
 
     /**
@@ -174,6 +203,10 @@ export class ClientSdk {
         if (this.positionsFacade) {
             this.positionsFacade.close()
         }
+
+        if (this.translationsFacade) {
+            this.translationsFacade.close()
+        }
     }
 
     /**
@@ -202,7 +235,8 @@ export class ClientSdk {
      */
     public async actives(): Promise<Actives> {
         if (!this.activesFacade) {
-            this.activesFacade = new Actives(this.wsApiClient, this.staticHost)
+            const translations = await this.translations()
+            this.activesFacade = new Actives(this.wsApiClient, this.staticHost, translations)
         }
         return this.activesFacade
     }
@@ -424,10 +458,21 @@ export class ClientSdk {
         }
         return this.wsConnectionStateFacade
     }
+
+    /**
+     * Returns translations facade class.
+     */
+    public async translations(): Promise<Translations> {
+        if (!this.translationsFacade) {
+            this.translationsFacade = await Translations.create(this.host)
+        }
+        return this.translationsFacade
+    }
 }
 
 export interface ClientSDKAdditionalOptions {
     staticHost?: string;
+    host?: string;
 }
 
 /**
@@ -920,7 +965,7 @@ export enum WsConnectionStateEnum {
 
 /**
  * Do not use this class directly from your code. Use {@link ClientSdk.wsConnectionState} static method instead.
- * 
+ *
  * WebSocket connection state facade.
  */
 export class WsConnectionState {
@@ -1046,6 +1091,81 @@ export class Candle {
 }
 
 /**
+ * Available translation groups.
+ */
+export enum TranslationGroup {
+    Front = 'front',
+    Assets = 'assets',
+    Desktop = 'desktop'
+}
+
+/**
+ * Don't use this class directly from your code. Use {@link ClientSdk.translations} static method instead.
+ * 
+ * Translations facade class.
+ */
+export class Translations {
+    private readonly host: string
+    private translations: Record<string, Record<string, string>> = {}
+    private reloadInterval: NodeJS.Timeout | undefined
+    private readonly reloadIntervalMs: number = 10 * 60 * 1000 // 10 minutes
+    
+    private constructor(host: string) {
+        this.host = host
+    }
+
+    public static async create(host: string): Promise<Translations> {
+        const instance = new Translations(host)
+        await instance.fetchTranslations('en', [TranslationGroup.Front])
+        instance.startAutoReload()
+        return instance
+    }
+
+    private startAutoReload(): void {
+        this.reloadInterval = setInterval(async () => {
+            await this.fetchTranslations('en', [TranslationGroup.Front])
+        }, this.reloadIntervalMs)
+    }
+
+    /**
+     * Fetches translations from the server.
+     * @param lang - Language code (e.g. 'en', 'ru')
+     * @param groups - Array of translation groups to fetch
+     */
+    public async fetchTranslations(lang: string, groups: TranslationGroup[]): Promise<void> {
+        const groupsParam = groups.map(group => `groups[]=${group}`).join('&')
+        const response = await fetch(`https://${this.host}/api/lang/route-translations?${groupsParam}&route=${lang}`)
+        const data = await response.json()
+        
+        if (data.isSuccessful && data.result && data.result[lang]) {
+            if (!this.translations[lang]) {
+                this.translations[lang] = {}
+            }
+            this.translations[lang] = { ...this.translations[lang], ...data.result[lang] }
+        }
+    }
+
+    /**
+     * Gets translation for a specific key in the specified language.
+     * @param key - Translation key (e.g. 'front.W')
+     * @param lang - Language code (defaults to 'en')
+     */
+    public getTranslation(key: string, lang: string = 'en'): string {
+        return this.translations[lang]?.[key] || key
+    }
+
+    /**
+     * Stops automatic reloading of translations and cleans up resources.
+     */
+    public close(): void {
+        if (this.reloadInterval) {
+            clearInterval(this.reloadInterval)
+            this.reloadInterval = undefined
+        }
+    }
+}
+
+/**
  * Callback for handle balance's update.
  */
 export type CallbackForBalanceUpdate = (balance: Balance) => void
@@ -1073,13 +1193,15 @@ export enum BalanceType {
  */
 export class Actives {
     private wsApiClient: WsApiClient;
+    private translations: Translations;
     private activeCache = new Map<number, Promise<Active>>();
     private activeData = new Map<number, Active>();
     private staticHost: string;
 
-    public constructor(wsApiClient: WsApiClient, staticHost: string) {
+    public constructor(wsApiClient: WsApiClient, staticHost: string, translations: Translations) {
         this.wsApiClient = wsApiClient;
         this.staticHost = staticHost;
+        this.translations = translations;
     }
 
     /**
@@ -1097,7 +1219,7 @@ export class Actives {
 
         const activePromise = this.wsApiClient.doRequest<ActiveV5>(new CallGetActiveV5(activeId))
             .then((response) => {
-                const active = new Active(response, this.staticHost)
+                const active = new Active(response, this.staticHost, this.translations)
                 this.activeData.set(activeId, active);
                 this.activeCache.delete(activeId);
                 return active;
@@ -1125,6 +1247,11 @@ export class Active {
      * Active name.
      */
     name: string
+
+    /**
+     * Active localization key.
+     */
+    localizationKey: string
 
     /**
      * Active image URL.
@@ -1201,9 +1328,10 @@ export class Active {
      */
     typeQty: string
 
-    constructor(response: ActiveV5, staticHost: string) {
+    constructor(response: ActiveV5, staticHost: string, translations: Translations) {
         this.id = response.id
-        this.name = response.name
+        this.localizationKey = `${TranslationGroup.Front}.${response.name}`
+        this.name = translations.getTranslation(this.localizationKey)
         this.imageUrl = `${staticHost}${response.image}`
         this.isOtc = response.isOtc
         this.timeFrom = response.timeFrom
@@ -5803,7 +5931,11 @@ class HttpApiClient {
 class WsApiClient {
     public readonly currentTime: WsApiClientCurrentTime
 
-    private readonly apiUrl: string
+    /**
+     * API URL for WebSocket connection.
+     */
+    public readonly apiUrl: string
+
     private readonly platformId: number
     private readonly authMethod: AuthMethod
     private isBrowser = typeof window !== 'undefined';
