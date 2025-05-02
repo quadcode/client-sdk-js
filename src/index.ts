@@ -157,8 +157,11 @@ export class ClientSdk {
     }
 
     private normalizeHost(host: string): string {
-        host = host.replace(/^https?:\/\//, '')
-        return `https://${host}`
+        if (host.startsWith('http://') || host.startsWith('https://')) {
+            return host;
+        }
+
+        return `https://${host}`;
     }
 
     /**
