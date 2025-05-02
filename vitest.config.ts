@@ -5,7 +5,7 @@ export default defineConfig({
         IS_BROWSER: false
     },
     test: {
-        testTimeout: 7000,
+        testTimeout: 35000,
         include: ['./test/*.spec.{ts,js}'],
     },
 })

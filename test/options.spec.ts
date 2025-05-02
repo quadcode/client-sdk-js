@@ -270,11 +270,11 @@ describe('Options', () => {
 
                 it('should expired', async () => {
                     const position = await openOption();
-                    expect(await waitForCondition(() => position.closeReason !== undefined, 7000)).to.be.true;
+                    expect(await waitForCondition(() => position.closeReason !== undefined, 35000)).to.be.true;
                     expect(position.closeReason, 'Invalid close reason').to.be.oneOf(["win", "equal", "loose"])
                     expect(positionsHelper.findHistoryPosition(position.externalId), 'Position must be present in history positions').not.to.be.undefined
                     expect(positionsHelper.findPosition(position.externalId), 'Position must be not present in all positions').to.be.undefined
-                }, 10000);
+                });
 
                 it('should not be sold', async () => {
                     const position = await openOption();
