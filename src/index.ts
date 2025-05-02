@@ -5897,18 +5897,30 @@ class HttpApiClient {
             })
         }
 
-
-        const response = await fetch(url.toString(), {
+        const requestUrl = url.toString()
+        const requestOptions = {
             method: request.method(),
             headers: {
                 'Content-Type': 'application/json',
                 'User-Agent': 'quadcode-client-sdk-js/1.3.4'
             },
             body: request.method() !== 'GET' ? JSON.stringify(request.messageBody()) : undefined
-        })
+        }
 
-        const data = await response.json()
-        return request.createResponse(response.status, data)
+        try {
+            const response = await fetch(requestUrl, requestOptions)
+            const data = await response.json()
+
+            return request.createResponse(response.status, data)
+        } catch (error) {
+            console.error(`[HttpApiClient] Request failed:`, {
+                url: requestUrl,
+                method: request.method(),
+                error: error instanceof Error ? error.message : 'Unknown error',
+                stack: error instanceof Error ? error.stack : undefined
+            })
+            throw error
+        }
     }
 }
 
