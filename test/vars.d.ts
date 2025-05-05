@@ -1,4 +1,6 @@
-declare const IS_BROWSER: boolean;
+declare global {
+    const IS_BROWSER: boolean;
+}
 export const BASE_HOST: string;
 export const API_URL: string;
 export const WS_URL: string;

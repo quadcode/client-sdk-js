@@ -1,5 +1,5 @@
 import {Balance, Balances, BalanceType, BinaryOptionsDirection, ClientSdk, LoginPasswordAuthMethod} from "../src";
-import {API_URL, BASE_HOST, IS_BROWSER, User, WS_URL} from "./vars";
+import {API_URL, BASE_HOST, User, WS_URL} from "./vars";
 import {getUserByTitle} from "./utils/userUtils";
 import {waitForCondition} from "./utils/waiters";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";

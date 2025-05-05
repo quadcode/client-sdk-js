@@ -11,7 +11,7 @@ import {
     Quotes
 } from "../src";
 import {getUserByTitle} from "./utils/userUtils";
-import {API_URL, BASE_HOST, IS_BROWSER, User, WS_URL} from "./vars";
+import {API_URL, BASE_HOST, User, WS_URL} from "./vars";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {PositionsHelper} from "./utils/positionsHelper";
 import {justWait, waitForCondition} from "./utils/waiters";

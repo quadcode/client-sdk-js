@@ -1,6 +1,6 @@
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {Candles, ClientSdk, LoginPasswordAuthMethod} from "../src";
-import {API_URL, BASE_HOST, IS_BROWSER, User, WS_URL} from "./vars";
+import {API_URL, BASE_HOST, User, WS_URL} from "./vars";
 import {getUserByTitle} from "./utils/userUtils";
 
 describe('Candles', () => {
