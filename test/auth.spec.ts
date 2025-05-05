@@ -1,5 +1,5 @@
 import {ClientSdk, LoginPasswordAuthMethod, SsidAuthMethod} from "../src";
-import {API_URL, User, WS_URL} from "./vars";
+import {API_URL, BASE_HOST, User, WS_URL} from "./vars";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {getUserByTitle} from "./utils/userUtils";
 
@@ -8,7 +8,8 @@ describe('Authentication with login and password', () => {
     const user = getUserByTitle("regular_user") as User;
 
     beforeAll(async () => {
-        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
+        const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
+        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
     })
 
     afterAll(async function () {

@@ -11,7 +11,7 @@ import {
     Quotes
 } from "../src";
 import {getUserByTitle} from "./utils/userUtils";
-import {API_URL, User, WS_URL} from "./vars";
+import {API_URL, BASE_HOST, User, WS_URL} from "./vars";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {PositionsHelper} from "./utils/positionsHelper";
 import {justWait, waitForCondition} from "./utils/waiters";
@@ -27,8 +27,8 @@ describe('Margin Forex/CFD/Crypto', () => {
 
     beforeAll(async () => {
         user = getUserByTitle('margin_user') as User;
-
-        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
+        const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
+        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
         const balances = await sdk.balances();
         quotes = await sdk.quotes();
         demoBalance = balances.getBalances().filter(value => value.type === "demo")[0];

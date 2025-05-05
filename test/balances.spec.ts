@@ -1,5 +1,5 @@
 import {Balance, Balances, BalanceType, BinaryOptionsDirection, ClientSdk, LoginPasswordAuthMethod} from "../src";
-import {API_URL, User, WS_URL} from "./vars";
+import {API_URL, BASE_HOST, User, WS_URL} from "./vars";
 import {getUserByTitle} from "./utils/userUtils";
 import {waitForCondition} from "./utils/waiters";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
@@ -10,7 +10,8 @@ describe('Balances', () => {
     const user = getUserByTitle('balance_user') as User;
 
     beforeAll(async () => {
-        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
+        const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
+        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
         balances = await sdk.balances();
     })
 
@@ -53,7 +54,8 @@ describe('Balances', () => {
 
     it('balance should changed', async () => {
         const user = getUserByTitle('balance_user1') as User;
-        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
+        const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
+        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
         balances = await sdk.balances();
         const balance = getBalance(BalanceType.Demo);
         let balanceAmount: number = 0;

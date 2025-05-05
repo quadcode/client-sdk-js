@@ -28,6 +28,27 @@ const sdk = await ClientSdk.create(
 )
 ```
 
+### Optional SDK Configuration
+
+The `ClientSdk.create` method accepts an optional fourth parameter for additional configuration:
+
+```js
+const sdk = await ClientSdk.create(
+    'wss://ws.trade.example.com/echo/websocket',
+    82,
+    new LoginPasswordAuthMethod('https://api.trade.example.com', "login", "password"),
+    {
+        // Optional: Override the default static files host
+        // Default: 'https://static.cdnroute.io/files'
+        staticHost: 'https://your-static-host.com/files',
+        
+        // Optional: Override the default host for API requests
+        // Default: Extracted from the WebSocket URL
+        host: 'https://trade.example.com'
+    }
+)
+```
+
 ### Get user's first real balance
 
 ```js
@@ -279,6 +300,26 @@ digitalOptionsPositions.subscribeOnUpdatePosition((position) => {
 })
 ```
 
+### Working with translations
+
+```js
+const translations = await sdk.translations()
+
+// By default, English (en) translations for the 'front' group are already loaded
+// and will automatically reload every 10 minutes
+const translatedText = translations.getTranslation('front.EURGBP')
+
+// To get translations in other languages or groups, you need to fetch them first
+await translations.fetchTranslations('es', [TranslationGroup.Front])
+const translatedTextEs = translations.getTranslation('front.EURGBP', 'es')
+
+// Get active name with translation (automatically uses loaded translations)
+const actives = await sdk.actives()
+const active = await actives.getActive(1)
+console.log(active.name) // Returns translated name
+
+```
+
 ### Buy margin CFD/Forex/Crypto
 
 ```js
@@ -319,7 +360,7 @@ The lifecycle for major SDKs versions consists of 5 phases, which are outlined b
 
 4. Maintenance (Phase 3) - During the maintenance mode, SDK Developers limit SDK releases to address critical bug fixes and security issues only. An SDK will not receive API updates for new or existing services, or be updated to support new regions. Maintenance mode has a default duration of 6 months, unless otherwise specified.
 
-5. End-of-Support (Phase 4) - When an SDK reaches end-of support, it will no longer receive updates or releases. Previously published releases will continue to be available via public package managers and the code will remain on GitHub. The GitHub repository may be archived. Use of an SDK which has reached end-of-support is done at the user’s discretion. We recommend users upgrade to the new major version.
+5. End-of-Support (Phase 4) - When an SDK reaches end-of support, it will no longer receive updates or releases. Previously published releases will continue to be available via public package managers and the code will remain on GitHub. The GitHub repository may be archived. Use of an SDK which has reached end-of-support is done at the user's discretion. We recommend users upgrade to the new major version.
 
 ## Communication methods
 

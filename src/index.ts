@@ -16,6 +16,12 @@ export class ClientSdk {
     private readonly wsApiClient: WsApiClient
 
     /**
+     * Host extracted from WebSocket URL.
+     * @private
+     */
+    private readonly host: string
+
+    /**
      * WebSocket connection state facade.
      * @private
      */
@@ -118,6 +124,12 @@ export class ClientSdk {
     private instrumentsIsAvailable: Map<string, boolean> = new Map<string, boolean>()
 
     /**
+     * Translations facade cache.
+     * @private
+     */
+    private translationsFacade: Translations | undefined
+
+    /**
      * Creates instance of class.
      * @param userProfile - Information about the user on whose behalf your application is working.
      * @param wsApiClient - Instance of WebSocket API client.
@@ -128,10 +140,28 @@ export class ClientSdk {
     private constructor(userProfile: UserProfile, wsApiClient: WsApiClient, options?: ClientSDKAdditionalOptions) {
         this.userProfile = userProfile
         this.wsApiClient = wsApiClient
+        this.host = options?.host ? this.normalizeHost(options.host) : this.extractHostFromWsUrl(wsApiClient.apiUrl)
+        this.staticHost = options?.staticHost || 'https://static.cdnroute.io/files'
+    }
 
-        if (options && options.staticHost) {
-            this.staticHost = options.staticHost
+    /**
+     * Extracts host from WebSocket URL.
+     * @param wsUrl - WebSocket URL (e.g. wss://trade.broker.com/echo/websocket)
+     * @returns Host without protocol and path (e.g. https://trade.broker.com)
+     * @private
+     */
+    private extractHostFromWsUrl(wsUrl: string): string {
+        const url = new URL(wsUrl)
+        const host = url.host.replace(/^ws\./, '')
+        return `https://${host}`
+    }
+
+    private normalizeHost(host: string): string {
+        if (host.startsWith('http://') || host.startsWith('https://')) {
+            return host;
         }
+
+        return `https://${host}`;
     }
 
     /**
@@ -174,6 +204,10 @@ export class ClientSdk {
         if (this.positionsFacade) {
             this.positionsFacade.close()
         }
+
+        if (this.translationsFacade) {
+            this.translationsFacade.close()
+        }
     }
 
     /**
@@ -202,7 +236,8 @@ export class ClientSdk {
      */
     public async actives(): Promise<Actives> {
         if (!this.activesFacade) {
-            this.activesFacade = new Actives(this.wsApiClient, this.staticHost)
+            const translations = await this.translations()
+            this.activesFacade = new Actives(this.wsApiClient, this.staticHost, translations)
         }
         return this.activesFacade
     }
@@ -424,10 +459,21 @@ export class ClientSdk {
         }
         return this.wsConnectionStateFacade
     }
+
+    /**
+     * Returns translations facade class.
+     */
+    public async translations(): Promise<Translations> {
+        if (!this.translationsFacade) {
+            this.translationsFacade = await Translations.create(this.host)
+        }
+        return this.translationsFacade
+    }
 }
 
 export interface ClientSDKAdditionalOptions {
     staticHost?: string;
+    host?: string;
 }
 
 /**
@@ -920,7 +966,7 @@ export enum WsConnectionStateEnum {
 
 /**
  * Do not use this class directly from your code. Use {@link ClientSdk.wsConnectionState} static method instead.
- * 
+ *
  * WebSocket connection state facade.
  */
 export class WsConnectionState {
@@ -1046,6 +1092,88 @@ export class Candle {
 }
 
 /**
+ * Available translation groups.
+ */
+export enum TranslationGroup {
+    Front = 'front',
+    Assets = 'assets',
+    Desktop = 'desktop'
+}
+
+/**
+ * Don't use this class directly from your code. Use {@link ClientSdk.translations} static method instead.
+ * 
+ * Translations facade class.
+ */
+export class Translations {
+    private translations: Record<string, Record<string, string>> = {}
+    private reloadInterval: NodeJS.Timeout | undefined
+    private readonly reloadIntervalMs: number = 10 * 60 * 1000 // 10 minutes
+    private readonly httpApiClient: HttpApiClient
+    private loadedLanguages: Set<string> = new Set()
+    private loadedGroups: Set<TranslationGroup> = new Set()
+
+    private constructor(host: string) {
+        this.httpApiClient = new HttpApiClient(host)
+    }
+
+    public static async create(host: string): Promise<Translations> {
+        const instance = new Translations(host)
+        await instance.fetchTranslations('en', [TranslationGroup.Front])
+        instance.startAutoReload()
+        return instance
+    }
+
+    private startAutoReload(): void {
+        this.reloadInterval = setInterval(async () => {
+            for (const lang of this.loadedLanguages) {
+                const groups = Array.from(this.loadedGroups)
+                if (groups.length > 0) {
+                    await this.fetchTranslations(lang, groups)
+                }
+            }
+        }, this.reloadIntervalMs)
+    }
+
+    /**
+     * Fetches translations from the server.
+     * @param lang - Language code (e.g. 'en', 'ru')
+     * @param groups - Array of translation groups to fetch
+     */
+    public async fetchTranslations(lang: string, groups: TranslationGroup[]): Promise<void> {
+        const response = await this.httpApiClient.doRequest<HttpGetTranslationsResponse>(new HttpGetTranslationsRequest(lang, groups))
+        if (response.isSuccessful && response.data) {
+            if (!this.translations[lang]) {
+                this.translations[lang] = {}
+            }
+            this.translations[lang] = { ...this.translations[lang], ...response.data.result[lang] }
+
+            this.loadedLanguages.add(lang)
+            groups.forEach(group => this.loadedGroups.add(group))
+        }
+    }
+
+    /**
+     * Gets translation for a specific key in the specified language.
+     * @param key - Translation key (e.g. 'front.W')
+     * @param lang - Language code (defaults to 'en')
+     */
+    public getTranslation(key: string, lang: string = 'en'): string {
+        return this.translations[lang]?.[key] || key
+    }
+
+    /**
+     * Stops automatic reloading of translations and cleans up resources.
+     */
+    public close(): void {
+        if (this.reloadInterval) {
+            clearInterval(this.reloadInterval)
+            this.reloadInterval = undefined
+        }
+    }
+}
+
+/**
  * Callback for handle balance's update.
  */
 export type CallbackForBalanceUpdate = (balance: Balance) => void
@@ -1073,13 +1201,15 @@ export enum BalanceType {
  */
 export class Actives {
     private wsApiClient: WsApiClient;
+    private translations: Translations;
     private activeCache = new Map<number, Promise<Active>>();
     private activeData = new Map<number, Active>();
     private staticHost: string;
 
-    public constructor(wsApiClient: WsApiClient, staticHost: string) {
+    public constructor(wsApiClient: WsApiClient, staticHost: string, translations: Translations) {
         this.wsApiClient = wsApiClient;
         this.staticHost = staticHost;
+        this.translations = translations;
     }
 
     /**
@@ -1097,7 +1227,7 @@ export class Actives {
 
         const activePromise = this.wsApiClient.doRequest<ActiveV5>(new CallGetActiveV5(activeId))
             .then((response) => {
-                const active = new Active(response, this.staticHost)
+                const active = new Active(response, this.staticHost, this.translations)
                 this.activeData.set(activeId, active);
                 this.activeCache.delete(activeId);
                 return active;
@@ -1125,6 +1255,11 @@ export class Active {
      * Active name.
      */
     name: string
+
+    /**
+     * Active localization key.
+     */
+    localizationKey: string
 
     /**
      * Active image URL.
@@ -1201,9 +1336,10 @@ export class Active {
      */
     typeQty: string
 
-    constructor(response: ActiveV5, staticHost: string) {
+    constructor(response: ActiveV5, staticHost: string, translations: Translations) {
         this.id = response.id
-        this.name = response.name
+        this.localizationKey = `${TranslationGroup.Front}.${response.name}`
+        this.name = translations.getTranslation(this.localizationKey)
         this.imageUrl = `${staticHost}${response.image}`
         this.isOtc = response.isOtc
         this.timeFrom = response.timeFrom
@@ -5761,35 +5897,43 @@ class HttpApiClient {
         this.apiUrl = apiUrl
     }
 
-    doRequest<T>(request: HttpRequest<T>): Promise<T> {
-        return new Promise((resolve, reject) => {
-            const options = {
+    async doRequest<T>(request: HttpRequest<T>): Promise<T> {
+        const url = new URL(`${this.apiUrl}${request.path()}`)
+
+        if (request.method() === 'GET' && request.messageBody()) {
+            Object.entries(request.messageBody()).forEach(([key, value]) => {
+                if (Array.isArray(value)) {
+                    value.forEach(item => url.searchParams.append(`${key}[]`, String(item)))
+                } else {
+                    url.searchParams.append(key, String(value))
+                }
+            })
+        }
+
+        const requestUrl = url.toString()
+        const requestOptions = {
+            method: request.method(),
+            headers: {
+                'Content-Type': 'application/json',
+                'User-Agent': 'quadcode-client-sdk-js/1.3.4'
+            },
+            body: request.method() !== 'GET' ? JSON.stringify(request.messageBody()) : undefined
+        }
+
+        try {
+            const response = await fetch(requestUrl, requestOptions)
+            const data = await response.json()
+
+            return request.createResponse(response.status, data)
+        } catch (error) {
+            console.error(`[HttpApiClient] Request failed:`, {
+                url: requestUrl,
                 method: request.method(),
-                headers: {
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'quadcode-client-sdk-js/1.1.0'
-                },
-                body: JSON.stringify(request.messageBody())
-            }
-
-            fetch(`${this.apiUrl}${request.path()}`, options)
-                .then(async (response) => {
-                    if (!response.ok) {
-                        if (response.status >= 400 && response.status < 500) {
-                            const data = await response.json()
-                            resolve(request.createResponse(response.status, data))
-                        }
-
-                        reject(new Error(`HTTP error: ${response.status}`))
-                    }
-
-                    const data = await response.json()
-                    resolve(request.createResponse(response.status, data))
-                })
-                .catch((error) => {
-                    reject(error)
-                })
-        })
+                error: error instanceof Error ? error.message : 'Unknown error',
+                stack: error instanceof Error ? error.stack : undefined
+            })
+            throw error
+        }
     }
 }
 
@@ -5803,7 +5947,11 @@ class HttpApiClient {
 class WsApiClient {
     public readonly currentTime: WsApiClientCurrentTime
 
-    private readonly apiUrl: string
+    /**
+     * API URL for WebSocket connection.
+     */
+    public readonly apiUrl: string
+
     private readonly platformId: number
     private readonly authMethod: AuthMethod
     private isBrowser = typeof window !== 'undefined';
@@ -7261,6 +7409,42 @@ class QuoteGeneratedV2 {
 }
 
 // Outbound messages
+
+class HttpGetTranslationsRequest implements HttpRequest<HttpGetTranslationsResponse> {
+    constructor(private readonly lang: string, private readonly groups: string[]) {
+    }
+
+    method(): string {
+        return 'GET'
+    }
+
+    path() {
+        return '/api/lang/route-translations'
+    }
+
+    messageBody() {
+        return {
+            route: this.lang,
+            groups: this.groups
+        }
+    }
+
+    createResponse(status: number, data: any): HttpGetTranslationsResponse {
+        return new HttpGetTranslationsResponse(data)
+    }
+}
+
+class HttpGetTranslationsResponse {
+    isSuccessful: boolean
+    data: {
+        result: Record<string, Record<string, string>>
+    }
+
+    constructor(data: any) {
+        this.isSuccessful = data.isSuccessful
+        this.data = data
+    }
+}
 
 class HttpLoginRequest implements HttpRequest<HttpResponse<HttpLoginResponse>> {
     constructor(private readonly login: string, private readonly password: string) {
