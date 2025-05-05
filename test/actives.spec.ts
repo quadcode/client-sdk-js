@@ -16,9 +16,11 @@ describe('Actives', () => {
         await sdk.shutdown();
     });
 
-    it(`Active should contain image url`, async () => {
+    it(`Active should be valid`, async () => {
         const actives = await sdk.actives()
         const active = await actives.getActive(1);
         expect(active.imageUrl).contains("https://")
+        expect(active.localizationKey).not.equal(active.name)
+        expect(active.name).not.empty
     });
 });
