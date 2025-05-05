@@ -25,7 +25,7 @@ jobs:
 
       - name: Read vars
         run: |
-          cat <<EOF > test/vars.ts
+          cat <<EOF > test/vars.js
           ${{ secrets.VARS }}
           EOF
       - run: npm install
