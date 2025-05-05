@@ -1110,6 +1110,8 @@ export class Translations {
     private reloadInterval: NodeJS.Timeout | undefined
     private readonly reloadIntervalMs: number = 10 * 60 * 1000 // 10 minutes
     private readonly httpApiClient: HttpApiClient
+    private loadedLanguages: Set<string> = new Set()
+    private loadedGroups: Set<TranslationGroup> = new Set()
 
     private constructor(host: string) {
         this.httpApiClient = new HttpApiClient(host)
@@ -1124,7 +1126,12 @@ export class Translations {
 
     private startAutoReload(): void {
         this.reloadInterval = setInterval(async () => {
-            await this.fetchTranslations('en', [TranslationGroup.Front])
+            for (const lang of this.loadedLanguages) {
+                const groups = Array.from(this.loadedGroups)
+                if (groups.length > 0) {
+                    await this.fetchTranslations(lang, groups)
+                }
+            }
         }, this.reloadIntervalMs)
     }
 
@@ -1140,6 +1147,9 @@ export class Translations {
                 this.translations[lang] = {}
             }
             this.translations[lang] = { ...this.translations[lang], ...response.data.result[lang] }
+
+            this.loadedLanguages.add(lang)
+            groups.forEach(group => this.loadedGroups.add(group))
         }
     }
 
