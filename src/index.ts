@@ -1032,18 +1032,18 @@ export class Candles {
      * @param options
      */
     public async getCandles(activeId: number,
-        size: number,
-        options: {
-            from?: number,
-            to?: number,
-            fromId?: number,
-            toId?: number,
-            count?: number,
-            backoff?: number
-            onlyClosed?: boolean
-            kind?: string,
-            splitNormalization?: boolean,
-        } | undefined = undefined
+                            size: number,
+                            options: {
+                                from?: number,
+                                to?: number,
+                                fromId?: number,
+                                toId?: number,
+                                count?: number,
+                                backoff?: number
+                                onlyClosed?: boolean
+                                kind?: string,
+                                splitNormalization?: boolean,
+                            } | undefined = undefined
     ): Promise<Candle[]> {
         const response = await this.wsApiClient.doRequest<QuotesHistoryCandlesV2>(new CallQuotesHistoryGetCandlesV2({
             activeId,
@@ -1103,7 +1103,7 @@ export enum TranslationGroup {
 
 /**
  * Don't use this class directly from your code. Use {@link ClientSdk.translations} static method instead.
- * 
+ *
  * Translations facade class.
  */
 export class Translations {
@@ -1147,7 +1147,7 @@ export class Translations {
             if (!this.translations[lang]) {
                 this.translations[lang] = {}
             }
-            this.translations[lang] = { ...this.translations[lang], ...response.data.result[lang] }
+            this.translations[lang] = {...this.translations[lang], ...response.data.result[lang]}
 
             this.loadedLanguages.add(lang)
             groups.forEach(group => this.loadedGroups.add(group))
@@ -1801,7 +1801,7 @@ export class Positions {
             (event: PortfolioPositionsStateV1) => {
                 this.syncPositionsStateFromEvent(event)
             }).then(() => {
-            })
+        })
 
         this.intervalId = setInterval(async () => {
             await this.wsApiClient!.unsubscribe<PortfolioPositionsStateV1>(new SubscribePortfolioPositionsStateV1())
@@ -1817,6 +1817,9 @@ export class Positions {
      * @private
      */
     private async syncOldActivePositions(): Promise<void> {
+        const previousIds = new Set<number>(this.positions.keys())
+        const receivedIds = new Set<number>()
+
         let offset = 0
         const limit = 30
         for (; ;) {
@@ -1824,8 +1827,9 @@ export class Positions {
                 new CallPortfolioGetPositionsV4(this.instrumentTypes, limit, offset)
             )
 
-            for (const index in positionsPage.positions) {
-                this.syncPositionFromResponse(positionsPage.positions[index])
+            for (const raw of positionsPage.positions) {
+                receivedIds.add(raw.externalId)
+                this.syncPositionFromResponse(raw)
             }
 
             if (positionsPage.positions.length < positionsPage.limit) {
@@ -1833,6 +1837,20 @@ export class Positions {
             }
 
             offset += limit
+        }
+
+        const missingIds = [...previousIds].filter(id => !receivedIds.has(id))
+        for (const id of missingIds) {
+            try {
+                const position = await this.positionsHistoryFacade?.getPositionHistory(id)
+                if (!position) {
+                    continue
+                }
+
+                this.syncPosition(position)
+            } catch (e) {
+                // console.warn(`Position ${id} not found in history`, e)
+            }
         }
     }
 
@@ -1940,6 +1958,38 @@ export class Positions {
         if (position.status === "closed") {
             this.positions.delete(msg.externalId)
             this.positionsIds.delete(`${msg.instrumentType}-${msg.internalId}`)
+            this.positionsHistory.unshift(position)
+        }
+    }
+
+    /**
+     * Updates instance from DTO.
+     * @param position - Position object.
+     * @private
+     */
+    private syncPosition(position: Position): void {
+        const isNewPosition = !this.positions.has(position.externalId!)
+        if (isNewPosition) {
+            this.positions.set(position.externalId!, position)
+            const key = `${position.instrumentType}-${position.internalId}`
+            this.positionsIds.set(key, position.externalId!)
+        }
+
+        this.onUpdatePositionObserver.notify(position)
+
+        if (isNewPosition) {
+            this.subscribePositions()
+        }
+
+        if (!position.active && position.activeId) {
+            this.actives!.getActive(position.activeId).then((active) => {
+                position.active = active
+            })
+        }
+
+        if (position.status === "closed") {
+            this.positions.delete(position.externalId!)
+            this.positionsIds.delete(`${position.instrumentType}-${position.internalId}`)
             this.positionsHistory.unshift(position)
         }
     }
@@ -2361,6 +2411,27 @@ class PositionsHistory {
         }
 
         this.offset += this.limit
+    }
+
+    public async getPositionHistory(externalId: number): Promise<Position | undefined> {
+        const positionsPage = await this.wsApiClient.doRequest<PortfolioPositionsHistoryV2>(
+            new CallPortfolioGetHistoryPositionsV2(
+                {
+                    instrumentTypes: ["digital-option", "binary-option", "turbo-option", "blitz-option"],
+                    externalId: externalId,
+                }
+            )
+        )
+
+        if (positionsPage.positions.length === 0) {
+            return undefined
+        }
+
+        const position = new Position(this.wsApiClient)
+        position.syncFromHistoryResponse(positionsPage.positions[0])
+        this.positions.push(position)
+
+        return position
     }
 
     /**
@@ -7984,19 +8055,22 @@ class CallPortfolioGetPositionsV4 implements Request<PortfolioPositionsV4> {
 
 class CallPortfolioGetHistoryPositionsV2 implements Request<PortfolioPositionsHistoryV2> {
     private readonly instrumentTypes: string[];
-    private readonly userId: number;
-    private readonly end: number;
-    private readonly limit: number;
-    private readonly offset: number;
+    private readonly externalId: number | undefined;
+    private readonly userId: number | undefined;
+    private readonly end: number | undefined;
+    private readonly limit: number | undefined;
+    private readonly offset: number | undefined;
 
     constructor(data: {
         instrumentTypes: string[],
-        userId: number,
-        end: number,
-        limit: number,
-        offset: number
+        externalId?: number,
+        userId?: number,
+        end?: number,
+        limit?: number,
+        offset?: number
     }) {
         this.instrumentTypes = data.instrumentTypes;
+        this.externalId = data.externalId;
         this.userId = data.userId;
         this.end = data.end;
         this.limit = data.limit;
@@ -8008,17 +8082,21 @@ class CallPortfolioGetHistoryPositionsV2 implements Request<PortfolioPositionsHi
     }
 
     messageBody() {
+        const body: any = {
+            instrument_types: this.instrumentTypes
+        };
+
+        if (this.externalId !== undefined) body.external_id = this.externalId;
+        if (this.userId !== undefined) body.user_id = this.userId;
+        if (this.end !== undefined) body.end = this.end;
+        if (this.limit !== undefined) body.limit = this.limit;
+        if (this.offset !== undefined) body.offset = this.offset;
+
         return {
             name: 'portfolio.get-history-positions',
             version: '2.0',
-            body: {
-                instrument_types: this.instrumentTypes,
-                user_id: this.userId,
-                end: this.end,
-                limit: this.limit,
-                offset: this.offset
-            }
-        }
+            body
+        };
     }
 
     createResponse(data: any): PortfolioPositionsHistoryV2 {
