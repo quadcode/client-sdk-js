@@ -226,7 +226,8 @@ export class ClientSdk {
     public async positions(): Promise<Positions> {
         if (!this.positionsFacade) {
             const actives = await this.actives()
-            this.positionsFacade = await Positions.create(this.wsApiClient, this.userProfile.userId, actives)
+            const state = await this.wsConnectionState()
+            this.positionsFacade = await Positions.create(this.wsApiClient, this.userProfile.userId, actives, state)
         }
         return this.positionsFacade
     }
@@ -1759,15 +1760,20 @@ export class Positions {
      * @param userId - User's identification number.
      * @param actives - Actives facade.
      */
-    public static async create(wsApiClient: WsApiClient, userId: number, actives: Actives): Promise<Positions> {
+    public static async create(wsApiClient: WsApiClient, userId: number, actives: Actives, state: WsConnectionState): Promise<Positions> {
         const positionsFacade = new Positions()
         positionsFacade.actives = actives
         positionsFacade.wsApiClient = wsApiClient
         positionsFacade.positionsHistoryFacade = new PositionsHistory(wsApiClient, userId, positionsFacade.positionsHistory)
-        await positionsFacade.syncOldActivePositions()
         await positionsFacade.subscribePositionChanged(userId)
         await positionsFacade.subscribePositionsState()
         positionsFacade.subscribePositions()
+
+        state.subscribeOnStateChanged(((state) => {
+            if (state === WsConnectionStateEnum.Connected) {
+                positionsFacade.syncOldActivePositions()
+            }
+        }));
 
         return positionsFacade
     }
