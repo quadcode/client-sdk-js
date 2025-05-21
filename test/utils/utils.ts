@@ -11,3 +11,14 @@ export async function getCurrentQuote(quotes: Quotes, activeId: number, timeout:
         })
     });
 }
+
+export function randomFloat(
+    min: number,
+    max: number,
+    digits: number = 2
+): number {
+    const factor = Math.pow(10, digits);
+    return (
+        Math.round((Math.random() * (max - min) + min) * factor) / factor
+    );
+}
