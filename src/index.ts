@@ -1765,6 +1765,7 @@ export class Positions {
         positionsFacade.actives = actives
         positionsFacade.wsApiClient = wsApiClient
         positionsFacade.positionsHistoryFacade = new PositionsHistory(wsApiClient, userId, positionsFacade.positionsHistory)
+        await positionsFacade.syncOldActivePositions()
         await positionsFacade.subscribePositionChanged(userId)
         await positionsFacade.subscribePositionsState()
         positionsFacade.subscribePositions()
