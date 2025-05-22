@@ -1,4 +1,4 @@
-import {Order, Orders, Position, Positions, ClientSdk} from "../../src";
+import {ClientSdk, Order, Orders, Position, Positions} from "../../src";
 
 export class PositionsHelper {
 
@@ -45,9 +45,13 @@ export class PositionsHelper {
         });
     }
 
-    public findPosition(position_id: number | undefined): Position | undefined {
+    public findPositionByExternalId(position_id: number | undefined): Position | undefined {
         if (position_id === undefined) throw new Error('Parameter position_id is undefined')
         return this.positions.getAllPositions().find(value => value.externalId === position_id);
+    }
+
+    public findPositionByPredicate(predicate: (value: Position) => boolean): Position | undefined {
+        return this.positions.getAllPositions().find(predicate);
     }
 
     public findOrder(order_id: number | undefined): Order | undefined {
