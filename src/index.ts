@@ -6270,6 +6270,10 @@ class WsApiClient {
     doRequest<T>(request: Request<T>): Promise<T> {
         const requestId = (++this.lastRequestId).toString()
 
+        if (!this.connection || this.connection.readyState !== WebSocket.OPEN) {
+            return Promise.reject(new Error('WebSocket connection is not open'));
+        }
+
         this.connection!.send(JSON.stringify({
             name: request.messageName(),
             request_id: requestId,
