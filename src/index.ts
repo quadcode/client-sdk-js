@@ -452,6 +452,22 @@ export class ClientSdk {
     }
 
     /**
+     * Subscribe to WebSocket current time updates.
+     * @param callback - Callback function that will be called when current time updates.
+     */
+    public subscribeOnWsCurrentTime(callback: (currentTime: Date) => void): void {
+        this.wsApiClient.subscribeOnWsCurrentTime((time) => callback(new Date(time)))
+    }
+
+    /**
+     * Unsubscribe from WebSocket current time updates.
+     * @param callback - Callback function to unsubscribe.
+     */
+    public unsubscribeOnWsCurrentTime(callback: (currentTime: Date) => void): void {
+        this.wsApiClient.unsubscribeOnWsCurrentTime((time) => callback(new Date(time)))
+    }
+
+    /**
      * Get WebSocket connection state facade.
      */
     public async wsConnectionState(): Promise<WsConnectionState> {
@@ -6029,7 +6045,7 @@ class WsApiClient {
      * API URL for WebSocket connection.
      */
     public readonly apiUrl: string
-
+    private readonly onCurrentTimeChangedObserver: Observable<number> = new Observable<number>()
     private readonly platformId: number
     private readonly authMethod: AuthMethod
     private isBrowser = typeof window !== 'undefined';
@@ -6073,6 +6089,19 @@ class WsApiClient {
             clearInterval(this.timeSyncInterval)
             this.timeSyncInterval = undefined
         }
+    }
+
+    public subscribeOnWsCurrentTime(callback: (currentTime: Date) => void): void {
+        this.onCurrentTimeChangedObserver.subscribe((time) => callback(new Date(time)))
+    }
+
+    public unsubscribeOnWsCurrentTime(callback: (currentTime: Date) => void): void {
+        this.onCurrentTimeChangedObserver.unsubscribe((time) => callback(new Date(time)))
+    }
+
+    private updateCurrentTime(time: number): void {
+        this.currentTime.unixMilliTime = time
+        this.onCurrentTimeChangedObserver.notify(time)
     }
 
     async connect(): Promise<void> {
@@ -6145,8 +6174,9 @@ class WsApiClient {
                         }
                     }
                 } else if (frame.name && frame.name === 'timeSync') {
-                    this.currentTime.unixMilliTime = frame.msg
                     this.lastTimeSyncReceived = Date.now()
+                    this.updateCurrentTime(frame.msg)
+                    return
                 } else if (frame.name && frame.name === 'authenticated' && frame.msg === false) {
                     for (const [, requestMetaData] of this.requests) {
                         if (requestMetaData.request instanceof Authenticate) {
