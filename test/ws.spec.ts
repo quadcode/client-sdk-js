@@ -2,7 +2,7 @@ import {ClientSdk, LoginPasswordAuthMethod, TurboOptionsDirection, WsConnectionS
 import {API_URL, User, WS_URL} from "./vars";
 import {afterAll, describe, expect, it} from "vitest";
 import {getUserByTitle} from "./utils/userUtils";
-import {waitForCondition} from "./utils/waiters";
+import {justWait, waitForCondition} from "./utils/waiters";
 import {PositionsHelper} from "./utils/positionsHelper";
 import {randomFloat} from "./utils/utils";
 
@@ -24,6 +24,19 @@ describe('ws connection state', () => {
         expect(await waitForCondition(() => ws === WsConnectionStateEnum.Disconnected, 120000)).to.be.true;
         console.log("Connect this device...")
         expect(await waitForCondition(() => ws === WsConnectionStateEnum.Connected, 120000)).to.be.true;
+    });
+
+
+    it('should subscribeOnWsCurrentTime update time', async () => {
+        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
+        let time: Date = sdk.currentTime()
+        let prev: Date = time;
+        sdk.subscribeOnWsCurrentTime(currentTime => time = currentTime)
+        for (let i = 0; i < 10; i++) {
+            await justWait(1000)
+            expect(time.getTime() - prev.getTime()).greaterThanOrEqual(900);
+            prev = time;
+        }
     });
 
     async function openOption() {
