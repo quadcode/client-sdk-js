@@ -130,6 +130,12 @@ export class ClientSdk {
     private translationsFacade: Translations | undefined
 
     /**
+     * Real-time chart data layer facade cache.
+     * @private
+     */
+    private realTimeChartDataLayerFacade: Record<number, Record<number, Promise<RealTimeChartDataLayer>>> | undefined
+
+    /**
      * Creates instance of class.
      * @param userProfile - Information about the user on whose behalf your application is working.
      * @param wsApiClient - Instance of WebSocket API client.
@@ -442,6 +448,29 @@ export class ClientSdk {
         }
 
         return this.candlesFacade
+    }
+
+    public async realTimeChartDataLayer(activeId: number, size: number): Promise<RealTimeChartDataLayer> {
+        if (!this.realTimeChartDataLayerFacade) {
+            this.realTimeChartDataLayerFacade = {};
+        }
+
+        if (!this.realTimeChartDataLayerFacade[activeId]) {
+            this.realTimeChartDataLayerFacade[activeId] = {};
+        }
+
+        if (!this.realTimeChartDataLayerFacade[activeId][size]) {
+            const creationPromise = (async () => {
+                const candles = await this.candles();
+                const wsConnectionState = await this.wsConnectionState();
+                const layer = new RealTimeChartDataLayer(this.wsApiClient, wsConnectionState, candles, activeId, size);
+                return layer;
+            })();
+
+            this.realTimeChartDataLayerFacade[activeId][size] = creationPromise;
+        }
+
+        return this.realTimeChartDataLayerFacade[activeId][size];
     }
 
     /**
@@ -1528,6 +1557,191 @@ export class Currency {
         this.isCrypto = response.isCrypto
         this.isInout = response.isInout
         this.interestRate = response.interestRate
+    }
+}
+
+/**
+ * RealTimeChartDataLayer provides real-time and historical candle data for a given activeId and candleSize.
+ */
+export class RealTimeChartDataLayer {
+    private readonly wsApiClient: WsApiClient;
+    private readonly candlesFacade: Candles;
+    private readonly activeId: number;
+    private readonly candleSize: number;
+
+    private candles: Candle[] = [];
+    private connected: boolean = true;
+    private loadedFrom: number | null = null;
+    private loadedTo: number | null = null;
+    private firstCandleFrom: number | null = null;
+    private currentReject: ((err: any) => void) | null = null;
+    private onUpdateObserver: Observable<Candle> = new Observable<Candle>();
+    private candleQueue: { from: number; resolve: (c: Candle[]) => void; reject: (e: any) => void }[] = [];
+    private isProcessingQueue = false;
+
+    constructor(wsApiClient: WsApiClient, wsConnectionState: WsConnectionState, candles: Candles, activeId: number, candleSize: number) {
+        this.wsApiClient = wsApiClient;
+        this.candlesFacade = candles;
+        this.activeId = activeId;
+        this.candleSize = candleSize;
+
+        this.wsApiClient.subscribe<CandleGeneratedV1>(new SubscribeCandleGeneratedV1(activeId, candleSize), (event: CandleGeneratedV1) => {
+            if (event.activeId !== activeId || event.size !== candleSize) {
+                return
+            }
+
+            if (this.connected) {
+                this.handleRealtimeUpdate(event)
+            }
+        }).then(() => {
+        })
+
+        this.wsApiClient.doRequest<QuotesFirstCandlesV1>(new CallQuotesGetFirstCandlesV1(activeId))
+            .then((response) => {
+                const candle = response.candlesBySize[candleSize];
+
+                if (candle) {
+                    this.firstCandleFrom = candle.from;
+                }
+            })
+
+        wsConnectionState.subscribeOnStateChanged((state: WsConnectionStateEnum) => {
+            switch (state) {
+                case WsConnectionStateEnum.Connected:
+                    this.loadMissedCandlesOnReconnect().then(() => {
+                        this.connected = true;
+                        this.processQueue().then(() => {
+                        })
+                    })
+                    break;
+                case WsConnectionStateEnum.Disconnected:
+                    this.connected = false;
+                    this.isProcessingQueue = false;
+
+                    for (const {reject} of this.candleQueue) {
+                        reject(new Error('WebSocket disconnected'));
+                    }
+
+                    if (this.currentReject) {
+                        this.currentReject(new Error('WebSocket disconnected'));
+                        this.currentReject = null;
+                    }
+
+                    this.candleQueue = [];
+                    break
+            }
+        })
+    }
+
+    /**
+     * Returns the last candle for the activeId and candleSize.
+     */
+    getAllCandles(): Candle[] {
+        return [...this.candles];
+    }
+
+    /**
+     * Gets candles for the activeId and candleSize.
+     * @param from - UNIX timestamp in seconds from which to fetch candles.
+     */
+    async fetchAllCandles(from: number): Promise<Candle[]> {
+        if (this.firstCandleFrom !== null && from < this.firstCandleFrom) {
+            from = this.firstCandleFrom;
+        }
+
+        return new Promise<Candle[]>((resolve, reject) => {
+            this.candleQueue.push({from, resolve, reject});
+            this.processQueue();
+        });
+    }
+
+    private async processQueue() {
+        if (this.isProcessingQueue || this.candleQueue.length === 0 || !this.connected) {
+            return;
+        }
+
+        this.isProcessingQueue = true;
+
+        const {from, resolve, reject} = this.candleQueue.shift()!;
+        this.currentReject = reject;
+
+        try {
+            if (this.loadedFrom !== null && from >= this.loadedFrom) {
+                resolve([...this.candles]);
+            } else {
+                const to = this.loadedFrom !== null ? this.loadedFrom - 1 : undefined;
+                const newCandles = await this.candlesFacade.getCandles(this.activeId, this.candleSize, {from, to});
+
+                this.candles = [...newCandles, ...this.candles];
+                const newFrom = this.candles[0] ? this.candles[0].from : from;
+                this.loadedFrom = this.loadedFrom !== null ? Math.min(this.loadedFrom, newFrom) : newFrom;
+
+                resolve([...this.candles]);
+            }
+        } catch (error) {
+            reject(error);
+        } finally {
+            this.isProcessingQueue = false;
+            this.currentReject = null;
+            this.processQueue();
+        }
+    }
+
+    subscribeOnLastCandleChanged(handler: (candle: Candle) => void) {
+        this.onUpdateObserver.subscribe(handler);
+    }
+
+    unsubscribeOnLastCandleChanged(handler: (candle: Candle) => void) {
+        this.onUpdateObserver.unsubscribe(handler);
+    }
+
+    private handleRealtimeUpdate(newCandle: CandleGeneratedV1): void {
+        const last = this.candles[this.candles.length - 1];
+
+        const candle = new Candle(newCandle)
+
+        if (!last) {
+            this.candles.push(candle);
+        } else if (newCandle.from === last.from) {
+            this.candles[this.candles.length - 1] = candle;
+        } else if (newCandle.from > last.from) {
+            this.candles.push(candle);
+            if (this.loadedTo === null || newCandle.to > this.loadedTo) {
+                this.loadedTo = newCandle.to;
+            }
+        } else {
+            return;
+        }
+
+        this.onUpdateObserver.notify(candle);
+    }
+
+    private async loadMissedCandlesOnReconnect() {
+        if (this.loadedTo === null) return;
+
+        try {
+            const newCandles = await this.candlesFacade.getCandles(this.activeId, this.candleSize, {
+                from: this.loadedTo,
+            });
+
+            for (const candle of newCandles) {
+                const existingIndex = this.candles.findIndex(c => c.from === candle.from);
+
+                if (existingIndex !== -1) {
+                    this.candles[existingIndex] = candle;
+                } else {
+                    this.candles.push(candle);
+                }
+
+                if (this.loadedTo === null || candle.to > this.loadedTo) {
+                    this.loadedTo = candle.to;
+                }
+
+                this.onUpdateObserver.notify(candle);
+            }
+        } catch (error) {
+            console.error('Failed to load missed candles after reconnect:', error);
+        }
     }
 }
 
@@ -6077,7 +6291,7 @@ class WsApiClient {
         this.stopTimeSyncMonitoring()
         this.lastTimeSyncReceived = Date.now()
         this.timeSyncInterval = setInterval(() => {
-            if (Date.now() - this.lastTimeSyncReceived > 60000 && !this.reconnecting) {
+            if (Date.now() - this.lastTimeSyncReceived > 10000 && !this.reconnecting) {
                 this.forceCloseConnection()
                 this.reconnect()
             }
@@ -6132,7 +6346,7 @@ class WsApiClient {
 
             // eslint-disable-next-line @typescript-eslint/ban-ts-comment
             // @ts-expect-error ignore
-            this.connection!.onmessage = ({ data }: { data: string }) => {
+            this.connection!.onmessage = ({data}: { data: string }) => {
                 const frame: {
                     request_id: string
                     name: string
@@ -6223,8 +6437,8 @@ class WsApiClient {
                         this.reconnect()
                     }
 
-                    this.onConnectionStateChanged?.(WsConnectionStateEnum.Connected)
                     this.startTimeSyncMonitoring()
+                    this.onConnectionStateChanged?.(WsConnectionStateEnum.Connected)
 
                     return resolve()
                 } catch (e) {
@@ -7520,6 +7734,40 @@ class QuoteGeneratedV2 {
     }
 }
 
+class CandleGeneratedV1 {
+    id: number
+    activeId: number
+    size: number
+    at: number
+    from: number
+    to: number
+    ask: number
+    bid: number
+    open: number
+    close: number
+    min: number
+    max: number
+    volume: number
+    phase: string
+
+    constructor(data: any) {
+        this.id = data.id
+        this.activeId = data.active_id
+        this.size = data.size
+        this.at = data.at
+        this.from = data.from
+        this.to = data.to
+        this.ask = data.ask
+        this.bid = data.bid
+        this.open = data.open
+        this.close = data.close
+        this.min = data.min
+        this.max = data.max
+        this.volume = data.volume
+        this.phase = data.phase
+    }
+}
+
 // Outbound messages
 
 class HttpGetTranslationsRequest implements HttpRequest<HttpGetTranslationsResponse> {
@@ -8231,6 +8479,58 @@ class QuotesHistoryCandlesV2 {
     }
 }
 
+class CallQuotesGetFirstCandlesV1 implements Request<QuotesFirstCandlesV1> {
+    private readonly activeId: number;
+    private readonly splitNormalization: boolean | undefined;
+
+    constructor(
+        activeId: number,
+        splitNormalization?: boolean | undefined,
+    ) {
+        this.activeId = activeId;
+
+        if (splitNormalization === undefined) {
+            this.splitNormalization = false; // Default value if not provided
+        } else {
+            this.splitNormalization = splitNormalization;
+        }
+    }
+
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: 'get-first-candles',
+            version: '1.0',
+            body: {
+                active_id: this.activeId,
+                split_normalization: this.splitNormalization,
+            }
+        }
+    }
+
+    createResponse(data: any): QuotesFirstCandlesV1 {
+        return new QuotesFirstCandlesV1(data)
+    }
+
+    resultOnly(): boolean {
+        return false
+    }
+}
+
+class QuotesFirstCandlesV1 {
+    candlesBySize: Record<number, Candle> = {}
+
+    constructor(data: any) {
+        for (const size in data.candles_by_size) {
+            const sizeNumber = Number(size);
+            this.candlesBySize[sizeNumber] = new Candle(data.candles_by_size[sizeNumber]);
+        }
+    }
+}
+
 class SetOptions implements Request<Result> {
     constructor(private readonly sendResults: boolean) {
     }
@@ -8545,6 +8845,45 @@ class SubscribeQuoteGeneratedV2 implements SubscribeRequest<QuoteGeneratedV2> {
 
     createEvent(data: any): QuoteGeneratedV2 {
         return new QuoteGeneratedV2(data)
+    }
+}
+
+class SubscribeCandleGeneratedV1 implements SubscribeRequest<CandleGeneratedV1> {
+    activeId
+    size
+
+    constructor(activeId: number, size: number) {
+        this.activeId = activeId
+        this.size = size
+    }
+
+    messageName() {
+        return 'subscribeMessage'
+    }
+
+    messageBody() {
+        return {
+            name: `${this.eventName()}`,
+            version: '1.0',
+            params: {
+                routingFilters: {
+                    active_id: this.activeId,
+                    size: this.size,
+                }
+            }
+        }
+    }
+
+    eventMicroserviceName() {
+        return 'quotes'
+    }
+
+    eventName() {
+        return 'candle-generated'
+    }
+
+    createEvent(data: any): CandleGeneratedV1 {
+        return new CandleGeneratedV1(data)
     }
 }
 
