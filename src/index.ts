@@ -6291,7 +6291,7 @@ class WsApiClient {
         this.stopTimeSyncMonitoring()
         this.lastTimeSyncReceived = Date.now()
         this.timeSyncInterval = setInterval(() => {
-            if (Date.now() - this.lastTimeSyncReceived > 10000 && !this.reconnecting) {
+            if (Date.now() - this.lastTimeSyncReceived > 60000 && !this.reconnecting) {
                 this.forceCloseConnection()
                 this.reconnect()
             }
