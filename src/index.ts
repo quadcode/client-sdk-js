@@ -1673,7 +1673,8 @@ export class RealTimeChartDataLayer {
         } finally {
             this.isProcessingQueue = false;
             this.currentReject = null;
-            this.processQueue();
+            this.processQueue().then(() => {
+            })
         }
     }
 
