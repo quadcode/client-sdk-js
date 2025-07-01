@@ -1663,8 +1663,7 @@ export class RealTimeChartDataLayer {
                 const newCandles = await this.candlesFacade.getCandles(this.activeId, this.candleSize, {from, to});
 
                 this.candles = [...newCandles, ...this.candles];
-                const newFrom = this.candles[0] ? this.candles[0].from : from;
-                this.loadedFrom = this.loadedFrom !== null ? Math.min(this.loadedFrom, newFrom) : newFrom;
+                this.loadedFrom = this.loadedFrom !== null ? Math.min(this.loadedFrom, from) : from;
 
                 resolve([...this.candles]);
             }
