@@ -1571,6 +1571,7 @@ export class RealTimeChartDataLayer {
 
     private candles: Candle[] = [];
     private connected: boolean = true;
+    private subscribed: boolean = false;
     private loadedFrom: number | null = null;
     private loadedTo: number | null = null;
     private firstCandleFrom: number | null = null;
@@ -1584,17 +1585,6 @@ export class RealTimeChartDataLayer {
         this.candlesFacade = candles;
         this.activeId = activeId;
         this.candleSize = candleSize;
-
-        this.wsApiClient.subscribe<CandleGeneratedV1>(new SubscribeCandleGeneratedV1(activeId, candleSize), (event: CandleGeneratedV1) => {
-            if (event.activeId !== activeId || event.size !== candleSize) {
-                return
-            }
-
-            if (this.connected) {
-                this.handleRealtimeUpdate(event)
-            }
-        }).then(() => {
-        })
 
         this.wsApiClient.doRequest<QuotesFirstCandlesV1>(new CallQuotesGetFirstCandlesV1(activeId))
             .then((response) => {
@@ -1688,6 +1678,19 @@ export class RealTimeChartDataLayer {
     }
 
     subscribeOnLastCandleChanged(handler: (candle: Candle) => void) {
+        if (!this.subscribed) {
+            this.wsApiClient.subscribe<CandleGeneratedV1>(new SubscribeCandleGeneratedV1(this.activeId, this.candleSize), (event: CandleGeneratedV1) => {
+                if (event.activeId !== this.activeId || event.size !== this.candleSize) {
+                    return
+                }
+
+                if (this.connected) {
+                    this.handleRealtimeUpdate(event)
+                }
+            }).then(() => {
+            })
+        }
+
         this.onUpdateObserver.subscribe(handler);
     }
 
