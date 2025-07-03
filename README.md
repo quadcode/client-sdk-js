@@ -343,6 +343,135 @@ console.log(callOption)
 const putOption = await marginCfd.buy(firstInstrument, Margin.Sell, 1, balance)
 console.log(putOption)
 ```
+---
+
+## Draw chart using RealTimeChartDataLayer and Trading View Lightweight Charts
+
+This example shows how to build a simple real-time chart using [`lightweight-charts`](https://www.npmjs.com/package/lightweight-charts) and the `RealTimeChartDataLayer` facade.
+
+### Prerequisites
+
+```bash
+npm install @quadcode-tech/client-sdk-js lightweight-charts
+```
+
+### Example (React)
+
+```tsx
+import React, { useEffect, useRef } from 'react'
+import { CandlestickSeries, createChart, UTCTimestamp } from 'lightweight-charts';
+import { ClientSdk, SsidAuthMethod } from '@quadcode-tech/client-sdk-js'
+
+export default function TradingView() {
+    const containerRef = useRef(null);
+    const earliestLoadedRef = useRef<number | null>(null); // Tracks the earliest loaded candle timestamp
+    const fetchingRef = useRef<boolean>(false); // Prevents multiple fetches during scroll
+
+    useEffect(() => {
+        const initChart = async () => {
+            // Initialize SDK with local WebSocket endpoint and SSID
+            const sdk = await ClientSdk.create(
+                'wss://ws.trade.example.com/echo/websocket',
+                82,
+                new SsidAuthMethod('YOUR_SSID')
+            );
+
+            const activeId = 1; // Example active ID (e.g., EUR/USD)
+            const candleSize = 10; // Candle size in seconds
+            const from = Math.floor(Date.now() / 1000) - 3600; // Load candles for the last 60 minutes
+
+            const chartLayer = await sdk.realTimeChartDataLayer(activeId, candleSize);
+            const candles = await chartLayer.fetchAllCandles(from);
+
+            if (!containerRef.current) return;
+
+            // Create TradingView chart
+            const chart = createChart(containerRef.current, {
+                height: 400,
+            });
+
+            // Add candlestick series
+            const series = chart.addSeries(CandlestickSeries);
+
+            // Format candle data for Lightweight Charts
+            const formattedCandles = candles.map((c) => ({
+                time: c.from as UTCTimestamp,
+                open: c.open,
+                high: c.max,
+                low: c.min,
+                close: c.close,
+            }));
+
+            // Set initial chart data
+            series.setData(formattedCandles);
+
+            // Save the earliest loaded candle time for infinite scroll check
+            if (formattedCandles.length > 0) {
+                earliestLoadedRef.current = formattedCandles[0].time;
+            }
+
+            // Subscribe to real-time candle updates
+            chartLayer.subscribeOnLastCandleChanged((candle) => {
+                series.update({
+                    time: candle.from as UTCTimestamp,
+                    open: candle.open,
+                    high: candle.max,
+                    low: candle.min,
+                    close: candle.close,
+                });
+            });
+
+            // Infinite scroll: load older candles when user scrolls left
+            chart.timeScale().subscribeVisibleTimeRangeChange((range) => {
+                if (!range || !earliestLoadedRef.current || fetchingRef.current) return;
+
+                // If user scrolls past the earliest loaded candle, load more
+                if ((range.from as number) <= earliestLoadedRef.current) {
+                    fetchingRef.current = true;
+
+                    // Define the fetch range (e.g., 40 minutes earlier)
+                    const fetchFrom = earliestLoadedRef.current - 40 * 60;
+
+                    chartLayer
+                        .fetchAllCandles(fetchFrom)
+                        .then((moreData) => {
+                            const formatted = moreData.map((candle) => ({
+                                time: candle.from as UTCTimestamp,
+                                open: candle.open,
+                                high: candle.max,
+                                low: candle.min,
+                                close: candle.close,
+                            }));
+
+                            // Replace data
+                            series.setData([...formatted]);
+
+                            // Update earliestLoadedRef with new data
+                            if (formatted.length > 0) {
+                                earliestLoadedRef.current = formatted[0].time;
+                            }
+                        })
+                        .finally(() => {
+                            fetchingRef.current = false;
+                        });
+                }
+            });
+        };
+
+        initChart();
+    }, []);
+
+    return <div id="container" ref={containerRef} style={{ width: '100%', height: 400 }} />;
+}
+```
+
+This chart will:
+
+* Load historical candles
+* Display them using `lightweight-charts`
+* Continuously update with new real-time candles
+
+---
 
 ## Versioning
 

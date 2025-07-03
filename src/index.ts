@@ -1631,7 +1631,7 @@ export class RealTimeChartDataLayer {
     }
 
     /**
-     * Gets candles for the activeId and candleSize.
+     * Fetch candles for the activeId and candleSize.
      * @param from - UNIX timestamp in seconds from which to fetch candles.
      */
     async fetchAllCandles(from: number): Promise<Candle[]> {
@@ -1677,6 +1677,10 @@ export class RealTimeChartDataLayer {
         }
     }
 
+    /**
+     * Subscribes to real-time updates for the last candle.
+     * @param handler
+     */
     subscribeOnLastCandleChanged(handler: (candle: Candle) => void) {
         if (!this.subscribed) {
             this.wsApiClient.subscribe<CandleGeneratedV1>(new SubscribeCandleGeneratedV1(this.activeId, this.candleSize), (event: CandleGeneratedV1) => {
@@ -1694,6 +1698,10 @@ export class RealTimeChartDataLayer {
         this.onUpdateObserver.subscribe(handler);
     }
 
+    /**
+     * Unsubscribes from real-time updates for the last candle.
+     * @param handler
+     */
     unsubscribeOnLastCandleChanged(handler: (candle: Candle) => void) {
         this.onUpdateObserver.unsubscribe(handler);
     }
