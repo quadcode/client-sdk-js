@@ -12,19 +12,19 @@ npm install @quadcode-tech/client-sdk-js
 
 ```js
 import {
-    ClientSdk,
-    BalanceType,
-    BinaryOptionsDirection,
-    BlitzOptionsDirection,
-    DigitalOptionsDirection,
-    SsidAuthMethod,
-    TurboOptionsDirection
+	ClientSdk,
+	BalanceType,
+	BinaryOptionsDirection,
+	BlitzOptionsDirection,
+	DigitalOptionsDirection,
+	SsidAuthMethod,
+	TurboOptionsDirection
 } from '@quadcode-tech/client-sdk-js'
 
 const sdk = await ClientSdk.create(
-    'wss://ws.trade.example.com/echo/websocket',
-    82,
-    new LoginPasswordAuthMethod('https://api.trade.example.com', "login", "password")
+	'wss://ws.trade.example.com/echo/websocket',
+	82,
+	new LoginPasswordAuthMethod('https://api.trade.example.com', "login", "password")
 )
 ```
 
@@ -34,18 +34,18 @@ The `ClientSdk.create` method accepts an optional fourth parameter for additiona
 
 ```js
 const sdk = await ClientSdk.create(
-    'wss://ws.trade.example.com/echo/websocket',
-    82,
-    new LoginPasswordAuthMethod('https://api.trade.example.com', "login", "password"),
-    {
-        // Optional: Override the default static files host
-        // Default: 'https://static.cdnroute.io/files'
-        staticHost: 'https://your-static-host.com/files',
-        
-        // Optional: Override the default host for API requests
-        // Default: Extracted from the WebSocket URL
-        host: 'https://trade.example.com'
-    }
+	'wss://ws.trade.example.com/echo/websocket',
+	82,
+	new LoginPasswordAuthMethod('https://api.trade.example.com', "login", "password"),
+	{
+		// Optional: Override the default static files host
+		// Default: 'https://static.cdnroute.io/files'
+		staticHost: 'https://your-static-host.com/files',
+
+		// Optional: Override the default host for API requests
+		// Default: Extracted from the WebSocket URL
+		host: 'https://trade.example.com'
+	}
 )
 ```
 
@@ -103,21 +103,21 @@ const blitzOptionsActives = blitzOptions.getActives()
 const blitzOptionsFirstAvailableActive = blitzOptionsActives.find((active) => active.canBeBoughtAt(new Date()))
 
 const callOption = await blitzOptions.buy(
-    blitzOptionsFirstAvailableActive,
-    BlitzOptionsDirection.Call,
-    blitzOptionsFirstAvailableActive.expirationTimes[0],
-    1,
-    balance
+	blitzOptionsFirstAvailableActive,
+	BlitzOptionsDirection.Call,
+	blitzOptionsFirstAvailableActive.expirationTimes[0],
+	1,
+	balance
 )
 
 console.log(callOption)
 
 const putOption = await blitzOptions.buy(
-    blitzOptionsFirstAvailableActive,
-    BlitzOptionsDirection.Put,
-    blitzOptionsFirstAvailableActive.expirationTimes[0],
-    1,
-    balance
+	blitzOptionsFirstAvailableActive,
+	BlitzOptionsDirection.Put,
+	blitzOptionsFirstAvailableActive.expirationTimes[0],
+	1,
+	balance
 )
 
 console.log(putOption)
@@ -132,9 +132,9 @@ const positions = await sdk.positions()
 console.log(positions.getAllPositions().filter((position) => position.instrumentType === InstrumentType.BlitzOption))
 
 positions.subscribeOnUpdatePosition((position) => {
-    if (position.instrumentType === InstrumentType.BlitzOption) {
-        console.log(position)
-    }
+	if (position.instrumentType === InstrumentType.BlitzOption) {
+		console.log(position)
+	}
 })
 ```
 
@@ -196,9 +196,9 @@ const positions = await sdk.positions()
 console.log(positions.getAllPositions().filter((position) => position.instrumentType === InstrumentType.TurboOption))
 
 positions.subscribeOnUpdatePosition((position) => {
-    if (position.instrumentType === InstrumentType.TurboOption) {
-        console.log(position)
-    }
+	if (position.instrumentType === InstrumentType.TurboOption) {
+		console.log(position)
+	}
 })
 ```
 
@@ -255,9 +255,9 @@ const positions = await sdk.positions()
 console.log(positions.getAllPositions().filter((position) => position.instrumentType === InstrumentType.BinaryOption))
 
 binaryOptionsPositions.subscribeOnUpdatePosition((position) => {
-    if (position.instrumentType === InstrumentType.BinaryOption) {
-        console.log(position)
-    }
+	if (position.instrumentType === InstrumentType.BinaryOption) {
+		console.log(position)
+	}
 })
 ```
 
@@ -269,7 +269,7 @@ const digitalOptions = await sdk.digitalOptions()
 const underlyings = digitalOptions.getUnderlyingsAvailableForTradingAt(new Date())
 
 const firstUnderlying = underlyings.find((u) => {
-    return u.activeId === 1
+	return u.activeId === 1
 })
 
 const firstUnderlyingInstruments = await firstUnderlying.instruments()
@@ -294,9 +294,9 @@ const positions = await sdk.positions()
 console.log(digitalOptionsPositions.getAllPositions().filter((position) => position.instrumentType === InstrumentType.DigitalOption))
 
 digitalOptionsPositions.subscribeOnUpdatePosition((position) => {
-    if (position.instrumentType === InstrumentType.DigitalOption) {
-        console.log(position)
-    }
+	if (position.instrumentType === InstrumentType.DigitalOption) {
+		console.log(position)
+	}
 })
 ```
 
@@ -328,7 +328,7 @@ const marginCfd = await sdk.marginCfd() // or marginForex or marginCrypto
 const underlyings = marginCfd.getUnderlyingsAvailableForTradingAt(new Date())
 
 const firstUnderlying = underlyings.find((u) => {
-    return u.activeId === 1
+	return u.activeId === 1
 })
 
 const firstUnderlyingInstruments = await firstUnderlying.instruments()
@@ -343,11 +343,13 @@ console.log(callOption)
 const putOption = await marginCfd.buy(firstInstrument, Margin.Sell, 1, balance)
 console.log(putOption)
 ```
+
 ---
 
 ## Draw chart using RealTimeChartDataLayer and Trading View Lightweight Charts
 
-This example shows how to build a simple real-time chart using [`lightweight-charts`](https://www.npmjs.com/package/lightweight-charts) and the `RealTimeChartDataLayer` facade.
+This example shows how to build a simple real-time chart using [
+`lightweight-charts`](https://www.npmjs.com/package/lightweight-charts) and the `RealTimeChartDataLayer` facade.
 
 ### Prerequisites
 
@@ -358,52 +360,67 @@ npm install @quadcode-tech/client-sdk-js lightweight-charts
 ### Example (React)
 
 ```tsx
-import React, { createContext, FC, useEffect, useRef, useState } from 'react';
-import { ClientSdk, SsidAuthMethod } from '@/vendor/client-sdk-js';
+import React from 'react';
+import {SdkProvider} from './sdkContext';
+import TradingView from './TradingView';
+
+export default function App() {
+    return (
+        <SdkProvider>
+            <TradingView/>
+        </SdkProvider>
+    );
+}
+
+```
+
+```tsx
+import React, {createContext, FC, useEffect, useRef, useState} from 'react';
+import {ClientSdk, SsidAuthMethod} from '@/vendor/client-sdk-js';
 
 interface SdkContextValue {
-  sdk: ClientSdk | null;
-  loading: boolean;
-  error: Error | null;
+    sdk: ClientSdk | null;
+    loading: boolean;
+    error: Error | null;
 }
 
 const SdkContext = createContext<SdkContextValue>({
-  sdk: null,
-  loading: true,
-  error: null,
+    sdk: null,
+    loading: true,
+    error: null,
 });
 
-export const ClientProvider: FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [sdk, setSdk] = useState<ClientSdk | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
-  const hasInitializedRef = useRef(false);
+export const SdkProvider: FC<{ children: React.ReactNode }> = ({children}) => {
+    const [sdk, setSdk] = useState<ClientSdk | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<Error | null>(null);
+    const hasInitializedRef = useRef(false);
 
-  useEffect(() => {
-    if (hasInitializedRef.current) {
-      return;
-    }
+    useEffect(() => {
+        if (hasInitializedRef.current) {
+            return;
+        }
 
-    hasInitializedRef.current = true;
-    const init = async () => {
-      try {
-        const sdk = await ClientSdk.create(
-          'wss://ws.trade.example.com/echo/websocket',
-          82,
-          new SsidAuthMethod('YOUR_SSID')
-        );
+        hasInitializedRef.current = true;
+        const init = async () => {
+            try {
+                const sdk = await ClientSdk.create(
+                    'wss://ws.trade.example.com/echo/websocket',
+                    82,
+                    new SsidAuthMethod('YOUR_SSID')
+                );
 
-        setSdk(sdk);
-      } catch (err) {
-        setError(err instanceof Error ? err : new Error('Unknown error'));
-      } finally {
-        setLoading(false);
-      }
-    };
+                setSdk(sdk);
+            } catch (err) {
+                setError(err instanceof Error ? err : new Error('Unknown error'));
+            } finally {
+                setLoading(false);
+            }
+        };
 
-    init().then();
-  }, []);
-  return <SdkContext.Provider value={{ sdk, loading, error }}>{children}</SdkContext.Provider>;
+        init().then();
+    }, []);
+    return <SdkContext.Provider value={{sdk, loading, error}}>{children}</SdkContext.Provider>;
 };
 
 ```
@@ -521,25 +538,44 @@ This chart will:
 
 ## Versioning
 
-The SDK release versions are in the form of X.Y.Z where X represents the major version. Increasing the major version of an SDK indicates that this SDK underwent significant and substantial changes to support new idioms and patterns in the language. Major versions are introduced when public interfaces (e.g. classes, methods, types, etc.), behaviors, or semantics have changed. Applications need to be updated in order for them to work with the newest SDK version. It is important to update major versions carefully and in accordance with the upgrade guidelines provided in release notes.
+The SDK release versions are in the form of X.Y.Z where X represents the major version. Increasing the major version of
+an SDK indicates that this SDK underwent significant and substantial changes to support new idioms and patterns in the
+language. Major versions are introduced when public interfaces (e.g. classes, methods, types, etc.), behaviors, or
+semantics have changed. Applications need to be updated in order for them to work with the newest SDK version. It is
+important to update major versions carefully and in accordance with the upgrade guidelines provided in release notes.
 
 ## SDK major version lifecycle
 
 The lifecycle for major SDKs versions consists of 5 phases, which are outlined below.
 
-1. Developer Preview (Phase 0) - During this phase, SDKs are not supported, should not be used in production environments, and are meant for early access and feedback purposes only. It is possible for future releases to introduce breaking changes. Once SDK Developers identify a release to be a stable product, it may mark it as a Release Candidate. Release Candidates are ready for GA release unless significant bugs emerge, and will receive full SDK Developers support.
+1. Developer Preview (Phase 0) - During this phase, SDKs are not supported, should not be used in production
+   environments, and are meant for early access and feedback purposes only. It is possible for future releases to
+   introduce breaking changes. Once SDK Developers identify a release to be a stable product, it may mark it as a
+   Release Candidate. Release Candidates are ready for GA release unless significant bugs emerge, and will receive full
+   SDK Developers support.
 
-2. General Availability (GA) (Phase 1) - During this phase, SDKs are fully supported. SDK Developers will provide regular SDK releases that include support for new services, API updates for existing services, as well as bug and security fixes. For Tools, SDK Developers will provide regular releases that include new feature updates and bug fixes. SDK Developers will support the GA version of an SDK for at least 6 months.
+2. General Availability (GA) (Phase 1) - During this phase, SDKs are fully supported. SDK Developers will provide
+   regular SDK releases that include support for new services, API updates for existing services, as well as bug and
+   security fixes. For Tools, SDK Developers will provide regular releases that include new feature updates and bug
+   fixes. SDK Developers will support the GA version of an SDK for at least 6 months.
 
-3. Maintenance Announcement (Phase 2) - SDK Developers will make a public announcement at least 6 months before an SDK enters maintenance mode. During this period, the SDK will continue to be fully supported. Typically, maintenance mode is announced at the same time as the next major version is transitioned to GA.
+3. Maintenance Announcement (Phase 2) - SDK Developers will make a public announcement at least 6 months before an SDK
+   enters maintenance mode. During this period, the SDK will continue to be fully supported. Typically, maintenance mode
+   is announced at the same time as the next major version is transitioned to GA.
 
-4. Maintenance (Phase 3) - During the maintenance mode, SDK Developers limit SDK releases to address critical bug fixes and security issues only. An SDK will not receive API updates for new or existing services, or be updated to support new regions. Maintenance mode has a default duration of 6 months, unless otherwise specified.
+4. Maintenance (Phase 3) - During the maintenance mode, SDK Developers limit SDK releases to address critical bug fixes
+   and security issues only. An SDK will not receive API updates for new or existing services, or be updated to support
+   new regions. Maintenance mode has a default duration of 6 months, unless otherwise specified.
 
-5. End-of-Support (Phase 4) - When an SDK reaches end-of support, it will no longer receive updates or releases. Previously published releases will continue to be available via public package managers and the code will remain on GitHub. The GitHub repository may be archived. Use of an SDK which has reached end-of-support is done at the user's discretion. We recommend users upgrade to the new major version.
+5. End-of-Support (Phase 4) - When an SDK reaches end-of support, it will no longer receive updates or releases.
+   Previously published releases will continue to be available via public package managers and the code will remain on
+   GitHub. The GitHub repository may be archived. Use of an SDK which has reached end-of-support is done at the user's
+   discretion. We recommend users upgrade to the new major version.
 
 ## Communication methods
 
-Maintenance announcements are communicated over (project releases page)[https://github.com/quadcode/client-sdk-js/releases].
+Maintenance announcements are communicated over (project releases
+page)[https://github.com/quadcode/client-sdk-js/releases].
 
 ## For SDK maintainers
 
