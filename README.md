@@ -358,24 +358,70 @@ npm install @quadcode-tech/client-sdk-js lightweight-charts
 ### Example (React)
 
 ```tsx
-import React, { useEffect, useRef } from 'react'
-import { CandlestickSeries, createChart, UTCTimestamp } from 'lightweight-charts';
-import { ClientSdk, SsidAuthMethod } from '@quadcode-tech/client-sdk-js'
+import React, { createContext, FC, useEffect, useRef, useState } from 'react';
+import { ClientSdk, SsidAuthMethod } from '@/vendor/client-sdk-js';
+
+interface SdkContextValue {
+  sdk: ClientSdk | null;
+  loading: boolean;
+  error: Error | null;
+}
+
+const SdkContext = createContext<SdkContextValue>({
+  sdk: null,
+  loading: true,
+  error: null,
+});
+
+export const ClientProvider: FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [sdk, setSdk] = useState<ClientSdk | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+  const hasInitializedRef = useRef(false);
+
+  useEffect(() => {
+    if (hasInitializedRef.current) {
+      return;
+    }
+
+    hasInitializedRef.current = true;
+    const init = async () => {
+      try {
+        const sdk = await ClientSdk.create(
+          'wss://ws.trade.example.com/echo/websocket',
+          82,
+          new SsidAuthMethod('YOUR_SSID')
+        );
+
+        setSdk(sdk);
+      } catch (err) {
+        setError(err instanceof Error ? err : new Error('Unknown error'));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    init().then();
+  }, []);
+  return <SdkContext.Provider value={{ sdk, loading, error }}>{children}</SdkContext.Provider>;
+};
+
+```
+
+```tsx
+import React, {useEffect, useRef} from 'react'
+import {CandlestickSeries, createChart, UTCTimestamp} from 'lightweight-charts';
 
 export default function TradingView() {
+    const {sdk, loading, error} = useSdk();
     const containerRef = useRef(null);
     const earliestLoadedRef = useRef<number | null>(null); // Tracks the earliest loaded candle timestamp
     const fetchingRef = useRef<boolean>(false); // Prevents multiple fetches during scroll
 
     useEffect(() => {
-        const initChart = async () => {
-            // Initialize SDK with local WebSocket endpoint and SSID
-            const sdk = await ClientSdk.create(
-                'wss://ws.trade.example.com/echo/websocket',
-                82,
-                new SsidAuthMethod('YOUR_SSID')
-            );
+        if (loading || !sdk || error) return;
 
+        const initChart = async () => {
             const activeId = 1; // Example active ID (e.g., EUR/USD)
             const candleSize = 10; // Candle size in seconds
             const from = Math.floor(Date.now() / 1000) - 3600; // Load candles for the last 60 minutes
@@ -459,9 +505,9 @@ export default function TradingView() {
         };
 
         initChart();
-    }, []);
+    }, [sdk, loading, error]);
 
-    return <div id="container" ref={containerRef} style={{ width: '100%', height: 400 }} />;
+    return <div id="container" ref={containerRef} style={{width: '100%', height: 400}}/>;
 }
 ```
 
