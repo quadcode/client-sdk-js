@@ -1592,6 +1592,10 @@ export class RealTimeChartDataLayer {
     private firstCandleFrom: number | null = null;
     private currentReject: ((err: any) => void) | null = null;
     private onUpdateObserver: Observable<Candle> = new Observable<Candle>();
+    private onConsistencyUpdateObserver: Observable<{ from: number, to: number }> = new Observable<{
+        from: number,
+        to: number
+    }>();
     private candleQueue: { from: number; resolve: (c: Candle[]) => void; reject: (e: any) => void }[] = [];
     private isProcessingQueue = false;
 
@@ -1643,7 +1647,7 @@ export class RealTimeChartDataLayer {
      * Returns the last candle for the activeId and candleSize.
      */
     getAllCandles(): Candle[] {
-        return [...this.candles];
+        return this.candles;
     }
 
     /**
@@ -1673,7 +1677,7 @@ export class RealTimeChartDataLayer {
 
         try {
             if (this.loadedFrom !== null && from >= this.loadedFrom) {
-                resolve([...this.candles]);
+                resolve(this.candles);
             } else {
                 const to = this.loadedFrom !== null ? this.loadedFrom - 1 : undefined;
                 const newCandles = await this.candlesFacade.getCandles(this.activeId, this.candleSize, {from, to});
@@ -1697,21 +1701,14 @@ export class RealTimeChartDataLayer {
                         }
                     }
 
-                    const gapPromises = missingIntervals.map(async ({from, to}) => {
-                        return await this.candlesConsistencyManager.fetchCandles(from, to, this.activeId, this.candleSize);
-                    });
-
-                    const filledGaps = (await Promise.all(gapPromises)).flat();
-                    const full = [...newCandles, ...filledGaps].sort((a, b) => a.id - b.id);
-
-                    this.candles = [...full, ...this.candles];
-                    this.loadedFrom = Math.min(...full.map(c => c.from));
-
-                    resolve([...this.candles]);
+                    this.recoverGapsAsync(missingIntervals).then();
+                    this.candles = [...newCandles, ...this.candles];
+                    this.loadedFrom = this.loadedFrom !== null ? Math.min(this.loadedFrom, from) : from;
+                    resolve(this.candles);
                 } else {
                     this.candles = [...newCandles, ...this.candles];
                     this.loadedFrom = this.loadedFrom !== null ? Math.min(this.loadedFrom, from) : from;
-                    resolve([...this.candles]);
+                    resolve(this.candles);
                 }
             }
         } catch (error) {
@@ -1752,6 +1749,63 @@ export class RealTimeChartDataLayer {
         this.onUpdateObserver.unsubscribe(handler);
     }
 
+    /**
+     * Subscribes to consistency updates for the candles.
+     * @param handler
+     */
+    subscribeOnConsistencyRecovered(handler: (data: { from: number, to: number }) => void) {
+        this.onConsistencyUpdateObserver.subscribe(handler);
+    }
+
+    /**
+     * Unsubscribes from consistency updates for the candles.
+     * @param handler
+     */
+    unsubscribeOnConsistencyRecovered(handler: (data: { from: number, to: number }) => void) {
+        this.onConsistencyUpdateObserver.unsubscribe(handler);
+    }
+
+    private async recoverGapsAsync(missingIntervals: { from: number; to: number }[]) {
+        const gapPromises = missingIntervals.map(async ({from, to}) => {
+            try {
+                const gapCandles = await this.candlesConsistencyManager
+                    .fetchCandles(from, to, this.activeId, this.candleSize)
+
+                return ({from, to, gapCandles})
+            } catch (err) {
+                console.warn(`Failed to fetch gap from ${from} to ${to}:`, err)
+                return null
+            }
+        });
+
+        function findInsertIndex(candles: Candle[], targetTo: number): number {
+            let low = 0, high = candles.length;
+
+            while (low < high) {
+                const mid = Math.floor((low + high) / 2);
+                if (candles[mid].to < targetTo) {
+                    low = mid + 1;
+                } else {
+                    high = mid;
+                }
+            }
+
+            return low;
+        }
+
+        const results = await Promise.all(gapPromises);
+
+        for (const result of results) {
+            if (!result) continue;
+
+            const {from, to, gapCandles} = result;
+
+            const insertIndex = findInsertIndex(this.candles, to);
+            this.candles.splice(insertIndex, 0, ...gapCandles);
+            this.onConsistencyUpdateObserver.notify({from, to});
+        }
+    }
+
     private async handleRealtimeUpdate(newCandle: CandleGeneratedV1): Promise<void> {
         const last = this.candles[this.candles.length - 1];
         const candle = new Candle(newCandle);
@@ -1767,21 +1821,7 @@ export class RealTimeChartDataLayer {
                 const fromMissing = last.to;
                 const toMissing = candle.from - 1;
 
-                try {
-                    const gapCandles = await this.candlesConsistencyManager.fetchCandles(
-                        fromMissing,
-                        toMissing,
-                        this.activeId,
-                        this.candleSize
-                    );
-
-                    for (const gapCandle of gapCandles) {
-                        this.candles.push(gapCandle);
-                        this.onUpdateObserver.notify(gapCandle);
-                    }
-                } catch (err) {
-                    console.warn('Failed to recover gap in realtime:', err);
-                }
+                this.recoverGapsAsync([{from: fromMissing, to: toMissing}]).then();
             }
 
             this.candles.push(candle);
