@@ -1687,7 +1687,7 @@ export class RealTimeChartDataLayer {
                 );
 
                 if (hasGaps) {
-                    const missingIntervals: { from: number; to: number }[] = [];
+                    const missingIntervals: { fromId: number; toId: number }[] = [];
 
                     for (let i = 1; i < newCandles.length; i++) {
                         const prev = newCandles[i - 1];
@@ -1695,9 +1695,9 @@ export class RealTimeChartDataLayer {
                         const delta = curr.id - prev.id;
 
                         if (delta > 1) {
-                            const fromMissing = prev.to;
-                            const toMissing = curr.from - 1;
-                            missingIntervals.push({from: fromMissing, to: toMissing});
+                            const fromMissing = prev.id;
+                            const toMissing = curr.id - 1;
+                            missingIntervals.push({fromId: fromMissing, toId: toMissing});
                         }
                     }
 
@@ -1765,15 +1765,15 @@ export class RealTimeChartDataLayer {
         this.onConsistencyUpdateObserver.unsubscribe(handler);
     }
 
-    private async recoverGapsAsync(missingIntervals: { from: number; to: number }[]) {
-        const gapPromises = missingIntervals.map(async ({from, to}) => {
+    private async recoverGapsAsync(missingIntervals: { fromId: number; toId: number }[]) {
+        const gapPromises = missingIntervals.map(async ({fromId, toId}) => {
             try {
                 const gapCandles = await this.candlesConsistencyManager
-                    .fetchCandles(from, to, this.activeId, this.candleSize)
+                    .fetchCandles(fromId, toId, this.activeId, this.candleSize)
 
-                return ({from, to, gapCandles})
+                return ({fromId, toId, gapCandles})
             } catch (err) {
-                console.warn(`Failed to fetch gap from ${from} to ${to}:`, err)
+                console.warn(`Failed to fetch gap from ${fromId} to ${toId}:`, err)
                 return null
             }
         });
@@ -1783,7 +1783,7 @@ export class RealTimeChartDataLayer {
 
             while (low < high) {
                 const mid = Math.floor((low + high) / 2);
-                if (candles[mid].to < targetTo) {
+                if (candles[mid].id < targetTo) {
                     low = mid + 1;
                 } else {
                     high = mid;
@@ -1798,9 +1798,11 @@ export class RealTimeChartDataLayer {
         for (const result of results) {
             if (!result) continue;
 
-            const {from, to, gapCandles} = result;
+            const {toId, gapCandles} = result;
 
-            const insertIndex = findInsertIndex(this.candles, to);
+            const insertIndex = findInsertIndex(this.candles, toId);
+            const from = gapCandles[0].from;
+            const to = gapCandles[gapCandles.length - 1].to;
             this.candles.splice(insertIndex, 0, ...gapCandles);
             this.onConsistencyUpdateObserver.notify({from, to});
         }
@@ -1818,10 +1820,10 @@ export class RealTimeChartDataLayer {
             const delta = candle.id - last.id;
 
             if (delta > 1) {
-                const fromMissing = last.to;
-                const toMissing = candle.from - 1;
+                const fromIdMissing = last.id;
+                const toIdMissing = candle.id - 1;
 
-                this.recoverGapsAsync([{from: fromMissing, to: toMissing}]).then();
+                this.recoverGapsAsync([{fromId: fromIdMissing, toId: toIdMissing}]).then();
             }
 
             this.candles.push(candle);
@@ -1848,7 +1850,7 @@ export class RealTimeChartDataLayer {
             );
 
             if (hasGaps) {
-                const missingIntervals: { from: number; to: number }[] = [];
+                const missingIntervals: { fromId: number; toId: number }[] = [];
 
                 for (let i = 1; i < newCandles.length; i++) {
                     const prev = newCandles[i - 1];
@@ -1856,9 +1858,9 @@ export class RealTimeChartDataLayer {
                     const delta = curr.id - prev.id;
 
                     if (delta > 1) {
-                        const fromMissing = prev.to;
-                        const toMissing = curr.from - 1;
-                        missingIntervals.push({from: fromMissing, to: toMissing});
+                        const fromIdMissing = prev.id;
+                        const toIdMissing = curr.id - 1;
+                        missingIntervals.push({fromId: fromIdMissing, toId: toIdMissing});
                     }
                 }
 
@@ -1892,8 +1894,8 @@ class CandlesConsistencyManager {
     private connected: boolean = true;
     private readonly maxRetries = 10;
     private candleQueue: {
-        from: number;
-        to: number,
+        fromId: number;
+        toId: number,
         activeId: number,
         candleSize: number;
         retries: number;
@@ -1919,9 +1921,9 @@ class CandlesConsistencyManager {
         });
     }
 
-    fetchCandles(from: number, to: number, activeId: number, candleSize: number): Promise<Candle[]> {
+    fetchCandles(fromId: number, toId: number, activeId: number, candleSize: number): Promise<Candle[]> {
         return new Promise<Candle[]>((resolve, reject) => {
-            this.candleQueue.push({from, to, activeId, candleSize, retries: 0, resolve, reject});
+            this.candleQueue.push({fromId, toId, activeId, candleSize, retries: 0, resolve, reject});
             this.processQueue().then()
         });
     }
@@ -1936,10 +1938,10 @@ class CandlesConsistencyManager {
         const element = this.candleQueue.shift()!;
         this.currentQueueElement = element;
 
-        const {from, to, activeId, candleSize, retries, resolve, reject} = element;
+        const {fromId, toId, activeId, candleSize, retries, resolve, reject} = element;
 
         try {
-            const candles = await this.candlesFacade.getCandles(activeId, candleSize, {from, to});
+            const candles = await this.candlesFacade.getCandles(activeId, candleSize, {fromId, toId});
             const hasGaps = candles.some((c, i, arr) =>
                 i > 0 && c.id - arr[i - 1].id !== 1
             );
