@@ -1843,6 +1843,28 @@ export class RealTimeChartDataLayer {
                 from: this.loadedTo,
             });
 
+            const hasGaps = newCandles.some((c, i, arr) =>
+                i > 0 && c.id - arr[i - 1].id !== 1
+            );
+
+            if (hasGaps) {
+                const missingIntervals: { from: number; to: number }[] = [];
+
+                for (let i = 1; i < newCandles.length; i++) {
+                    const prev = newCandles[i - 1];
+                    const curr = newCandles[i];
+                    const delta = curr.id - prev.id;
+
+                    if (delta > 1) {
+                        const fromMissing = prev.to;
+                        const toMissing = curr.from - 1;
+                        missingIntervals.push({from: fromMissing, to: toMissing});
+                    }
+                }
+
+                this.recoverGapsAsync(missingIntervals).then();
+            }
+
             for (const candle of newCandles) {
                 const existingIndex = this.candles.findIndex(c => c.from === candle.from);
 
@@ -1922,7 +1944,7 @@ class CandlesConsistencyManager {
                 i > 0 && c.id - arr[i - 1].id !== 1
             );
 
-            if (hasGaps) {
+            if (hasGaps || candles.length === 0) {
                 if (retries < this.maxRetries) {
                     setTimeout(() => {
                         this.candleQueue.unshift({...element, retries: retries + 1});
