@@ -136,6 +136,12 @@ export class ClientSdk {
     private realTimeChartDataLayerFacade: Record<number, Record<number, Promise<RealTimeChartDataLayer>>> | undefined
 
     /**
+     * Consistency manager instance.
+     * @private
+     */
+    private candlesConsistencyManagerFacade: CandlesConsistencyManager | undefined
+
+    /**
      * Creates instance of class.
      * @param userProfile - Information about the user on whose behalf your application is working.
      * @param wsApiClient - Instance of WebSocket API client.
@@ -460,14 +466,12 @@ export class ClientSdk {
         }
 
         if (!this.realTimeChartDataLayerFacade[activeId][size]) {
-            const creationPromise = (async () => {
+            this.realTimeChartDataLayerFacade[activeId][size] = (async () => {
                 const candles = await this.candles();
                 const wsConnectionState = await this.wsConnectionState();
-                const layer = new RealTimeChartDataLayer(this.wsApiClient, wsConnectionState, candles, activeId, size);
-                return layer;
+                const consistencyManager = await this.candlesConsistencyManager();
+                return new RealTimeChartDataLayer(this.wsApiClient, wsConnectionState, consistencyManager, candles, activeId, size);
             })();
-
-            this.realTimeChartDataLayerFacade[activeId][size] = creationPromise;
         }
 
         return this.realTimeChartDataLayerFacade[activeId][size];
@@ -514,6 +518,16 @@ export class ClientSdk {
             this.translationsFacade = await Translations.create(this.host)
         }
         return this.translationsFacade
+    }
+
+    private async candlesConsistencyManager(): Promise<CandlesConsistencyManager> {
+        if (!this.candlesConsistencyManagerFacade) {
+            const candles = await this.candles();
+            const wsConnectionState = await this.wsConnectionState();
+            this.candlesConsistencyManagerFacade = new CandlesConsistencyManager(wsConnectionState, candles);
+        }
+
+        return this.candlesConsistencyManagerFacade;
     }
 }
 
@@ -1566,6 +1580,7 @@ export class Currency {
 export class RealTimeChartDataLayer {
     private readonly wsApiClient: WsApiClient;
     private readonly candlesFacade: Candles;
+    private readonly candlesConsistencyManager: CandlesConsistencyManager;
     private readonly activeId: number;
     private readonly candleSize: number;
 
@@ -1580,9 +1595,10 @@ export class RealTimeChartDataLayer {
     private candleQueue: { from: number; resolve: (c: Candle[]) => void; reject: (e: any) => void }[] = [];
     private isProcessingQueue = false;
 
-    constructor(wsApiClient: WsApiClient, wsConnectionState: WsConnectionState, candles: Candles, activeId: number, candleSize: number) {
+    constructor(wsApiClient: WsApiClient, wsConnectionState: WsConnectionState, consistencyManager: CandlesConsistencyManager, candles: Candles, activeId: number, candleSize: number) {
         this.wsApiClient = wsApiClient;
         this.candlesFacade = candles;
+        this.candlesConsistencyManager = consistencyManager;
         this.activeId = activeId;
         this.candleSize = candleSize;
 
@@ -1662,18 +1678,48 @@ export class RealTimeChartDataLayer {
                 const to = this.loadedFrom !== null ? this.loadedFrom - 1 : undefined;
                 const newCandles = await this.candlesFacade.getCandles(this.activeId, this.candleSize, {from, to});
 
-                this.candles = [...newCandles, ...this.candles];
-                this.loadedFrom = this.loadedFrom !== null ? Math.min(this.loadedFrom, from) : from;
+                const hasGaps = newCandles.some((c, i, arr) =>
+                    i > 0 && c.id - arr[i - 1].id !== 1
+                );
 
-                resolve([...this.candles]);
+                if (hasGaps) {
+                    const missingIntervals: { from: number; to: number }[] = [];
+
+                    for (let i = 1; i < newCandles.length; i++) {
+                        const prev = newCandles[i - 1];
+                        const curr = newCandles[i];
+                        const delta = curr.id - prev.id;
+
+                        if (delta > 1) {
+                            const fromMissing = prev.to;
+                            const toMissing = curr.from - 1;
+                            missingIntervals.push({from: fromMissing, to: toMissing});
+                        }
+                    }
+
+                    const gapPromises = missingIntervals.map(async ({from, to}) => {
+                        return await this.candlesConsistencyManager.fetchCandles(from, to, this.activeId, this.candleSize);
+                    });
+
+                    const filledGaps = (await Promise.all(gapPromises)).flat();
+                    const full = [...newCandles, ...filledGaps].sort((a, b) => a.id - b.id);
+
+                    this.candles = [...full, ...this.candles];
+                    this.loadedFrom = Math.min(...full.map(c => c.from));
+
+                    resolve([...this.candles]);
+                } else {
+                    this.candles = [...newCandles, ...this.candles];
+                    this.loadedFrom = this.loadedFrom !== null ? Math.min(this.loadedFrom, from) : from;
+                    resolve([...this.candles]);
+                }
             }
         } catch (error) {
             reject(error);
         } finally {
             this.isProcessingQueue = false;
             this.currentReject = null;
-            this.processQueue().then(() => {
-            })
+            this.processQueue().then()
         }
     }
 
@@ -1706,19 +1752,41 @@ export class RealTimeChartDataLayer {
         this.onUpdateObserver.unsubscribe(handler);
     }
 
-    private handleRealtimeUpdate(newCandle: CandleGeneratedV1): void {
+    private async handleRealtimeUpdate(newCandle: CandleGeneratedV1): Promise<void> {
         const last = this.candles[this.candles.length - 1];
-
-        const candle = new Candle(newCandle)
+        const candle = new Candle(newCandle);
 
         if (!last) {
             this.candles.push(candle);
         } else if (newCandle.from === last.from) {
             this.candles[this.candles.length - 1] = candle;
         } else if (newCandle.from > last.from) {
+            const delta = candle.id - last.id;
+
+            if (delta > 1) {
+                const fromMissing = last.to;
+                const toMissing = candle.from - 1;
+
+                try {
+                    const gapCandles = await this.candlesConsistencyManager.fetchCandles(
+                        fromMissing,
+                        toMissing,
+                        this.activeId,
+                        this.candleSize
+                    );
+
+                    for (const gapCandle of gapCandles) {
+                        this.candles.push(gapCandle);
+                        this.onUpdateObserver.notify(gapCandle);
+                    }
+                } catch (err) {
+                    console.warn('Failed to recover gap in realtime:', err);
+                }
+            }
+
             this.candles.push(candle);
-            if (this.loadedTo === null || newCandle.to > this.loadedTo) {
-                this.loadedTo = newCandle.to;
+            if (this.loadedTo === null || candle.to > this.loadedTo) {
+                this.loadedTo = candle.to;
             }
         } else {
             return;
@@ -1752,6 +1820,93 @@ export class RealTimeChartDataLayer {
             }
         } catch (error) {
             console.error('Failed to load missed candles after reconnect:', error);
+        }
+    }
+}
+
+class CandlesConsistencyManager {
+    private readonly candlesFacade: Candles;
+    private isProcessingQueue = false;
+    private connected: boolean = true;
+    private readonly maxRetries = 10;
+    private candleQueue: {
+        from: number;
+        to: number,
+        activeId: number,
+        candleSize: number;
+        retries: number;
+        resolve: (c: Candle[]) => void;
+        reject: (e: any) => void
+    }[] = [];
+    private currentQueueElement: typeof this.candleQueue[number] | null = null;
+
+    constructor(wsConnectionState: WsConnectionState, candles: Candles) {
+        this.candlesFacade = candles;
+
+        wsConnectionState.subscribeOnStateChanged((state: WsConnectionStateEnum) => {
+            switch (state) {
+                case WsConnectionStateEnum.Connected:
+                    this.connected = true;
+                    this.processQueue().then();
+                    break;
+                case WsConnectionStateEnum.Disconnected:
+                    this.connected = false;
+                    this.isProcessingQueue = false;
+                    break;
+            }
+        });
+    }
+
+    fetchCandles(from: number, to: number, activeId: number, candleSize: number): Promise<Candle[]> {
+        return new Promise<Candle[]>((resolve, reject) => {
+            this.candleQueue.push({from, to, activeId, candleSize, retries: 0, resolve, reject});
+            this.processQueue().then()
+        });
+    }
+
+    private async processQueue() {
+        if (this.isProcessingQueue || this.candleQueue.length === 0 || !this.connected) {
+            return;
+        }
+
+        this.isProcessingQueue = true;
+
+        const element = this.candleQueue.shift()!;
+        this.currentQueueElement = element;
+
+        const {from, to, activeId, candleSize, retries, resolve, reject} = element;
+
+        try {
+            const candles = await this.candlesFacade.getCandles(activeId, candleSize, {from, to});
+            const hasGaps = candles.some((c, i, arr) =>
+                i > 0 && c.id - arr[i - 1].id !== 1
+            );
+
+            if (hasGaps) {
+                if (retries < this.maxRetries) {
+                    setTimeout(() => {
+                        this.candleQueue.unshift({...element, retries: retries + 1});
+                        this.processQueue().then();
+                    }, 200 + Math.random() * 300);
+                } else {
+                    reject(new Error(`Candles have gaps. Max retries reached (${this.maxRetries})`));
+                }
+            } else {
+                resolve(candles);
+            }
+        } catch (error) {
+            if (retries < this.maxRetries) {
+                setTimeout(() => {
+                    this.candleQueue.unshift({...element, retries: retries + 1});
+                    this.processQueue().then();
+                }, 200 + Math.random() * 300);
+            } else {
+                reject(new Error(`Failed to fetch candles after ${this.maxRetries} retries: ${error}`));
+            }
+        } finally {
+            this.isProcessingQueue = false;
+            this.currentQueueElement = null;
+            setTimeout(() => this.processQueue(), 0);
         }
     }
 }
@@ -6284,7 +6439,7 @@ class WsApiClient {
     private reconnecting = false
     private connection: WebSocket | undefined
     private lastRequestId: number = 0
-    private requests: Map<string, RequestMetaData> = new Map<string, RequestMetaData>()
+    private pendingRequests: Map<string, RequestMetaData> = new Map<string, RequestMetaData>()
     private subscriptions: Map<string, SubscriptionMetaData[]> = new Map<string, SubscriptionMetaData[]>()
     public onConnectionStateChanged: ((state: WsConnectionStateEnum) => void) | undefined
     private timeSyncInterval: NodeJS.Timeout | undefined
@@ -6366,8 +6521,8 @@ class WsApiClient {
                     status: number
                 } = JSON.parse(data)
                 if (frame.request_id) {
-                    if (this.requests.has(frame.request_id)) {
-                        const requestMetaData = this.requests.get(frame.request_id)!
+                    if (this.pendingRequests.has(frame.request_id)) {
+                        const requestMetaData = this.pendingRequests.get(frame.request_id)!
                         if (frame.status >= 4000) {
                             requestMetaData.reject(new Error(`request is failed with status ${frame.status} and message: ${frame.msg.message}`))
                             return
@@ -6386,7 +6541,7 @@ class WsApiClient {
                         } catch (e) {
                             requestMetaData.reject(e)
                         } finally {
-                            this.requests.delete(frame.request_id)
+                            this.pendingRequests.delete(frame.request_id)
                         }
                     }
                 } else if (frame.microserviceName && frame.name) {
@@ -6403,7 +6558,7 @@ class WsApiClient {
                     this.updateCurrentTime(frame.msg)
                     return
                 } else if (frame.name && frame.name === 'authenticated' && frame.msg === false) {
-                    for (const [, requestMetaData] of this.requests) {
+                    for (const [, requestMetaData] of this.pendingRequests) {
                         if (requestMetaData.request instanceof Authenticate) {
                             requestMetaData.reject(new Error('authentication is failed'))
                         }
@@ -6472,7 +6627,6 @@ class WsApiClient {
         this.onConnectionStateChanged?.(WsConnectionStateEnum.Disconnected);
         this.reconnecting = false;
         this.lastRequestId = 0;
-        this.requests.clear();
         this.subscriptions.clear();
     }
 
@@ -6486,6 +6640,7 @@ class WsApiClient {
                 }
             } finally {
                 this.connection = undefined;
+                this.rejectAllPendingRequests(new Error('WebSocket connection closed unexpectedly'));
             }
         }
     }
@@ -6536,8 +6691,15 @@ class WsApiClient {
         }))
 
         return new Promise<T>((resolve, reject) => {
-            this.requests.set(requestId, new RequestMetaData(request, resolve, reject))
+            this.pendingRequests.set(requestId, new RequestMetaData(request, resolve, reject))
         })
+    }
+
+    private rejectAllPendingRequests(reason: Error) {
+        for (const [, meta] of this.pendingRequests) {
+            meta.reject(reason);
+        }
+        this.pendingRequests.clear();
     }
 
     resubscribeAll(): Promise<Result[]> {
