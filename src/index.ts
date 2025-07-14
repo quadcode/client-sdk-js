@@ -1870,39 +1870,35 @@ export class RealTimeChartDataLayer {
     }
 
     private async handleRealtimeUpdate(newCandle: CandleGeneratedV1): Promise<void> {
-        await this.gapMutationLock;
-
-        const last = this.candles[this.candles.length - 1];
         const candle = new Candle(newCandle);
 
-        if (!last) {
-            this.candles.push(candle);
-        } else if (newCandle.from === last.from) {
-            this.candles[this.candles.length - 1] = candle;
-        } else if (newCandle.from > last.from) {
-            const delta = candle.id - last.id;
+        const mutate = async () => {
+            const last = this.candles[this.candles.length - 1];
 
-            if (delta > 1) {
-                const fromIdMissing = last.id;
-                const toIdMissing = candle.id;
+            if (!last) {
+                this.candles.push(candle);
+            } else if (newCandle.from === last.from) {
+                this.candles[this.candles.length - 1] = candle;
+            } else if (newCandle.from > last.from) {
+                const delta = candle.id - last.id;
 
-                this.recoverGapsAsync([{fromId: fromIdMissing, toId: toIdMissing}]).then();
-            } else if (last.at && last.to !== last.at / 1000_000_000) {
-                const fromIdMissing = last.id;
-                const toIdMissing = candle.id;
+                if (delta > 1 || (last.at && last.to !== last.at / 1_000_000_000)) {
+                    await this.recoverGapsAsync([{fromId: last.id, toId: candle.id}]);
+                }
 
-                this.recoverGapsAsync([{fromId: fromIdMissing, toId: toIdMissing}]).then();
+                this.candles.push(candle);
+                if (this.loadedTo === null || candle.to > this.loadedTo) {
+                    this.loadedTo = candle.to;
+                }
+            } else {
+                return;
             }
 
-            this.candles.push(candle);
-            if (this.loadedTo === null || candle.to > this.loadedTo) {
-                this.loadedTo = candle.to;
-            }
-        } else {
-            return;
-        }
+            this.onUpdateObserver.notify(candle);
+        };
 
-        this.onUpdateObserver.notify(candle);
+        this.gapMutationLock = this.gapMutationLock.then(() => mutate());
+        await this.gapMutationLock;
     }
 
     private async loadMissedCandlesOnReconnect() {
