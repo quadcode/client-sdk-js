@@ -1598,8 +1598,7 @@ export class RealTimeChartDataLayer {
     }>();
     private candleQueue: { from: number; resolve: (c: Candle[]) => void; reject: (e: any) => void }[] = [];
     private isProcessingQueue = false;
-    private isRecoveringGaps = false;
-    private gapRecoveryLock: Promise<void> | null = null;
+    private gapMutationLock: Promise<void> = Promise.resolve();
 
     constructor(wsApiClient: WsApiClient, wsConnectionState: WsConnectionState, consistencyManager: CandlesConsistencyManager, candles: Candles, activeId: number, candleSize: number) {
         this.wsApiClient = wsApiClient;
@@ -1808,46 +1807,39 @@ export class RealTimeChartDataLayer {
     }
 
     private async recoverGapsAsync(missingIntervals: { fromId: number; toId: number }[]) {
-        if (this.isRecoveringGaps) {
-            await this.gapRecoveryLock;
-        }
+        const gapPromises = missingIntervals.map(async ({fromId, toId}) => {
+            try {
+                const gapCandles = await this.candlesConsistencyManager
+                    .fetchCandles(fromId, toId, this.activeId, this.candleSize)
 
-        this.isRecoveringGaps = true;
-        this.gapRecoveryLock = (async () => {
-            const gapPromises = missingIntervals.map(async ({fromId, toId}) => {
-                try {
-                    const gapCandles = await this.candlesConsistencyManager
-                        .fetchCandles(fromId, toId, this.activeId, this.candleSize)
+                return ({fromId, toId, gapCandles})
+            } catch (err) {
+                console.warn(`Failed to fetch gap from ${fromId} to ${toId}:`, err)
+                return null
+            }
+        });
 
-                    return ({fromId, toId, gapCandles})
-                } catch (err) {
-                    console.warn(`Failed to fetch gap from ${fromId} to ${toId}:`, err)
-                    return null
+        function findInsertIndex(candles: Candle[], targetTo: number): number {
+            let low = 0, high = candles.length;
+
+            while (low < high) {
+                const mid = Math.floor((low + high) / 2);
+                if (candles[mid].id < targetTo) {
+                    low = mid + 1;
+                } else {
+                    high = mid;
                 }
-            });
-
-            function findInsertIndex(candles: Candle[], targetTo: number): number {
-                let low = 0, high = candles.length;
-
-                while (low < high) {
-                    const mid = Math.floor((low + high) / 2);
-                    if (candles[mid].id < targetTo) {
-                        low = mid + 1;
-                    } else {
-                        high = mid;
-                    }
-                }
-
-                return low;
             }
 
-            const results = await Promise.all(gapPromises);
+            return low;
+        }
 
-            for (const result of results) {
-                if (!result) continue;
+        const results = await Promise.all(gapPromises);
 
-                const {toId, gapCandles} = result;
+        const mutations = results.map((result) => {
+            const {toId, gapCandles} = result;
 
+            return () => {
                 let insertIndex = findInsertIndex(this.candles, toId);
                 const from = gapCandles[0].from;
                 const to = gapCandles[gapCandles.length - 1].to;
@@ -1864,14 +1856,20 @@ export class RealTimeChartDataLayer {
 
                 this.candles.splice(insertIndex, 0, ...gapCandles);
                 this.onConsistencyUpdateObserver.notify({from, to});
-            }
-        })();
+            };
+        });
 
-        await this.gapRecoveryLock;
-        this.isRecoveringGaps = false;
+        for (const mutate of mutations) {
+            this.gapMutationLock = this.gapMutationLock.then(() => {
+                mutate();
+            });
+            await this.gapMutationLock;
+        }
     }
 
     private async handleRealtimeUpdate(newCandle: CandleGeneratedV1): Promise<void> {
+        await this.gapMutationLock;
+
         const last = this.candles[this.candles.length - 1];
         const candle = new Candle(newCandle);
 
