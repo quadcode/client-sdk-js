@@ -1720,11 +1720,11 @@ export class RealTimeChartDataLayer {
 
                         if (delta > maxDelta) {
                             const fromIdMissing = currentFirstCandle.id - maxDelta;
-                            const toIdMissing = currentFirstCandle.id - 1;
+                            const toIdMissing = currentFirstCandle.id;
 
                             missingIntervals.push({fromId: fromIdMissing, toId: toIdMissing});
                         } else {
-                            missingIntervals.push({fromId: newLastCandle.id + 1, toId: currentFirstCandle.id - 1})
+                            missingIntervals.push({fromId: newLastCandle.id, toId: currentFirstCandle.id})
                         }
                     }
                 }
@@ -1736,8 +1736,8 @@ export class RealTimeChartDataLayer {
                         const delta = curr.id - prev.id;
 
                         if (delta > 1) {
-                            const fromMissing = prev.id + 1;
-                            const toMissing = curr.id - 1;
+                            const fromMissing = prev.id;
+                            const toMissing = curr.id;
                             missingIntervals.push({fromId: fromMissing, toId: toMissing});
                         }
                     }
@@ -1840,9 +1840,20 @@ export class RealTimeChartDataLayer {
 
             const {toId, gapCandles} = result;
 
-            const insertIndex = findInsertIndex(this.candles, toId);
+            let insertIndex = findInsertIndex(this.candles, toId);
             const from = gapCandles[0].from;
             const to = gapCandles[gapCandles.length - 1].to;
+
+            if (insertIndex === 0) {
+                this.candles.splice(insertIndex, 1);
+            } else if (insertIndex === this.candles.length) {
+                this.candles.splice(insertIndex - 1, 1);
+                insertIndex -= 1
+            } else {
+                this.candles.splice(insertIndex - 1, 2);
+                insertIndex -= 1
+            }
+
             this.candles.splice(insertIndex, 0, ...gapCandles);
             this.onConsistencyUpdateObserver.notify({from, to});
         }
@@ -1860,8 +1871,8 @@ export class RealTimeChartDataLayer {
             const delta = candle.id - last.id;
 
             if (delta > 1) {
-                const fromIdMissing = last.id + 1;
-                const toIdMissing = candle.id - 1;
+                const fromIdMissing = last.id;
+                const toIdMissing = candle.id;
 
                 this.recoverGapsAsync([{fromId: fromIdMissing, toId: toIdMissing}]).then();
             }
@@ -1898,8 +1909,8 @@ export class RealTimeChartDataLayer {
                     const delta = curr.id - prev.id;
 
                     if (delta > 1) {
-                        const fromIdMissing = prev.id + 1;
-                        const toIdMissing = curr.id - 1;
+                        const fromIdMissing = prev.id;
+                        const toIdMissing = curr.id;
                         missingIntervals.push({fromId: fromIdMissing, toId: toIdMissing});
                     }
                 }
