@@ -1836,28 +1836,30 @@ export class RealTimeChartDataLayer {
 
         const results = await Promise.all(gapPromises);
 
-        const mutations = results.map((result) => {
-            const {toId, gapCandles} = result;
+        const mutations = results
+            .filter((r): r is { fromId: number; toId: number; gapCandles: Candle[] } => !!r)
+            .map((result) => {
+                const {toId, gapCandles} = result;
 
-            return () => {
-                let insertIndex = findInsertIndex(this.candles, toId);
-                const from = gapCandles[0].from;
-                const to = gapCandles[gapCandles.length - 1].to;
+                return () => {
+                    let insertIndex = findInsertIndex(this.candles, toId);
+                    const from = gapCandles[0].from;
+                    const to = gapCandles[gapCandles.length - 1].to;
 
-                if (insertIndex === 0) {
-                    this.candles.splice(insertIndex, 1);
-                } else if (insertIndex === this.candles.length) {
-                    this.candles.splice(insertIndex - 1, 1);
-                    insertIndex -= 1
-                } else {
-                    this.candles.splice(insertIndex - 1, 2);
-                    insertIndex -= 1
-                }
+                    if (insertIndex === 0) {
+                        this.candles.splice(insertIndex, 1);
+                    } else if (insertIndex === this.candles.length) {
+                        this.candles.splice(insertIndex - 1, 1);
+                        insertIndex -= 1
+                    } else {
+                        this.candles.splice(insertIndex - 1, 2);
+                        insertIndex -= 1
+                    }
 
-                this.candles.splice(insertIndex, 0, ...gapCandles);
-                this.onConsistencyUpdateObserver.notify({from, to});
-            };
-        });
+                    this.candles.splice(insertIndex, 0, ...gapCandles);
+                    this.onConsistencyUpdateObserver.notify({from, to});
+                };
+            });
 
         for (const mutate of mutations) {
             this.gapMutationLock = this.gapMutationLock.then(() => {
