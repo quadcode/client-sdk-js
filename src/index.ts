@@ -1773,10 +1773,9 @@ export class RealTimeChartDataLayer {
                 }
 
                 if (this.connected) {
-                    this.handleRealtimeUpdate(event)
+                    this.handleRealtimeUpdate(event).then()
                 }
-            }).then(() => {
-            })
+            }).then()
         }
 
         this.onUpdateObserver.subscribe(handler);
@@ -6629,11 +6628,13 @@ class WsApiClient {
                     if (this.pendingRequests.has(frame.request_id)) {
                         const requestMetaData = this.pendingRequests.get(frame.request_id)!
                         if (frame.status >= 4000) {
+                            this.pendingRequests.delete(frame.request_id)
                             requestMetaData.reject(new Error(`request is failed with status ${frame.status} and message: ${frame.msg.message}`))
                             return
                         }
 
                         if (frame.name === 'result' && !requestMetaData.request.resultOnly()) {
+                            this.pendingRequests.delete(frame.request_id)
                             const result = new Result(frame.msg)
                             if (!result.success) {
                                 requestMetaData.reject(`request result is not successful`)
