@@ -1598,7 +1598,7 @@ export class RealTimeChartDataLayer {
     }>();
     private candleQueue: { from: number; resolve: (c: Candle[]) => void; reject: (e: any) => void }[] = [];
     private isProcessingQueue = false;
-    private gapMutationLock: Promise<void> = Promise.resolve();
+    private candlesMutationsLock: Promise<void> = Promise.resolve();
 
     constructor(wsApiClient: WsApiClient, wsConnectionState: WsConnectionState, consistencyManager: CandlesConsistencyManager, candles: Candles, activeId: number, candleSize: number) {
         this.wsApiClient = wsApiClient;
@@ -1862,10 +1862,10 @@ export class RealTimeChartDataLayer {
             });
 
         for (const mutate of mutations) {
-            this.gapMutationLock = this.gapMutationLock.then(() => {
+            this.candlesMutationsLock = this.candlesMutationsLock.then(() => {
                 mutate();
             });
-            await this.gapMutationLock;
+            await this.candlesMutationsLock;
         }
     }
 
@@ -1897,8 +1897,8 @@ export class RealTimeChartDataLayer {
             this.onUpdateObserver.notify(candle);
         };
 
-        this.gapMutationLock = this.gapMutationLock.then(() => mutate());
-        await this.gapMutationLock;
+        this.candlesMutationsLock = this.candlesMutationsLock.then(() => mutate());
+        await this.candlesMutationsLock;
     }
 
     private async loadMissedCandlesOnReconnect() {
