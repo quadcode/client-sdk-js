@@ -1598,6 +1598,8 @@ export class RealTimeChartDataLayer {
     }>();
     private candleQueue: { from: number; resolve: (c: Candle[]) => void; reject: (e: any) => void }[] = [];
     private isProcessingQueue = false;
+    private isRecoveringGaps = false;
+    private gapRecoveryLock: Promise<void> | null = null;
 
     constructor(wsApiClient: WsApiClient, wsConnectionState: WsConnectionState, consistencyManager: CandlesConsistencyManager, candles: Candles, activeId: number, candleSize: number) {
         this.wsApiClient = wsApiClient;
@@ -1806,57 +1808,67 @@ export class RealTimeChartDataLayer {
     }
 
     private async recoverGapsAsync(missingIntervals: { fromId: number; toId: number }[]) {
-        const gapPromises = missingIntervals.map(async ({fromId, toId}) => {
-            try {
-                const gapCandles = await this.candlesConsistencyManager
-                    .fetchCandles(fromId, toId, this.activeId, this.candleSize)
+        if (this.isRecoveringGaps) {
+            await this.gapRecoveryLock;
+        }
 
-                return ({fromId, toId, gapCandles})
-            } catch (err) {
-                console.warn(`Failed to fetch gap from ${fromId} to ${toId}:`, err)
-                return null
-            }
-        });
+        this.isRecoveringGaps = true;
+        this.gapRecoveryLock = (async () => {
+            const gapPromises = missingIntervals.map(async ({fromId, toId}) => {
+                try {
+                    const gapCandles = await this.candlesConsistencyManager
+                        .fetchCandles(fromId, toId, this.activeId, this.candleSize)
 
-        function findInsertIndex(candles: Candle[], targetTo: number): number {
-            let low = 0, high = candles.length;
-
-            while (low < high) {
-                const mid = Math.floor((low + high) / 2);
-                if (candles[mid].id < targetTo) {
-                    low = mid + 1;
-                } else {
-                    high = mid;
+                    return ({fromId, toId, gapCandles})
+                } catch (err) {
+                    console.warn(`Failed to fetch gap from ${fromId} to ${toId}:`, err)
+                    return null
                 }
+            });
+
+            function findInsertIndex(candles: Candle[], targetTo: number): number {
+                let low = 0, high = candles.length;
+
+                while (low < high) {
+                    const mid = Math.floor((low + high) / 2);
+                    if (candles[mid].id < targetTo) {
+                        low = mid + 1;
+                    } else {
+                        high = mid;
+                    }
+                }
+
+                return low;
             }
 
-            return low;
-        }
+            const results = await Promise.all(gapPromises);
 
-        const results = await Promise.all(gapPromises);
+            for (const result of results) {
+                if (!result) continue;
 
-        for (const result of results) {
-            if (!result) continue;
+                const {toId, gapCandles} = result;
 
-            const {toId, gapCandles} = result;
+                let insertIndex = findInsertIndex(this.candles, toId);
+                const from = gapCandles[0].from;
+                const to = gapCandles[gapCandles.length - 1].to;
 
-            let insertIndex = findInsertIndex(this.candles, toId);
-            const from = gapCandles[0].from;
-            const to = gapCandles[gapCandles.length - 1].to;
+                if (insertIndex === 0) {
+                    this.candles.splice(insertIndex, 1);
+                } else if (insertIndex === this.candles.length) {
+                    this.candles.splice(insertIndex - 1, 1);
+                    insertIndex -= 1
+                } else {
+                    this.candles.splice(insertIndex - 1, 2);
+                    insertIndex -= 1
+                }
 
-            if (insertIndex === 0) {
-                this.candles.splice(insertIndex, 1);
-            } else if (insertIndex === this.candles.length) {
-                this.candles.splice(insertIndex - 1, 1);
-                insertIndex -= 1
-            } else {
-                this.candles.splice(insertIndex - 1, 2);
-                insertIndex -= 1
+                this.candles.splice(insertIndex, 0, ...gapCandles);
+                this.onConsistencyUpdateObserver.notify({from, to});
             }
+        })();
 
-            this.candles.splice(insertIndex, 0, ...gapCandles);
-            this.onConsistencyUpdateObserver.notify({from, to});
-        }
+        await this.gapRecoveryLock;
+        this.isRecoveringGaps = false;
     }
 
     private async handleRealtimeUpdate(newCandle: CandleGeneratedV1): Promise<void> {
@@ -1871,6 +1883,11 @@ export class RealTimeChartDataLayer {
             const delta = candle.id - last.id;
 
             if (delta > 1) {
+                const fromIdMissing = last.id;
+                const toIdMissing = candle.id;
+
+                this.recoverGapsAsync([{fromId: fromIdMissing, toId: toIdMissing}]).then();
+            } else if (last.at && last.to !== last.at / 1000_000_000) {
                 const fromIdMissing = last.id;
                 const toIdMissing = candle.id;
 
