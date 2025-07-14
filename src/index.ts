@@ -1700,7 +1700,7 @@ export class RealTimeChartDataLayer {
                 );
 
                 const missingIntervals: { fromId: number; toId: number }[] = [];
-                if (newCandles.length > 0 && this.candles.length > 0 && newCandles.length < 1000 && this.loadedFrom !== null) {
+                if (newCandles.length > 0 && this.candles.length > 0 && this.loadedFrom !== null) {
                     const currentFirstCandle = this.candles[0];
                     const newLastCandle = newCandles[newCandles.length - 1];
 
