@@ -1692,7 +1692,15 @@ export class RealTimeChartDataLayer {
             if (this.loadedFrom !== null && from >= this.loadedFrom) {
                 resolve(this.candles);
             } else {
-                const to = this.loadedFrom !== null ? this.loadedFrom - 1 : undefined;
+                let to;
+                if (this.loadedFrom) {
+                    to = this.loadedFrom - 1;
+                } else if (this.candles.length > 0) {
+                    to = this.candles[0].from - 1;
+                } else {
+                    to = undefined;
+                }
+
                 const newCandles = await this.candlesFacade.getCandles(this.activeId, this.candleSize, {from, to});
 
                 let hasGaps = newCandles.some((c, i, arr) =>
