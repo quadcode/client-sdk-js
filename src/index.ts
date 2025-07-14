@@ -1652,6 +1652,19 @@ export class RealTimeChartDataLayer {
 
     /**
      * Fetch candles for the activeId and candleSize.
+     *
+     * Limitation: A maximum of 1000 candles can be fetched in a single request.
+     * Therefore, the 'from' parameter must be chosen so that the time range between 'from' and 'to'
+     * does not exceed 1000 * candleSize seconds.
+     *
+     * Formula:
+     *   (to - from) <= 1000 * candleSize
+     *
+     * If 'to' is not provided, it defaults to the latest loaded candle or the current time.
+     *
+     * Example: If candleSize = 60 (1 minute), the time range between 'from' and 'to'
+     * must be less than or equal to 60,000 seconds (~16.6 hours).
+     *
      * @param from - UNIX timestamp in seconds from which to fetch candles.
      */
     async fetchAllCandles(from: number): Promise<Candle[]> {
@@ -1682,13 +1695,33 @@ export class RealTimeChartDataLayer {
                 const to = this.loadedFrom !== null ? this.loadedFrom - 1 : undefined;
                 const newCandles = await this.candlesFacade.getCandles(this.activeId, this.candleSize, {from, to});
 
-                const hasGaps = newCandles.some((c, i, arr) =>
+                let hasGaps = newCandles.some((c, i, arr) =>
                     i > 0 && c.id - arr[i - 1].id !== 1
                 );
 
-                if (hasGaps) {
-                    const missingIntervals: { fromId: number; toId: number }[] = [];
+                const missingIntervals: { fromId: number; toId: number }[] = [];
+                if (newCandles.length > 0 && newCandles.length < 1000 && this.loadedFrom !== null && !hasGaps) {
+                    const currentFirstCandle = this.candles[0];
+                    const newLastCandle = newCandles[newCandles.length - 1];
 
+                    const delta = currentFirstCandle.id - newLastCandle.id;
+                    const maxDelta = 1000 - newCandles.length;
+
+                    if (delta > 1) {
+                        hasGaps = true
+
+                        if (delta > maxDelta) {
+                            const fromIdMissing = currentFirstCandle.id - maxDelta;
+                            const toIdMissing = currentFirstCandle.id - 1;
+
+                            missingIntervals.push({fromId: fromIdMissing, toId: toIdMissing});
+                        } else {
+                            missingIntervals.push({fromId: newLastCandle.id, toId: currentFirstCandle.id - 1})
+                        }
+                    }
+                }
+
+                if (hasGaps) {
                     for (let i = 1; i < newCandles.length; i++) {
                         const prev = newCandles[i - 1];
                         const curr = newCandles[i];
