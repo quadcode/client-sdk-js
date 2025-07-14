@@ -1716,7 +1716,7 @@ export class RealTimeChartDataLayer {
 
                             missingIntervals.push({fromId: fromIdMissing, toId: toIdMissing});
                         } else {
-                            missingIntervals.push({fromId: newLastCandle.id, toId: currentFirstCandle.id - 1})
+                            missingIntervals.push({fromId: newLastCandle.id + 1, toId: currentFirstCandle.id - 1})
                         }
                     }
                 }
@@ -1728,7 +1728,7 @@ export class RealTimeChartDataLayer {
                         const delta = curr.id - prev.id;
 
                         if (delta > 1) {
-                            const fromMissing = prev.id;
+                            const fromMissing = prev.id + 1;
                             const toMissing = curr.id - 1;
                             missingIntervals.push({fromId: fromMissing, toId: toMissing});
                         }
@@ -1853,7 +1853,7 @@ export class RealTimeChartDataLayer {
             const delta = candle.id - last.id;
 
             if (delta > 1) {
-                const fromIdMissing = last.id;
+                const fromIdMissing = last.id + 1;
                 const toIdMissing = candle.id - 1;
 
                 this.recoverGapsAsync([{fromId: fromIdMissing, toId: toIdMissing}]).then();
@@ -1891,7 +1891,7 @@ export class RealTimeChartDataLayer {
                     const delta = curr.id - prev.id;
 
                     if (delta > 1) {
-                        const fromIdMissing = prev.id;
+                        const fromIdMissing = prev.id + 1;
                         const toIdMissing = curr.id - 1;
                         missingIntervals.push({fromId: fromIdMissing, toId: toIdMissing});
                     }
