@@ -1705,7 +1705,7 @@ export class RealTimeChartDataLayer {
                     const newLastCandle = newCandles[newCandles.length - 1];
 
                     const delta = currentFirstCandle.id - newLastCandle.id;
-                    const maxDelta = 1000 - newCandles.length;
+                    const maxDelta = 1000;
 
                     if (delta > 1) {
                         hasGaps = true
