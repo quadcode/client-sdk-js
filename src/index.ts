@@ -1883,7 +1883,7 @@ export class RealTimeChartDataLayer {
                 const delta = candle.id - last.id;
 
                 if (delta > 1 || (last.at && last.to !== last.at / 1_000_000_000)) {
-                    await this.recoverGapsAsync([{fromId: last.id, toId: candle.id}]);
+                    this.recoverGapsAsync([{fromId: last.id, toId: candle.id}]).then()
                 }
 
                 this.candles.push(candle);
