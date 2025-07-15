@@ -354,15 +354,15 @@ This example shows how to build a simple real-time chart using [
 ### Prerequisites
 
 ```bash
-npm install @quadcode-tech/client-sdk-js lightweight-charts
+npm install @quadcode-tech/client-sdk-js lightweight-charts @mantine/core
 ```
 
-### Example (React)
+## Example (React)
 
+### src/App.tsx
 ```tsx
 import React from 'react';
-import {SdkProvider} from './sdkContext';
-import TradingView from './TradingView';
+import {SdkProvider} from "../provider/SdkProvider.tsx";
 
 export default function App() {
     return (
@@ -374,26 +374,23 @@ export default function App() {
 
 ```
 
+### src/context/SdkContext.ts
+```ts
+import {createContext} from 'react';
+import {ClientSdk} from "@quadcode-tech/client-sdk-js";
+
+export const SdkContext = createContext<ClientSdk | null>(null);
+```
+
+### src/provider/SdkProvider.tsx
 ```tsx
-import React, {createContext, FC, useEffect, useRef, useState} from 'react';
-import {ClientSdk, SsidAuthMethod} from '@/vendor/client-sdk-js';
+import {ReactNode, useEffect, useRef, useState} from 'react';
+import {ClientSdk, SsidAuthMethod} from '@quadcode-tech/client-sdk-js';
+import {SdkContext} from '../context/SdkContext.tsx';
+import LoadingPage from '../components/LoadingPage.tsx';
 
-interface SdkContextValue {
-    sdk: ClientSdk | null;
-    loading: boolean;
-    error: Error | null;
-}
-
-const SdkContext = createContext<SdkContextValue>({
-    sdk: null,
-    loading: true,
-    error: null,
-});
-
-export const SdkProvider: FC<{ children: React.ReactNode }> = ({children}) => {
+export const SdkProvider = ({children}: { children: ReactNode }) => {
     const [sdk, setSdk] = useState<ClientSdk | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<Error | null>(null);
     const hasInitializedRef = useRef(false);
 
     useEffect(() => {
@@ -403,128 +400,230 @@ export const SdkProvider: FC<{ children: React.ReactNode }> = ({children}) => {
 
         hasInitializedRef.current = true;
         const init = async () => {
+            const timeoutPromise = new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('SDK init timeout')), 10000)
+            );
+
             try {
-                const sdk = await ClientSdk.create(
-                    'wss://ws.trade.example.com/echo/websocket',
-                    82,
-                    new SsidAuthMethod('YOUR_SSID')
-                );
+                const sdk = await Promise.race([
+                    ClientSdk.create(
+                        'wss://ws.trade.example.com/echo/websocket',
+                        82,
+                        new SsidAuthMethod('YOUR_SSID'),
+                        {
+                            host: window.location.origin,
+                        }
+                    ),
+                    timeoutPromise,
+                ]);
 
                 setSdk(sdk);
             } catch (err) {
-                setError(err instanceof Error ? err : new Error('Unknown error'));
-            } finally {
-                setLoading(false);
+                console.error('Failed to initialize SDK:', err);
+            }
+        };
+
+        init().catch(console.error);
+    }, []);
+
+    if (!sdk) return <LoadingPage/>;
+
+    return <SdkContext.Provider value={sdk}>{children}</SdkContext.Provider>;
+};
+```
+
+### src/hooks/useSdk.ts
+```tsx
+import {useContext} from 'react';
+import {SdkContext} from '../context/SdkContext';
+import type {ClientSdk} from '@quadcode-tech/client-sdk-js';
+
+export const useSdk = (): ClientSdk => {
+   const sdk = useContext(SdkContext);
+   if (!sdk) {
+      throw new Error('useSdk must be used within SdkProvider');
+   }
+   return sdk;
+};
+```
+
+### src/pages/Home.page.tsx
+```tsx
+import {Chart} from '../components/Chart';
+import {Flex, Select} from "@mantine/core";
+import {useEffect, useState} from "react";
+import {useSdk} from "../hooks/useSdk.ts";
+import {Active} from "../types/Active.ts";
+
+const candleSizes = [
+    1, 5, 10, 15, 30, 60, 120, 300, 600, 900,
+    1800, 3600, 7200, 14400, 28800, 43200,
+    86400, 604800, 2592000,
+];
+
+export default function HomePage() {
+    const sdk = useSdk();
+    const [actives, setActives] = useState<Active[]>([]);
+    const [selectedActiveId, setSelectedActiveId] = useState<string | null>(null);
+    const [selectedCandleSize, setSelectedCandleSize] = useState<string | null>('10'); // default 1 min
+
+    useEffect(() => {
+        if (!sdk) return;
+
+        const init = async () => {
+            const now = sdk.currentTime();
+            const blitzOptions = await sdk.blitzOptions();
+            const blitzOptionsActives = blitzOptions.getActives()
+                .filter((a) => a.canBeBoughtAt(now))
+                .map((a) => ({
+                    id: a.id,
+                    title: a.ticker ?? `Active ${a.id}`,
+                }));
+
+            setActives(blitzOptionsActives);
+            if (blitzOptionsActives.length > 0) {
+                setSelectedActiveId(String(blitzOptionsActives[0].id));
             }
         };
 
         init().then();
-    }, []);
-    return <SdkContext.Provider value={{sdk, loading, error}}>{children}</SdkContext.Provider>;
-};
+    }, [sdk]);
 
+    return (
+        <Flex>
+            <Flex direction="column" w="80%">
+                {selectedActiveId && (
+                    <Chart
+                        activeId={parseInt(selectedActiveId)}
+                        candleSize={parseInt(selectedCandleSize!)}
+                        chartHeight={400}
+                        chartMinutesBack={60}
+                    />
+                )}
+            </Flex>
+
+            <Flex w="20%" p={10} direction="column" gap="sm">
+                <Select
+                    label="Active"
+                    placeholder="Choose an active"
+                    value={selectedActiveId}
+                    onChange={setSelectedActiveId}
+                    data={actives.map((a) => ({
+                        value: String(a.id),
+                        label: a.title ?? `Active ${a.id}`,
+                    }))}
+                />
+
+                <Select
+                    label="Candle Size (sec)"
+                    placeholder="Choose candle size"
+                    value={selectedCandleSize}
+                    onChange={setSelectedCandleSize}
+                    data={candleSizes.map((s) => ({
+                        value: String(s),
+                        label: `${s} sec`,
+                    }))}
+                />
+            </Flex>
+        </Flex>
+    );
+}
 ```
 
+### src/components/Chart.tsx
 ```tsx
-import React, {useEffect, useRef} from 'react'
+import {useEffect, useRef} from 'react';
 import {CandlestickSeries, createChart, UTCTimestamp} from 'lightweight-charts';
+import {useSdk} from '../hooks/useSdk.ts';
+import {Candle} from '@quadcode-tech/client-sdk-js';
 
-export default function TradingView() {
-    const {sdk, loading, error} = useSdk();
-    const containerRef = useRef(null);
-    const earliestLoadedRef = useRef<number | null>(null); // Tracks the earliest loaded candle timestamp
-    const fetchingRef = useRef<boolean>(false); // Prevents multiple fetches during scroll
+interface ChartProps {
+   activeId: number;
+   candleSize: number;
+   chartHeight?: number;
+   chartMinutesBack?: number;
+}
 
-    useEffect(() => {
-        if (loading || !sdk || error) return;
+export function Chart({activeId, candleSize, chartHeight = 400, chartMinutesBack = 60}: ChartProps) {
+   const sdk = useSdk();
+   const containerRef = useRef<HTMLDivElement>(null);
+   const earliestLoadedRef = useRef<number | null>(null);
+   const fetchingRef = useRef<boolean>(false);
 
-        const initChart = async () => {
-            const activeId = 1; // Example active ID (e.g., EUR/USD)
-            const candleSize = 10; // Candle size in seconds
-            const from = Math.floor(Date.now() / 1000) - 3600; // Load candles for the last 60 minutes
+   useEffect(() => {
+      if (!sdk || !containerRef.current) return;
 
-            const chartLayer = await sdk.realTimeChartDataLayer(activeId, candleSize);
-            const candles = await chartLayer.fetchAllCandles(from);
+      const chart = createChart(containerRef.current, {
+         layout: {textColor: 'black'},
+         height: chartHeight,
+      });
 
-            if (!containerRef.current) return;
+      const series = chart.addSeries(CandlestickSeries);
 
-            // Create TradingView chart
-            const chart = createChart(containerRef.current, {
-                height: 400,
+      const initChart = async () => {
+         const chartLayer = await sdk.realTimeChartDataLayer(activeId, candleSize);
+         const from = Math.floor(Date.now() / 1000) - chartMinutesBack * 60;
+         const candles = await chartLayer.fetchAllCandles(from);
+
+         const format = (cs: Candle[]) =>
+                 cs.map((c) => ({
+                    time: c.from as UTCTimestamp,
+                    open: c.open,
+                    high: c.max,
+                    low: c.min,
+                    close: c.close,
+                 }));
+
+         series.setData(format(candles));
+
+         if (candles.length > 0) {
+            earliestLoadedRef.current = candles[0].from as number;
+         }
+
+         chartLayer.subscribeOnLastCandleChanged((candle) => {
+            series.update({
+               time: candle.from as UTCTimestamp,
+               open: candle.open,
+               high: candle.max,
+               low: candle.min,
+               close: candle.close,
             });
+         });
 
-            // Add candlestick series
-            const series = chart.addSeries(CandlestickSeries);
+         chartLayer.subscribeOnConsistencyRecovered(() => {
+            const all = chartLayer.getAllCandles();
+            series.setData(format(all));
+         });
 
-            // Format candle data for Lightweight Charts
-            const formattedCandles = candles.map((c) => ({
-                time: c.from as UTCTimestamp,
-                open: c.open,
-                high: c.max,
-                low: c.min,
-                close: c.close,
-            }));
+         chart.timeScale().subscribeVisibleTimeRangeChange((range) => {
+            if (!range || !earliestLoadedRef.current || fetchingRef.current) return;
 
-            // Set initial chart data
-            series.setData(formattedCandles);
+            if ((range.from as number) <= earliestLoadedRef.current) {
+               fetchingRef.current = true;
+               const fetchFrom = earliestLoadedRef.current - chartMinutesBack * 60;
 
-            // Save the earliest loaded candle time for infinite scroll check
-            if (formattedCandles.length > 0) {
-                earliestLoadedRef.current = formattedCandles[0].time;
+               chartLayer.fetchAllCandles(fetchFrom).then((moreData) => {
+                  const formatted = format(moreData);
+
+                  series.setData(formatted); // можно заменить на merge если нужно
+                  if (formatted.length > 0) {
+                     earliestLoadedRef.current = formatted[0].time;
+                  }
+               }).finally(() => {
+                  fetchingRef.current = false;
+               });
             }
+         });
+      };
 
-            // Subscribe to real-time candle updates
-            chartLayer.subscribeOnLastCandleChanged((candle) => {
-                series.update({
-                    time: candle.from as UTCTimestamp,
-                    open: candle.open,
-                    high: candle.max,
-                    low: candle.min,
-                    close: candle.close,
-                });
-            });
+      initChart().then();
 
-            // Infinite scroll: load older candles when user scrolls left
-            chart.timeScale().subscribeVisibleTimeRangeChange((range) => {
-                if (!range || !earliestLoadedRef.current || fetchingRef.current) return;
+      return () => {
+         chart.remove();
+      };
+   }, [sdk, containerRef, activeId, candleSize, chartHeight, chartMinutesBack]);
 
-                // If user scrolls past the earliest loaded candle, load more
-                if ((range.from as number) <= earliestLoadedRef.current) {
-                    fetchingRef.current = true;
-
-                    // Define the fetch range (e.g., 40 minutes earlier)
-                    const fetchFrom = earliestLoadedRef.current - 40 * 60;
-
-                    chartLayer
-                        .fetchAllCandles(fetchFrom)
-                        .then((moreData) => {
-                            const formatted = moreData.map((candle) => ({
-                                time: candle.from as UTCTimestamp,
-                                open: candle.open,
-                                high: candle.max,
-                                low: candle.min,
-                                close: candle.close,
-                            }));
-
-                            // Replace data
-                            series.setData([...formatted]);
-
-                            // Update earliestLoadedRef with new data
-                            if (formatted.length > 0) {
-                                earliestLoadedRef.current = formatted[0].time;
-                            }
-                        })
-                        .finally(() => {
-                            fetchingRef.current = false;
-                        });
-                }
-            });
-        };
-
-        initChart();
-    }, [sdk, loading, error]);
-
-    return <div id="container" ref={containerRef} style={{width: '100%', height: 400}}/>;
+   return <div ref={containerRef} style={{width: '100%', height: chartHeight}}/>;
 }
 ```
 
