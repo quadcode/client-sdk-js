@@ -6658,7 +6658,6 @@ class WsApiClient {
                         }
 
                         if (frame.name === 'result' && !requestMetaData.request.resultOnly()) {
-                            this.pendingRequests.delete(frame.request_id)
                             const result = new Result(frame.msg)
                             if (!result.success) {
                                 requestMetaData.reject(`request result is not successful`)
