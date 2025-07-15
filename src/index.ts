@@ -1880,15 +1880,14 @@ export class RealTimeChartDataLayer {
             } else if (newCandle.from === last.from) {
                 this.candles[this.candles.length - 1] = candle;
             } else if (newCandle.from > last.from) {
-                const delta = candle.id - last.id;
-
-                if (delta > 1 || (last.at && last.to !== last.at / 1_000_000_000)) {
-                    this.recoverGapsAsync([{fromId: last.id, toId: candle.id}]).then()
-                }
-
                 this.candles.push(candle);
                 if (this.loadedTo === null || candle.to > this.loadedTo) {
                     this.loadedTo = candle.to;
+                }
+
+                const delta = candle.id - last.id;
+                if (delta > 1 || (last.at && last.to !== last.at / 1_000_000_000)) {
+                    this.recoverGapsAsync([{fromId: last.id, toId: candle.id}]).then()
                 }
             } else {
                 return;
