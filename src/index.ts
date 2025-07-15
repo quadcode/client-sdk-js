@@ -2003,6 +2003,8 @@ class CandlesConsistencyManager {
         this.currentQueueElement = element;
 
         const {fromId, toId, activeId, candleSize, retries, resolve, reject} = element;
+        const delay = Math.min(100 * 2 ** retries, 10000);
+        const jitter = Math.random() * 100;
 
         try {
             const candles = await this.candlesFacade.getCandles(activeId, candleSize, {fromId, toId});
@@ -2015,7 +2017,7 @@ class CandlesConsistencyManager {
                     setTimeout(() => {
                         this.candleQueue.unshift({...element, retries: retries + 1});
                         this.processQueue().then();
-                    }, 200 + Math.random() * 300);
+                    }, delay + jitter);
                 } else {
                     reject(new Error(`Candles have gaps. Max retries reached (${this.maxRetries})`));
                 }
@@ -2027,7 +2029,7 @@ class CandlesConsistencyManager {
                 setTimeout(() => {
                     this.candleQueue.unshift({...element, retries: retries + 1});
                     this.processQueue().then();
-                }, 200 + Math.random() * 300);
+                }, delay + jitter);
             } else {
                 reject(new Error(`Failed to fetch candles after ${this.maxRetries} retries: ${error}`));
             }
