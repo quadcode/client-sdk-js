@@ -2007,9 +2007,16 @@ class CandlesConsistencyManager {
 
         try {
             const candles = await this.candlesFacade.getCandles(activeId, candleSize, {fromId, toId});
-            const hasGaps = candles.some((c, i, arr) =>
+            let hasGaps = candles.some((c, i, arr) =>
                 i > 0 && c.id - arr[i - 1].id !== 1
             );
+
+            const firstCandle = candles[0];
+            const lastCandle = candles[candles.length - 1];
+
+            if (!hasGaps && firstCandle.id !== fromId || lastCandle.id !== toId) {
+                hasGaps = true
+            }
 
             if (hasGaps || candles.length === 0) {
                 if (retries < this.maxRetries) {
