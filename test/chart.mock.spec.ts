@@ -13,16 +13,16 @@ import {
 import {Client} from "mock-socket";
 import {justWait} from "./utils/waiters";
 
-
 const ONE_DAY_S = 24 * 60 * 60;
 
-vi.mock('isomorphic-ws', async () => {
-    // импортируем класс WebSocket из mock-socket
-    const {WebSocket} = await import('mock-socket');
-    // возвращаем его и как default-экспорт, и как именованный
-    return {default: WebSocket, WebSocket};
-});
-
+/* vitest-mock */
+vi.mock('isomorphic-ws', () =>
+    import('mock-socket').then(({ WebSocket }) => ({
+        __esModule: true,
+        default: WebSocket,
+        WebSocket,
+    }))
+);
 
 describe('Chart Data mock', () => {
     let server: WS;
