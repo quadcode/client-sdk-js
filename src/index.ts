@@ -6628,7 +6628,7 @@ class WsApiClient {
         return new Promise((resolve, reject) => {
             try {
                 if (!this.isBrowser) {
-                    this.connection = new WebSocket(this.apiUrl, {
+                    this.connection = new WebSocket(this.apiUrl, undefined, {
                         headers: {
                             'cookie': `platform=${this.platformId}`,
                             'user-agent': 'quadcode-client-sdk-js/1.3.7'
