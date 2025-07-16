@@ -130,6 +130,18 @@ export class ClientSdk {
     private translationsFacade: Translations | undefined
 
     /**
+     * Real-time chart data layer facade cache.
+     * @private
+     */
+    private realTimeChartDataLayerFacade: Record<number, Record<number, Promise<RealTimeChartDataLayer>>> | undefined
+
+    /**
+     * Consistency manager instance.
+     * @private
+     */
+    private candlesConsistencyManagerFacade: CandlesConsistencyManager | undefined
+
+    /**
      * Creates instance of class.
      * @param userProfile - Information about the user on whose behalf your application is working.
      * @param wsApiClient - Instance of WebSocket API client.
@@ -444,6 +456,27 @@ export class ClientSdk {
         return this.candlesFacade
     }
 
+    public async realTimeChartDataLayer(activeId: number, size: number): Promise<RealTimeChartDataLayer> {
+        if (!this.realTimeChartDataLayerFacade) {
+            this.realTimeChartDataLayerFacade = {};
+        }
+
+        if (!this.realTimeChartDataLayerFacade[activeId]) {
+            this.realTimeChartDataLayerFacade[activeId] = {};
+        }
+
+        if (!this.realTimeChartDataLayerFacade[activeId][size]) {
+            this.realTimeChartDataLayerFacade[activeId][size] = (async () => {
+                const candles = await this.candles();
+                const wsConnectionState = await this.wsConnectionState();
+                const consistencyManager = await this.candlesConsistencyManager();
+                return new RealTimeChartDataLayer(this.wsApiClient, wsConnectionState, consistencyManager, candles, activeId, size);
+            })();
+        }
+
+        return this.realTimeChartDataLayerFacade[activeId][size];
+    }
+
     /**
      * Returns ws current time.
      */
@@ -485,6 +518,16 @@ export class ClientSdk {
             this.translationsFacade = await Translations.create(this.host)
         }
         return this.translationsFacade
+    }
+
+    private async candlesConsistencyManager(): Promise<CandlesConsistencyManager> {
+        if (!this.candlesConsistencyManagerFacade) {
+            const candles = await this.candles();
+            const wsConnectionState = await this.wsConnectionState();
+            this.candlesConsistencyManagerFacade = new CandlesConsistencyManager(wsConnectionState, candles);
+        }
+
+        return this.candlesConsistencyManagerFacade;
     }
 }
 
@@ -1528,6 +1571,479 @@ export class Currency {
         this.isCrypto = response.isCrypto
         this.isInout = response.isInout
         this.interestRate = response.interestRate
+    }
+}
+
+/**
+ * RealTimeChartDataLayer provides real-time and historical candle data for a given activeId and candleSize.
+ */
+export class RealTimeChartDataLayer {
+    private readonly wsApiClient: WsApiClient;
+    private readonly candlesFacade: Candles;
+    private readonly candlesConsistencyManager: CandlesConsistencyManager;
+    private readonly activeId: number;
+    private readonly candleSize: number;
+
+    private candles: Candle[] = [];
+    private connected: boolean = true;
+    private subscribed: boolean = false;
+    private loadedFrom: number | null = null;
+    private loadedTo: number | null = null;
+    private firstCandleFrom: number | null = null;
+    private currentReject: ((err: any) => void) | null = null;
+    private onUpdateObserver: Observable<Candle> = new Observable<Candle>();
+    private onConsistencyUpdateObserver: Observable<{ from: number, to: number }> = new Observable<{
+        from: number,
+        to: number
+    }>();
+    private candleQueue: { from: number; resolve: (c: Candle[]) => void; reject: (e: any) => void }[] = [];
+    private isProcessingQueue = false;
+    private candlesMutationsLock: Promise<void> = Promise.resolve();
+
+    constructor(wsApiClient: WsApiClient, wsConnectionState: WsConnectionState, consistencyManager: CandlesConsistencyManager, candles: Candles, activeId: number, candleSize: number) {
+        this.wsApiClient = wsApiClient;
+        this.candlesFacade = candles;
+        this.candlesConsistencyManager = consistencyManager;
+        this.activeId = activeId;
+        this.candleSize = candleSize;
+
+        this.wsApiClient.doRequest<QuotesFirstCandlesV1>(new CallQuotesGetFirstCandlesV1(activeId))
+            .then((response) => {
+                const candle = response.candlesBySize[candleSize];
+
+                if (candle) {
+                    this.firstCandleFrom = candle.from;
+                }
+            })
+
+        wsConnectionState.subscribeOnStateChanged((state: WsConnectionStateEnum) => {
+            switch (state) {
+                case WsConnectionStateEnum.Connected:
+                    this.loadMissedCandlesOnReconnect().then(() => {
+                        this.connected = true;
+                        this.processQueue().then(() => {
+                        })
+                    })
+                    break;
+                case WsConnectionStateEnum.Disconnected:
+                    this.connected = false;
+                    this.isProcessingQueue = false;
+
+                    for (const {reject} of this.candleQueue) {
+                        reject(new Error('WebSocket disconnected'));
+                    }
+
+                    if (this.currentReject) {
+                        this.currentReject(new Error('WebSocket disconnected'));
+                        this.currentReject = null;
+                    }
+
+                    this.candleQueue = [];
+                    break
+            }
+        })
+    }
+
+    /**
+     * Returns the last candle for the activeId and candleSize.
+     */
+    getAllCandles(): Candle[] {
+        return this.candles;
+    }
+
+    /**
+     * Fetch candles for the activeId and candleSize.
+     *
+     * Limitation: A maximum of 1000 candles can be fetched in a single request.
+     * Therefore, the 'from' parameter must be chosen so that the time range between 'from' and 'to'
+     * does not exceed 1000 * candleSize seconds.
+     *
+     * Formula:
+     *   (to - from) <= 1000 * candleSize
+     *
+     * If 'to' is not provided, it defaults to the latest loaded candle or the current time.
+     *
+     * Example: If candleSize = 60 (1 minute), the time range between 'from' and 'to'
+     * must be less than or equal to 60,000 seconds (~16.6 hours).
+     *
+     * @param from - UNIX timestamp in seconds from which to fetch candles.
+     */
+    async fetchAllCandles(from: number): Promise<Candle[]> {
+        if (this.firstCandleFrom !== null && from < this.firstCandleFrom) {
+            from = this.firstCandleFrom;
+        }
+
+        return new Promise<Candle[]>((resolve, reject) => {
+            this.candleQueue.push({from, resolve, reject});
+            this.processQueue();
+        });
+    }
+
+    private async processQueue() {
+        if (this.isProcessingQueue || this.candleQueue.length === 0 || !this.connected) {
+            return;
+        }
+
+        this.isProcessingQueue = true;
+
+        const {from, resolve, reject} = this.candleQueue.shift()!;
+        this.currentReject = reject;
+
+        try {
+            if (this.loadedFrom !== null && from >= this.loadedFrom) {
+                resolve(this.candles);
+            } else {
+                let to;
+                if (this.loadedFrom) {
+                    to = this.loadedFrom - 1;
+                } else if (this.candles.length > 0) {
+                    to = this.candles[0].from - 1;
+                } else {
+                    to = undefined;
+                }
+
+                const newCandles = await this.candlesFacade.getCandles(this.activeId, this.candleSize, {from, to});
+
+                let hasGaps = newCandles.some((c, i, arr) =>
+                    i > 0 && c.id - arr[i - 1].id !== 1
+                );
+
+                const missingIntervals: { fromId: number; toId: number }[] = [];
+                if (newCandles.length > 0 && this.candles.length > 0 && this.loadedFrom !== null) {
+                    const currentFirstCandle = this.candles[0];
+                    const newLastCandle = newCandles[newCandles.length - 1];
+
+                    const delta = currentFirstCandle.id - newLastCandle.id;
+                    const maxDelta = 1000;
+
+                    if (delta > 1) {
+                        hasGaps = true
+
+                        if (delta > maxDelta) {
+                            const fromIdMissing = currentFirstCandle.id - maxDelta;
+                            const toIdMissing = currentFirstCandle.id;
+
+                            missingIntervals.push({fromId: fromIdMissing, toId: toIdMissing});
+                        } else {
+                            missingIntervals.push({fromId: newLastCandle.id, toId: currentFirstCandle.id})
+                        }
+                    }
+                }
+
+                if (hasGaps) {
+                    for (let i = 1; i < newCandles.length; i++) {
+                        const prev = newCandles[i - 1];
+                        const curr = newCandles[i];
+                        const delta = curr.id - prev.id;
+
+                        if (delta > 1) {
+                            const fromMissing = prev.id;
+                            const toMissing = curr.id;
+                            missingIntervals.push({fromId: fromMissing, toId: toMissing});
+                        }
+                    }
+
+                    this.recoverGapsAsync(missingIntervals).then();
+                    this.candles = [...newCandles, ...this.candles];
+                    this.loadedFrom = this.loadedFrom !== null ? Math.min(this.loadedFrom, from) : from;
+                    resolve(this.candles);
+                } else {
+                    this.candles = [...newCandles, ...this.candles];
+                    this.loadedFrom = this.loadedFrom !== null ? Math.min(this.loadedFrom, from) : from;
+                    resolve(this.candles);
+                }
+            }
+        } catch (error) {
+            reject(error);
+        } finally {
+            this.isProcessingQueue = false;
+            this.currentReject = null;
+            this.processQueue().then()
+        }
+    }
+
+    /**
+     * Subscribes to real-time updates for the last candle.
+     * @param handler
+     */
+    subscribeOnLastCandleChanged(handler: (candle: Candle) => void) {
+        if (!this.subscribed) {
+            this.wsApiClient.subscribe<CandleGeneratedV1>(new SubscribeCandleGeneratedV1(this.activeId, this.candleSize), (event: CandleGeneratedV1) => {
+                if (event.activeId !== this.activeId || event.size !== this.candleSize) {
+                    return
+                }
+
+                if (this.connected) {
+                    this.handleRealtimeUpdate(event).then()
+                }
+            }).then()
+        }
+
+        this.onUpdateObserver.subscribe(handler);
+    }
+
+    /**
+     * Unsubscribes from real-time updates for the last candle.
+     * @param handler
+     */
+    unsubscribeOnLastCandleChanged(handler: (candle: Candle) => void) {
+        this.onUpdateObserver.unsubscribe(handler);
+    }
+
+    /**
+     * Subscribes to consistency updates for the candles.
+     * @param handler
+     */
+    subscribeOnConsistencyRecovered(handler: (data: { from: number, to: number }) => void) {
+        this.onConsistencyUpdateObserver.subscribe(handler);
+    }
+
+    /**
+     * Unsubscribes from consistency updates for the candles.
+     * @param handler
+     */
+    unsubscribeOnConsistencyRecovered(handler: (data: { from: number, to: number }) => void) {
+        this.onConsistencyUpdateObserver.unsubscribe(handler);
+    }
+
+    private async recoverGapsAsync(missingIntervals: { fromId: number; toId: number }[]) {
+        const gapPromises = missingIntervals.map(async ({fromId, toId}) => {
+            try {
+                const gapCandles = await this.candlesConsistencyManager
+                    .fetchCandles(fromId, toId, this.activeId, this.candleSize)
+
+                return ({fromId, toId, gapCandles})
+            } catch (err) {
+                console.warn(`Failed to fetch gap from ${fromId} to ${toId}:`, err)
+                return null
+            }
+        });
+
+        function findInsertIndex(candles: Candle[], targetTo: number): number {
+            let low = 0, high = candles.length;
+
+            while (low < high) {
+                const mid = Math.floor((low + high) / 2);
+                if (candles[mid].id < targetTo) {
+                    low = mid + 1;
+                } else {
+                    high = mid;
+                }
+            }
+
+            return low;
+        }
+
+        const results = await Promise.all(gapPromises);
+
+        const mutations = results
+            .filter((r): r is { fromId: number; toId: number; gapCandles: Candle[] } => !!r)
+            .map((result) => {
+                const {toId, gapCandles} = result;
+
+                return () => {
+                    let insertIndex = findInsertIndex(this.candles, toId);
+                    const from = gapCandles[0].from;
+                    const to = gapCandles[gapCandles.length - 1].to;
+
+                    if (insertIndex === 0) {
+                        this.candles.splice(insertIndex, 1);
+                    } else if (insertIndex === this.candles.length) {
+                        this.candles.splice(insertIndex - 1, 1);
+                        insertIndex -= 1
+                    } else {
+                        this.candles.splice(insertIndex - 1, 2);
+                        insertIndex -= 1
+                    }
+
+                    this.candles.splice(insertIndex, 0, ...gapCandles);
+                    this.onConsistencyUpdateObserver.notify({from, to});
+                };
+            });
+
+        for (const mutate of mutations) {
+            this.candlesMutationsLock = this.candlesMutationsLock.then(() => {
+                mutate();
+            });
+            await this.candlesMutationsLock;
+        }
+    }
+
+    private async handleRealtimeUpdate(newCandle: CandleGeneratedV1): Promise<void> {
+        const candle = new Candle(newCandle);
+
+        const mutate = async () => {
+            const last = this.candles[this.candles.length - 1];
+
+            if (!last) {
+                this.candles.push(candle);
+            } else if (newCandle.from === last.from) {
+                this.candles[this.candles.length - 1] = candle;
+            } else if (newCandle.from > last.from) {
+                this.candles.push(candle);
+                if (this.loadedTo === null || candle.to > this.loadedTo) {
+                    this.loadedTo = candle.to;
+                }
+
+                const delta = candle.id - last.id;
+                if (delta > 1 || (last.at && last.to !== last.at / 1_000_000_000)) {
+                    this.recoverGapsAsync([{fromId: last.id, toId: candle.id}]).then()
+                }
+            } else {
+                return;
+            }
+
+            this.onUpdateObserver.notify(candle);
+        };
+
+        this.candlesMutationsLock = this.candlesMutationsLock.then(() => mutate());
+        await this.candlesMutationsLock;
+    }
+
+    private async loadMissedCandlesOnReconnect() {
+        if (this.loadedTo === null) return;
+
+        try {
+            const newCandles = await this.candlesFacade.getCandles(this.activeId, this.candleSize, {
+                from: this.loadedTo,
+            });
+
+            const hasGaps = newCandles.some((c, i, arr) =>
+                i > 0 && c.id - arr[i - 1].id !== 1
+            );
+
+            if (hasGaps) {
+                const missingIntervals: { fromId: number; toId: number }[] = [];
+
+                for (let i = 1; i < newCandles.length; i++) {
+                    const prev = newCandles[i - 1];
+                    const curr = newCandles[i];
+                    const delta = curr.id - prev.id;
+
+                    if (delta > 1) {
+                        const fromIdMissing = prev.id;
+                        const toIdMissing = curr.id;
+                        missingIntervals.push({fromId: fromIdMissing, toId: toIdMissing});
+                    }
+                }
+
+                this.recoverGapsAsync(missingIntervals).then();
+            }
+
+            for (const candle of newCandles) {
+                const existingIndex = this.candles.findIndex(c => c.from === candle.from);
+
+                if (existingIndex !== -1) {
+                    this.candles[existingIndex] = candle;
+                } else {
+                    this.candles.push(candle);
+                }
+
+                if (this.loadedTo === null || candle.to > this.loadedTo) {
+                    this.loadedTo = candle.to;
+                }
+
+                this.onUpdateObserver.notify(candle);
+            }
+        } catch (error) {
+            console.error('Failed to load missed candles after reconnect:', error);
+        }
+    }
+}
+
+class CandlesConsistencyManager {
+    private readonly candlesFacade: Candles;
+    private isProcessingQueue = false;
+    private connected: boolean = true;
+    private readonly maxRetries = 10;
+    private candleQueue: {
+        fromId: number;
+        toId: number,
+        activeId: number,
+        candleSize: number;
+        retries: number;
+        resolve: (c: Candle[]) => void;
+        reject: (e: any) => void
+    }[] = [];
+    private currentQueueElement: typeof this.candleQueue[number] | null = null;
+
+    constructor(wsConnectionState: WsConnectionState, candles: Candles) {
+        this.candlesFacade = candles;
+
+        wsConnectionState.subscribeOnStateChanged((state: WsConnectionStateEnum) => {
+            switch (state) {
+                case WsConnectionStateEnum.Connected:
+                    this.connected = true;
+                    this.processQueue().then();
+                    break;
+                case WsConnectionStateEnum.Disconnected:
+                    this.connected = false;
+                    this.isProcessingQueue = false;
+                    break;
+            }
+        });
+    }
+
+    fetchCandles(fromId: number, toId: number, activeId: number, candleSize: number): Promise<Candle[]> {
+        return new Promise<Candle[]>((resolve, reject) => {
+            this.candleQueue.push({fromId, toId, activeId, candleSize, retries: 0, resolve, reject});
+            this.processQueue().then()
+        });
+    }
+
+    private async processQueue() {
+        if (this.isProcessingQueue || this.candleQueue.length === 0 || !this.connected) {
+            return;
+        }
+
+        this.isProcessingQueue = true;
+
+        const element = this.candleQueue.shift()!;
+        this.currentQueueElement = element;
+
+        const {fromId, toId, activeId, candleSize, retries, resolve, reject} = element;
+        const delay = Math.min(100 * 2 ** retries, 10000);
+        const jitter = Math.random() * 100;
+
+        try {
+            const candles = await this.candlesFacade.getCandles(activeId, candleSize, {fromId, toId});
+            let hasGaps = candles.some((c, i, arr) =>
+                i > 0 && c.id - arr[i - 1].id !== 1
+            );
+
+            const firstCandle = candles[0];
+            const lastCandle = candles[candles.length - 1];
+
+            if (!hasGaps && firstCandle.id !== fromId || lastCandle.id !== toId) {
+                hasGaps = true
+            }
+
+            if (hasGaps || candles.length === 0) {
+                if (retries < this.maxRetries) {
+                    setTimeout(() => {
+                        this.candleQueue.unshift({...element, retries: retries + 1});
+                        this.processQueue().then();
+                    }, delay + jitter);
+                } else {
+                    reject(new Error(`Candles have gaps. Max retries reached (${this.maxRetries})`));
+                }
+            } else {
+                resolve(candles);
+            }
+        } catch (error) {
+            if (retries < this.maxRetries) {
+                setTimeout(() => {
+                    this.candleQueue.unshift({...element, retries: retries + 1});
+                    this.processQueue().then();
+                }, delay + jitter);
+            } else {
+                reject(new Error(`Failed to fetch candles after ${this.maxRetries} retries: ${error}`));
+            }
+        } finally {
+            this.isProcessingQueue = false;
+            this.currentQueueElement = null;
+            setTimeout(() => this.processQueue(), 0);
+        }
     }
 }
 
@@ -6059,7 +6575,7 @@ class WsApiClient {
     private reconnecting = false
     private connection: WebSocket | undefined
     private lastRequestId: number = 0
-    private requests: Map<string, RequestMetaData> = new Map<string, RequestMetaData>()
+    private pendingRequests: Map<string, RequestMetaData> = new Map<string, RequestMetaData>()
     private subscriptions: Map<string, SubscriptionMetaData[]> = new Map<string, SubscriptionMetaData[]>()
     public onConnectionStateChanged: ((state: WsConnectionStateEnum) => void) | undefined
     private timeSyncInterval: NodeJS.Timeout | undefined
@@ -6112,7 +6628,7 @@ class WsApiClient {
         return new Promise((resolve, reject) => {
             try {
                 if (!this.isBrowser) {
-                    this.connection = new WebSocket(this.apiUrl, {
+                    this.connection = new WebSocket(this.apiUrl, undefined, {
                         headers: {
                             'cookie': `platform=${this.platformId}`,
                             'user-agent': 'quadcode-client-sdk-js/1.3.7'
@@ -6132,7 +6648,7 @@ class WsApiClient {
 
             // eslint-disable-next-line @typescript-eslint/ban-ts-comment
             // @ts-expect-error ignore
-            this.connection!.onmessage = ({ data }: { data: string }) => {
+            this.connection!.onmessage = ({data}: { data: string }) => {
                 const frame: {
                     request_id: string
                     name: string
@@ -6141,9 +6657,10 @@ class WsApiClient {
                     status: number
                 } = JSON.parse(data)
                 if (frame.request_id) {
-                    if (this.requests.has(frame.request_id)) {
-                        const requestMetaData = this.requests.get(frame.request_id)!
+                    if (this.pendingRequests.has(frame.request_id)) {
+                        const requestMetaData = this.pendingRequests.get(frame.request_id)!
                         if (frame.status >= 4000) {
+                            this.pendingRequests.delete(frame.request_id)
                             requestMetaData.reject(new Error(`request is failed with status ${frame.status} and message: ${frame.msg.message}`))
                             return
                         }
@@ -6161,7 +6678,7 @@ class WsApiClient {
                         } catch (e) {
                             requestMetaData.reject(e)
                         } finally {
-                            this.requests.delete(frame.request_id)
+                            this.pendingRequests.delete(frame.request_id)
                         }
                     }
                 } else if (frame.microserviceName && frame.name) {
@@ -6178,7 +6695,7 @@ class WsApiClient {
                     this.updateCurrentTime(frame.msg)
                     return
                 } else if (frame.name && frame.name === 'authenticated' && frame.msg === false) {
-                    for (const [, requestMetaData] of this.requests) {
+                    for (const [, requestMetaData] of this.pendingRequests) {
                         if (requestMetaData.request instanceof Authenticate) {
                             requestMetaData.reject(new Error('authentication is failed'))
                         }
@@ -6223,8 +6740,8 @@ class WsApiClient {
                         this.reconnect()
                     }
 
-                    this.onConnectionStateChanged?.(WsConnectionStateEnum.Connected)
                     this.startTimeSyncMonitoring()
+                    this.onConnectionStateChanged?.(WsConnectionStateEnum.Connected)
 
                     return resolve()
                 } catch (e) {
@@ -6247,7 +6764,6 @@ class WsApiClient {
         this.onConnectionStateChanged?.(WsConnectionStateEnum.Disconnected);
         this.reconnecting = false;
         this.lastRequestId = 0;
-        this.requests.clear();
         this.subscriptions.clear();
     }
 
@@ -6261,6 +6777,7 @@ class WsApiClient {
                 }
             } finally {
                 this.connection = undefined;
+                this.rejectAllPendingRequests(new Error('WebSocket connection closed unexpectedly'));
             }
         }
     }
@@ -6311,8 +6828,15 @@ class WsApiClient {
         }))
 
         return new Promise<T>((resolve, reject) => {
-            this.requests.set(requestId, new RequestMetaData(request, resolve, reject))
+            this.pendingRequests.set(requestId, new RequestMetaData(request, resolve, reject))
         })
+    }
+
+    private rejectAllPendingRequests(reason: Error) {
+        for (const [, meta] of this.pendingRequests) {
+            meta.reject(reason);
+        }
+        this.pendingRequests.clear();
     }
 
     resubscribeAll(): Promise<Result[]> {
@@ -7520,6 +8044,40 @@ class QuoteGeneratedV2 {
     }
 }
 
+class CandleGeneratedV1 {
+    id: number
+    activeId: number
+    size: number
+    at: number
+    from: number
+    to: number
+    ask: number
+    bid: number
+    open: number
+    close: number
+    min: number
+    max: number
+    volume: number
+    phase: string
+
+    constructor(data: any) {
+        this.id = data.id
+        this.activeId = data.active_id
+        this.size = data.size
+        this.at = data.at
+        this.from = data.from
+        this.to = data.to
+        this.ask = data.ask
+        this.bid = data.bid
+        this.open = data.open
+        this.close = data.close
+        this.min = data.min
+        this.max = data.max
+        this.volume = data.volume
+        this.phase = data.phase
+    }
+}
+
 // Outbound messages
 
 class HttpGetTranslationsRequest implements HttpRequest<HttpGetTranslationsResponse> {
@@ -8231,6 +8789,58 @@ class QuotesHistoryCandlesV2 {
     }
 }
 
+class CallQuotesGetFirstCandlesV1 implements Request<QuotesFirstCandlesV1> {
+    private readonly activeId: number;
+    private readonly splitNormalization: boolean | undefined;
+
+    constructor(
+        activeId: number,
+        splitNormalization?: boolean | undefined,
+    ) {
+        this.activeId = activeId;
+
+        if (splitNormalization === undefined) {
+            this.splitNormalization = false; // Default value if not provided
+        } else {
+            this.splitNormalization = splitNormalization;
+        }
+    }
+
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: 'get-first-candles',
+            version: '1.0',
+            body: {
+                active_id: this.activeId,
+                split_normalization: this.splitNormalization,
+            }
+        }
+    }
+
+    createResponse(data: any): QuotesFirstCandlesV1 {
+        return new QuotesFirstCandlesV1(data)
+    }
+
+    resultOnly(): boolean {
+        return false
+    }
+}
+
+class QuotesFirstCandlesV1 {
+    candlesBySize: Record<number, Candle> = {}
+
+    constructor(data: any) {
+        for (const size in data.candles_by_size) {
+            const sizeNumber = Number(size);
+            this.candlesBySize[sizeNumber] = new Candle(data.candles_by_size[sizeNumber]);
+        }
+    }
+}
+
 class SetOptions implements Request<Result> {
     constructor(private readonly sendResults: boolean) {
     }
@@ -8545,6 +9155,45 @@ class SubscribeQuoteGeneratedV2 implements SubscribeRequest<QuoteGeneratedV2> {
 
     createEvent(data: any): QuoteGeneratedV2 {
         return new QuoteGeneratedV2(data)
+    }
+}
+
+class SubscribeCandleGeneratedV1 implements SubscribeRequest<CandleGeneratedV1> {
+    activeId
+    size
+
+    constructor(activeId: number, size: number) {
+        this.activeId = activeId
+        this.size = size
+    }
+
+    messageName() {
+        return 'subscribeMessage'
+    }
+
+    messageBody() {
+        return {
+            name: `${this.eventName()}`,
+            version: '1.0',
+            params: {
+                routingFilters: {
+                    active_id: this.activeId,
+                    size: this.size,
+                }
+            }
+        }
+    }
+
+    eventMicroserviceName() {
+        return 'quotes'
+    }
+
+    eventName() {
+        return 'candle-generated'
+    }
+
+    createEvent(data: any): CandleGeneratedV1 {
+        return new CandleGeneratedV1(data)
     }
 }
 
