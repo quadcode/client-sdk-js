@@ -1401,11 +1401,6 @@ export class Active {
      */
     typeQty: string
 
-    /**
-     * Active exchange.
-     */
-    exchange?: string
-
     constructor(response: ActiveV5, staticHost: string, translations: Translations) {
         this.id = response.id
         this.localizationKey = `${TranslationGroup.Front}.${response.name}`
@@ -1426,9 +1421,6 @@ export class Active {
         this.minQty = response.minQty
         this.qtyStep = response.qtyStep
         this.typeQty = response.typeQty
-        if (response.exchange && response.exchange !== 'exchange_') {
-            this.exchange = translations.getTranslation(`${TranslationGroup.Front}.${response.exchange}`)
-        }
     }
 }
 
@@ -9770,7 +9762,6 @@ class ActiveV5 {
     id: number
     name: string
     description: string
-    exchange?: string
     image: string
     isOtc: boolean
     timeFrom: string
@@ -9791,7 +9782,6 @@ class ActiveV5 {
         this.id = data.id
         this.name = data.name
         this.description = data.description
-        this.exchange = data.exchange
         this.image = data.image
         this.isOtc = data.is_otc
         this.timeFrom = data.time_from
