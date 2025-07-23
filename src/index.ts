@@ -1317,6 +1317,11 @@ export class Active {
     name: string
 
     /**
+     * Active description.
+     */
+    description: string
+
+    /**
      * Active localization key.
      */
     localizationKey: string
@@ -1396,10 +1401,16 @@ export class Active {
      */
     typeQty: string
 
+    /**
+     * Active exchange.
+     */
+    exchange?: string
+
     constructor(response: ActiveV5, staticHost: string, translations: Translations) {
         this.id = response.id
         this.localizationKey = `${TranslationGroup.Front}.${response.name}`
         this.name = translations.getTranslation(this.localizationKey)
+        this.description = translations.getTranslation(`${TranslationGroup.Front}.${response.description}`)
         this.imageUrl = `${staticHost}${response.image}`
         this.isOtc = response.isOtc
         this.timeFrom = response.timeFrom
@@ -1415,6 +1426,9 @@ export class Active {
         this.minQty = response.minQty
         this.qtyStep = response.qtyStep
         this.typeQty = response.typeQty
+        if (response.exchange && response.exchange !== 'exchange_') {
+            this.exchange = translations.getTranslation(`${TranslationGroup.Front}.${response.exchange}`)
+        }
     }
 }
 
@@ -1596,7 +1610,13 @@ export class RealTimeChartDataLayer {
         from: number,
         to: number
     }>();
-    private candleQueue: { from: number; resolve: (c: Candle[]) => void; reject: (e: any) => void }[] = [];
+    private candleQueue: {
+        from?: number;
+        to?: number;
+        countBack?: number;
+        resolve: (c: Candle[]) => void;
+        reject: (e: any) => void
+    }[] = [];
     private isProcessingQueue = false;
     private candlesMutationsLock: Promise<void> = Promise.resolve();
 
@@ -1652,6 +1672,13 @@ export class RealTimeChartDataLayer {
     }
 
     /**
+     * Returns the first candle timestamp for the activeId and candleSize.
+     */
+    getFirstCandleFrom(): number | null {
+        return this.firstCandleFrom;
+    }
+
+    /**
      * Fetch candles for the activeId and candleSize.
      *
      * Limitation: A maximum of 1000 candles can be fetched in a single request.
@@ -1679,6 +1706,18 @@ export class RealTimeChartDataLayer {
         });
     }
 
+    /**
+     * Fetches candles for the activeId and candleSize within a specified time range.
+     * @param to
+     * @param countBack - Number of candles to fetch back from the 'to' timestamp.
+     */
+    async fetchCandles(to: number, countBack: number): Promise<Candle[]> {
+        return new Promise<Candle[]>((resolve, reject) => {
+            this.candleQueue.push({countBack, to, resolve, reject});
+            this.processQueue();
+        });
+    }
+
     private async processQueue() {
         if (this.isProcessingQueue || this.candleQueue.length === 0 || !this.connected) {
             return;
@@ -1686,23 +1725,35 @@ export class RealTimeChartDataLayer {
 
         this.isProcessingQueue = true;
 
-        const {from, resolve, reject} = this.candleQueue.shift()!;
+        const {from, to, countBack, resolve, reject} = this.candleQueue.shift()!;
         this.currentReject = reject;
 
+        let onlyRange = false;
+        if (to) {
+            onlyRange = true;
+        }
+
         try {
-            if (this.loadedFrom !== null && from >= this.loadedFrom) {
+            if (from && this.loadedFrom !== null && from >= this.loadedFrom) {
                 resolve(this.candles);
             } else {
-                let to;
-                if (this.loadedFrom) {
-                    to = this.loadedFrom - 1;
-                } else if (this.candles.length > 0) {
-                    to = this.candles[0].from - 1;
-                } else {
-                    to = undefined;
+                let toCurrent = to
+                if (!toCurrent) {
+                    if (this.loadedFrom) {
+                        toCurrent = this.loadedFrom - 1;
+                    } else if (this.candles.length > 0) {
+                        toCurrent = this.candles[0].from - 1;
+                    } else {
+                        toCurrent = undefined;
+                    }
                 }
 
-                const newCandles = await this.candlesFacade.getCandles(this.activeId, this.candleSize, {from, to});
+
+                const newCandles = await this.candlesFacade.getCandles(this.activeId, this.candleSize, {
+                    from,
+                    to: toCurrent,
+                    count: countBack
+                });
 
                 let hasGaps = newCandles.some((c, i, arr) =>
                     i > 0 && c.id - arr[i - 1].id !== 1
@@ -1745,12 +1796,29 @@ export class RealTimeChartDataLayer {
 
                     this.recoverGapsAsync(missingIntervals).then();
                     this.candles = [...newCandles, ...this.candles];
-                    this.loadedFrom = this.loadedFrom !== null ? Math.min(this.loadedFrom, from) : from;
-                    resolve(this.candles);
+                    if (!from) {
+                        this.loadedFrom = this.candles[0].from;
+                    } else {
+                        this.loadedFrom = this.loadedFrom !== null ? Math.min(this.loadedFrom, from) : from;
+                    }
+                    if (onlyRange) {
+                        resolve(newCandles)
+                    } else {
+                        resolve(this.candles);
+                    }
                 } else {
                     this.candles = [...newCandles, ...this.candles];
-                    this.loadedFrom = this.loadedFrom !== null ? Math.min(this.loadedFrom, from) : from;
-                    resolve(this.candles);
+                    if (!from) {
+                        this.loadedFrom = this.candles[0].from;
+                    } else {
+                        this.loadedFrom = this.loadedFrom !== null ? Math.min(this.loadedFrom, from) : from;
+                    }
+
+                    if (onlyRange) {
+                        resolve(newCandles)
+                    } else {
+                        resolve(this.candles);
+                    }
                 }
             }
         } catch (error) {
@@ -9695,6 +9763,8 @@ class CallGetActiveV5 implements Request<ActiveV5> {
 class ActiveV5 {
     id: number
     name: string
+    description: string
+    exchange?: string
     image: string
     isOtc: boolean
     timeFrom: string
@@ -9714,6 +9784,8 @@ class ActiveV5 {
     constructor(data: any) {
         this.id = data.id
         this.name = data.name
+        this.description = data.description
+        this.exchange = data.exchange
         this.image = data.image
         this.isOtc = data.is_otc
         this.timeFrom = data.time_from
