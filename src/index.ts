@@ -1708,8 +1708,14 @@ export class RealTimeChartDataLayer {
 
     /**
      * Fetches candles for the activeId and candleSize within a specified time range.
-     * @param to
-     * @param countBack - Number of candles to fetch back from the 'to' timestamp.
+     *
+     * This method should be called iteratively with a maximum of 1000 candles per call (countBack <= 1000).
+     * After each call, the "to" value should be updated to candles[0].from - 1 to fetch older data in steps.
+     * This approach allows backward pagination of historical candles while avoiding overload or data gaps.
+     *
+     * @param to - Unix timestamp (in seconds) representing the end of the time range (inclusive).
+     * @param countBack - Number of candles to fetch backward from the "to" timestamp.
+     * @returns Promise resolving to an array of Candle objects.
      */
     async fetchCandles(to: number, countBack: number): Promise<Candle[]> {
         return new Promise<Candle[]>((resolve, reject) => {
@@ -1760,7 +1766,7 @@ export class RealTimeChartDataLayer {
                 );
 
                 const missingIntervals: { fromId: number; toId: number }[] = [];
-                if (!onlyRange && newCandles.length > 0 && this.candles.length > 0 && this.loadedFrom !== null) {
+                if (newCandles.length > 0 && this.candles.length > 0 && this.loadedFrom !== null) {
                     const currentFirstCandle = this.candles[0];
                     const newLastCandle = newCandles[newCandles.length - 1];
 
