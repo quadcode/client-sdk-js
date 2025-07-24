@@ -1,4 +1,4 @@
-import {ClientSdk, ClientSDKAdditionalOptions, LoginPasswordAuthMethod} from "../src";
+import {Candle, ClientSdk, ClientSDKAdditionalOptions, LoginPasswordAuthMethod} from "../src";
 import {getUserByTitle} from "./utils/userUtils";
 import {afterEach, beforeAll, beforeEach, describe, expect, it, vi} from "vitest";
 import WS from "vitest-websocket-mock";
@@ -22,6 +22,13 @@ vi.mock('isomorphic-ws', async () => {
     return {default: WebSocket, WebSocket};
 });
 
+function candlesShouldNotHaveGaps(candles: Candle[]) {
+    // проверяем что все id идут друг за другом, нет дублей, нет дыр.
+    const hasGaps = candles.some((c, i, arr) =>
+        i > 0 && c.id - arr[i - 1].id !== 1
+    );
+    expect(hasGaps, "Candles array still has gaps").to.be.false;
+}
 
 describe('Chart Data mock', () => {
     let server: WS;
@@ -201,11 +208,7 @@ describe('Chart Data mock', () => {
             {timeout: 5000},
         );
         expect(candles.length, "length must be equal 1500").eq(1500)
-        // проверяем что все id идут друг за другом, нет дублей, нет дыр.
-        const hasGaps = candles.some((c, i, arr) =>
-            i > 0 && c.id - arr[i - 1].id !== 1
-        );
-        expect(hasGaps, "Candles array still has gaps").to.be.false;
+        candlesShouldNotHaveGaps(layer.getAllCandles())
         // проверяем что не было "лишних" вызовов еще 5 сек
         await expect(
             vi.waitFor(
@@ -213,6 +216,140 @@ describe('Chart Data mock', () => {
                 {timeout: 5_000}
             ),
         ).rejects.toThrow();
+    })
+
+    it('should filling history gaps when call fetchCandles', async () => {
+        sdk = await ClientSdk.create("ws://localhost:1234", 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options)
+        now = Math.floor(Date.now() / 1000);
+
+        const candlesReq = vi.fn();
+        const size = 1;
+        socket.on('message', raw => {
+            const msg = typeof raw === 'string' ? safeJsonParse(raw) : raw;
+            if (msg?.msg?.name === 'quotes-history.get-candles') {
+                if (msg?.msg?.body.to == now) {
+                    const count = msg?.msg?.body.count
+                    candlesReq(msg);
+                    socket.send(JSON.stringify({
+                        // массив с дырами внутри и слева
+                        msg: generateCandlesJson(100 - count + 1, now - count, size, count, [91, 95, 100]),
+                        request_id: msg.request_id,
+                    }),)
+                }
+                if (msg?.msg?.body.to == now - 11) {
+                    const count = msg?.msg?.body.count
+                    candlesReq(msg);
+                    socket.send(JSON.stringify({
+                        msg: generateCandlesJson(100 - 14, now - 15, size, count),
+                        request_id: msg.request_id,
+                    }),)
+                }
+            }
+        })
+
+        const missingSpy = vi.fn();
+        socket.on('message', raw => {
+            const msg = typeof raw === 'string' ? safeJsonParse(raw) : raw;
+            if (msg?.msg?.name === 'quotes-history.get-candles' && msg?.msg?.body.from_id) {
+                missingSpy(msg?.msg.body);
+                switch (msg?.msg?.body.from_id) {
+                    case 87:
+                        socket.send(JSON.stringify({
+                            msg: generateMissingCandlesJson(
+                                87,
+                                now - 14,
+                                size,
+                                [[87, 92]],
+                            ),
+                            request_id: msg.request_id,
+                        }))
+                        break
+                    case 94:
+                        socket.send(JSON.stringify({
+                            msg: generateMissingCandlesJson(
+                                94,
+                                now - 7,
+                                size,
+                                [[94, 96]],
+                            ),
+                            request_id: msg.request_id,
+                        }))
+                        break
+                    case 99:
+                        socket.send(JSON.stringify({
+                            msg: generateMissingCandlesJson(
+                                99,
+                                now - 2,
+                                size,
+                                [[99, 101]],
+                            ),
+                            request_id: msg.request_id,
+                        }))
+                        break
+                }
+            }
+        })
+
+        const facade = await sdk.realTimeChartDataLayer(1, size);
+        const candles = await facade.fetchCandles(now, 10);
+        expect(candlesReq).toHaveBeenCalledTimes(1);
+        expect(candles.length, "length must be equal 7").eq(7)
+
+        // проверяем, что клиент попросил ровно 3 недостающие свечи
+        /** ждём максимум 5 000 мс, пока клиент не запросит «дыры» */
+        await vi.waitFor(
+            () => {
+                expect(missingSpy).toHaveBeenCalledTimes(1);
+                expect(missingSpy).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        from_id: 94,
+                        to_id: 96
+                    }),
+                )
+            },
+            {timeout: 5000},
+        );
+        expect(facade.getAllCandles().length, "length must be equal 8").eq(8)
+        socket.on('message', raw => {
+            const msg = typeof raw === 'string' ? safeJsonParse(raw) : raw;
+            if (msg?.msg?.name === 'candle-generated') {
+                socket.send(JSON.stringify({msg: {success: true}, request_id: msg.request_id}));
+                stopStream = startCandleStream(socket, 1, size, 101, [], 103)
+            }
+        })
+
+        facade.subscribeOnLastCandleChanged(candles => candles);
+        /** ждём максимум 5 000 мс, пока клиент не запросит «дыры» */
+        await vi.waitFor(
+            () => {
+                expect(missingSpy).toHaveBeenCalledTimes(2);
+                expect(missingSpy).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        from_id: 99,
+                        to_id: 101
+                    }),
+                )
+            },
+            {timeout: 5000},
+        );
+        await justWait(5000)
+        expect(facade.getAllCandles().length, "length must be equal 12").eq(12)
+        await facade.fetchCandles(now - 11, 2);
+        /** ждём максимум 5 000 мс, пока клиент не запросит «дыры» */
+        await vi.waitFor(
+            () => {
+                expect(missingSpy).toHaveBeenCalledTimes(3);
+                expect(missingSpy).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        from_id: 87,
+                        to_id: 92
+                    }),
+                )
+            },
+            {timeout: 5000},
+        );
+        expect(facade.getAllCandles().length, "length must be equal 18").eq(18)
+        candlesShouldNotHaveGaps(facade.getAllCandles());
     })
 
     it('should filling gaps in current candles', async () => {
@@ -298,12 +435,7 @@ describe('Chart Data mock', () => {
             },
             {timeout: 5000},
         )
-
-        // проверяем что все id идут друг за другом, нет дублей, нет дыр.
-        const hasGaps = layer.getAllCandles().some((c, i, arr) =>
-            i > 0 && c.id - arr[i - 1].id !== 1
-        );
-        expect(hasGaps, "Candles array still has gaps").to.be.false;
+        candlesShouldNotHaveGaps(layer.getAllCandles())
         // проверяем что не было "лишних" вызовов еще 5 сек
         await expect(
             vi.waitFor(
