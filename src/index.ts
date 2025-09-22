@@ -8405,7 +8405,7 @@ class HttpOAuthRequest {
     }
 
     buildUrl(baseUrl: string): string {
-        return `${baseUrl}${this.path()}?${this.queryParams().toString()}`;
+        return `https://${baseUrl}${this.path()}?${this.queryParams().toString()}`;
     }
 }
 
