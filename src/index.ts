@@ -570,6 +570,168 @@ export class SsidAuthMethod implements AuthMethod {
 }
 
 /**
+ * Implements OAuth2 authentication flow.
+ */
+export class OAuthMethod implements AuthMethod {
+    private isBrowser = typeof window !== 'undefined';
+
+    /**
+     * Accepts parameters for OAuth2 authentication.
+     * @param apiBaseUrl - Base URL for API requests.
+     * @param clientId - Client ID.
+     * @param redirectUri - Redirect URI.
+     * @param scope - Scope.
+     * @param clientSecret - Client secret (optional, only for server-side applications).
+     * @param accessToken - Access token (optional).
+     * @param refreshToken - Refresh token (optional only for server-side applications).
+     * @param affId - Affiliate ID (optional).
+     * @param afftrack - Affiliate tracking info (optional).
+     * @param affModel - Affiliate model (optional).
+     */
+    public constructor(
+        private readonly apiBaseUrl: string,
+        private readonly clientId: number,
+        private readonly redirectUri: string,
+        private readonly scope: string,
+        private readonly clientSecret?: string,
+        private accessToken?: string,
+        private refreshToken?: string,
+        private readonly affId?: number,
+        private readonly afftrack?: string,
+        private readonly affModel?: string,
+    ) {
+        if (this.isBrowser && this.clientSecret) {
+            throw new Error('Client secret should not be used in browser applications');
+        }
+    }
+
+    /**
+     * Authenticates client in WebSocket API.
+     * @param wsApiClient
+     */
+    public async authenticateWsApiClient(wsApiClient: WsApiClient): Promise<boolean> {
+        if (this.accessToken) {
+            const authResponse = await wsApiClient.doRequest<Authenticated>(new Authenticate(this.accessToken))
+
+            if (authResponse.isSuccessful) {
+                return authResponse.isSuccessful
+            }
+
+            if (!this.refreshToken || !this.clientSecret) {
+                return false
+            }
+
+            const hasNewAccessToken = await this.refreshAccessToken()
+            if (hasNewAccessToken) {
+                return this.authenticateWsApiClient(wsApiClient)
+            }
+        }
+
+        return false
+    }
+
+    /**
+     * Creates authorization URL and code verifier for PKCE flow.
+     */
+    public async createAuthorizationUrl(): Promise<{ url: string; codeVerifier: string }> {
+        const codeVerifier = this.generateCodeVerifier(96);
+        const codeChallenge = await this.generateCodeChallenge(codeVerifier);
+
+        const state = this.randomUrlSafe(16);
+
+        const request = new HttpOAuthRequest(
+            this.redirectUri,
+            this.clientId,
+            this.scope,
+            codeChallenge,
+            "S256",
+            state,
+            this.affId,
+            this.afftrack,
+            this.affModel
+        )
+
+        return {url: request.buildUrl(this.apiBaseUrl), codeVerifier};
+    }
+
+    /**
+     * Exchanges authorization code for access token and refresh token.
+     * @param code
+     * @param codeVerifier
+     */
+    public async issueAccessTokenWithAuthCode(code: string, codeVerifier: string): Promise<{
+        accessToken: string,
+        refreshToken?: string
+    }> {
+        const httpApiClient = new HttpApiClient(`https://${this.apiBaseUrl}`)
+        const response = await httpApiClient.doRequest(
+            new HttpAccessTokenRequest(code, this.clientId, codeVerifier, this.redirectUri)
+        )
+
+        if (response.status === 200 && response.data.accessToken) {
+            this.accessToken = response.data.accessToken
+            this.refreshToken = response.data.refreshToken
+
+            return {
+                accessToken: response.data.accessToken,
+                refreshToken: response.data.refreshToken
+            }
+        } else {
+            throw new Error(`Failed to issue access token: ${response.status}`)
+        }
+    }
+
+    private generateCodeVerifier(length = 64): string {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+        let result = '';
+        const array = new Uint8Array(length);
+        crypto.getRandomValues(array);
+        for (let i = 0; i < length; i++) {
+            result += chars[array[i] % chars.length];
+        }
+        return result;
+    }
+
+    private async generateCodeChallenge(codeVerifier: string): Promise<string> {
+        const data = new TextEncoder().encode(codeVerifier);
+        const digest = await crypto.subtle.digest('SHA-256', data);
+        return this.base64url(new Uint8Array(digest));
+    }
+
+    private randomUrlSafe(bytes = 16): string {
+        const a = new Uint8Array(bytes);
+        crypto.getRandomValues(a);
+        return this.base64url(a);
+    }
+
+    private base64url(input: Uint8Array): string {
+        let str = '';
+        for (let i = 0; i < input.length; i++) str += String.fromCharCode(input[i]);
+        return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    }
+
+    private async refreshAccessToken(): Promise<boolean> {
+        if (!this.refreshToken || !this.clientSecret) {
+            return false
+        }
+
+        const httpApiClient = new HttpApiClient(this.apiBaseUrl)
+        const response = await httpApiClient.doRequest(
+            new HttpRefreshAccessTokenRequest(this.refreshToken, this.clientId, this.clientSecret)
+        )
+
+        if (response.status === 200 && response.data.accessToken) {
+            this.accessToken = response.data.accessToken
+            this.refreshToken = response.data.refreshToken
+
+            return true
+        }
+
+        return false
+    }
+}
+
+/**
  * Implements login/password authentication flow.
  */
 export class LoginPasswordAuthMethod implements AuthMethod {
@@ -8203,6 +8365,144 @@ class HttpLoginRequest implements HttpRequest<HttpResponse<HttpLoginResponse>> {
 
     createResponse(status: number, data: any): HttpResponse<HttpLoginResponse> {
         return new HttpResponse(status, new HttpLoginResponse(data))
+    }
+}
+
+class HttpOAuthRequest {
+    constructor(
+        private readonly redirectUri: string,
+        private readonly clientId: number,
+        private readonly scope: string,
+        private readonly codeChallenge: string,
+        private readonly codeChallengeMethod: string,
+        private readonly state?: string,
+        private readonly affiliateId?: number,
+        private readonly afftrack?: string,
+        private readonly aff_model?: string,
+    ) {
+    }
+
+    path(): string {
+        return '/auth/oauth.v5/authorize';
+    }
+
+    queryParams(): URLSearchParams {
+        const params = new URLSearchParams({
+            response_type: 'code',
+            redirect_uri: this.redirectUri,
+            client_id: this.clientId.toString(),
+            scope: this.scope,
+            code_challenge: this.codeChallenge,
+            code_challenge_method: this.codeChallengeMethod,
+        });
+
+        if (this.state) params.set('state', this.state);
+        if (this.affiliateId) params.set('aff', String(this.affiliateId));
+        if (this.afftrack) params.set('afftrack', this.afftrack);
+        if (this.aff_model) params.set('aff_model', this.aff_model);
+
+        return params;
+    }
+
+    buildUrl(baseUrl: string): string {
+        return `${baseUrl}${this.path()}?${this.queryParams().toString()}`;
+    }
+}
+
+class HttpAccessTokenRequest implements HttpRequest<HttpResponse<HttpAccessTokenResponse>> {
+    constructor(
+        private readonly code: string,
+        private readonly clientId: number,
+        private readonly codeVerifier: string,
+        private readonly redirectUri: string,
+    ) {
+    }
+
+    method(): string {
+        return 'POST'
+    }
+
+    path() {
+        return '/auth/oauth.v5/token'
+    }
+
+    messageBody() {
+        return {
+            grant_type: 'authorization_code',
+            code: this.code,
+            redirect_uri: this.redirectUri,
+            client_id: this.clientId,
+            code_verifier: this.codeVerifier,
+        }
+    }
+
+    createResponse(status: number, data: any): HttpResponse<HttpAccessTokenResponse> {
+        return new HttpResponse(status, new HttpAccessTokenResponse(data))
+    }
+}
+
+class HttpAccessTokenResponse {
+    accessToken: string
+    tokenType: string
+    expiresIn: number
+    refreshToken?: string
+    scope: string
+
+    constructor(data: any) {
+        this.accessToken = data.access_token
+        this.tokenType = data.token_type
+        this.expiresIn = data.expires_in
+        this.scope = data.scope
+
+        if (data.refresh_token) {
+            this.refreshToken = data.refresh_token
+        }
+    }
+}
+
+class HttpRefreshAccessTokenRequest implements HttpRequest<HttpResponse<HttpRefreshAccessTokenResponse>> {
+    constructor(
+        private readonly refreshToken: string,
+        private readonly clientId: number,
+        private readonly clientSecret: string,
+    ) {
+    }
+
+    method(): string {
+        return 'POST'
+    }
+
+    path() {
+        return '/auth/oauth.v5/token'
+    }
+
+    messageBody() {
+        return {
+            grant_type: 'refresh_token',
+            refresh_token: this.refreshToken,
+            client_id: this.clientId,
+            client_secret: this.clientSecret,
+        }
+    }
+
+    createResponse(status: number, data: any): HttpResponse<HttpRefreshAccessTokenResponse> {
+        return new HttpResponse(status, new HttpRefreshAccessTokenResponse(data))
+    }
+}
+
+class HttpRefreshAccessTokenResponse {
+    accessToken: string
+    tokenType: string
+    expiresIn: number
+    refreshToken: string
+    scope: string
+
+    constructor(data: any) {
+        this.accessToken = data.access_token
+        this.tokenType = data.token_type
+        this.expiresIn = data.expires_in
+        this.refreshToken = data.refresh_token
+        this.scope = data.scope
     }
 }
 
