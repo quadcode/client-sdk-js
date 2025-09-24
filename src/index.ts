@@ -651,7 +651,12 @@ export class OAuthMethod implements AuthMethod {
             this.affModel
         )
 
-        return {url: request.buildUrl(this.apiBaseUrl), codeVerifier};
+        let url = this.apiBaseUrl
+        if (!this.apiBaseUrl.startsWith('http://') && !this.apiBaseUrl.startsWith('https://')) {
+            url = `https://${this.apiBaseUrl}`
+        }
+
+        return {url: request.buildUrl(url), codeVerifier};
     }
 
     /**
