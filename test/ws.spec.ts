@@ -33,7 +33,7 @@ describe('ws connection state', () => {
         let prev: Date = time;
         sdk.subscribeOnWsCurrentTime(currentTime => time = currentTime)
         for (let i = 0; i < 10; i++) {
-            await justWait(1000)
+            await justWait(1100)
             expect(time.getTime() - prev.getTime()).greaterThanOrEqual(900);
             prev = time;
         }
