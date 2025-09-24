@@ -663,7 +663,7 @@ export class OAuthMethod implements AuthMethod {
         accessToken: string,
         refreshToken?: string
     }> {
-        const httpApiClient = new HttpApiClient(`https://${this.apiBaseUrl}`)
+        const httpApiClient = this.httpApiClient()
         const response = await httpApiClient.doRequest(
             new HttpAccessTokenRequest(code, this.clientId, codeVerifier, this.redirectUri)
         )
@@ -715,7 +715,7 @@ export class OAuthMethod implements AuthMethod {
             return false
         }
 
-        const httpApiClient = new HttpApiClient(this.apiBaseUrl)
+        const httpApiClient = this.httpApiClient()
         const response = await httpApiClient.doRequest(
             new HttpRefreshAccessTokenRequest(this.refreshToken, this.clientId, this.clientSecret)
         )
@@ -728,6 +728,14 @@ export class OAuthMethod implements AuthMethod {
         }
 
         return false
+    }
+
+    private httpApiClient() {
+        if (!this.apiBaseUrl.startsWith('http://') && !this.apiBaseUrl.startsWith('https://')) {
+            return new HttpApiClient(`https://${this.apiBaseUrl}`);
+        }
+
+        return new HttpApiClient(this.apiBaseUrl);
     }
 }
 
