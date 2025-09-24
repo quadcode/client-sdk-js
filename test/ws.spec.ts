@@ -71,8 +71,8 @@ describe('ws connection state', () => {
         await positionsHelper.waitForPosition(position => position.invest == invest && position.status == "open", 120000);
         console.log("Waiting for position opened before disconnect was updated(closed)")
         const position1 = await positionsHelper.waitForPosition(position => position.externalId == option.id && position.status === "closed", 120000);
-        console.log("Check that getAllPositions return only 1 open position")
-        expect(positions.getAllPositions().length).to.be.eq(1);
+        console.log("Check that getOpenedPositions return only 1 open position")
+        expect(positions.getOpenedPositions().length).to.be.eq(1);
         positionsHelper.findPositionByPredicate(position => position.invest == invest && position.status == "open")
         console.log("Check that second position is in the history positions")
         expect(positionsHelper.findHistoryPosition(position1.externalId)).not.undefined;
