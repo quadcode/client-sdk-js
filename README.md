@@ -16,7 +16,7 @@ import {ClientSdk, OAuthMethod} from '@quadcode-tech/client-sdk-js'
 async function startLogin() {
 	const oauth = new OAuthMethod(
 		'https://api.trade.example.com',
-		CLIENT_ID,                                // your client ID
+		CLIENT_ID,                                // your client ID (you can request CLIENT_ID and CLIENT_SECRET by creating an issue on GitHub)
 		'https://your.app/callback',              // redirect URI
 		'full'                                    // scope (e.g. 'full' or 'full offline_access')
 	)
@@ -73,7 +73,7 @@ import {ClientSdk, OAuthMethod} from '@quadcode-tech/client-sdk-js'
 async function startLogin() {
 	const oauth = new OAuthMethod(
 		'https://api.trade.example.com',
-		CLIENT_ID,                                // your client ID
+		CLIENT_ID,                                // your client ID (you can request CLIENT_ID and CLIENT_SECRET by creating an issue on GitHub)
 		'https://your.app/callback',              // redirect URI
 		'offline_access'                          // scope (e.g. 'full' or 'full offline_access')
 	)
