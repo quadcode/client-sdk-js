@@ -6,9 +6,173 @@
 npm install @quadcode-tech/client-sdk-js
 ```
 
-## Quick start
+## Quick start with OAuth (PKCE) authentication
 
-### Initialize SDK facade
+### [Online access] Step 1: Redirect user to authorization
+
+```js
+import {ClientSdk, OAuthMethod} from '@quadcode-tech/client-sdk-js'
+
+async function startLogin() {
+	const oauth = new OAuthMethod(
+		'https://api.trade.example.com',
+		CLIENT_ID,                                // your client ID
+		'https://your.app/callback',              // redirect URI
+		'full'                                    // scope (e.g. 'full' or 'full offline_access')
+	)
+	const {url, codeVerifier} = await oauth.createAuthorizationUrl()
+	sessionStorage.setItem('pkce_verifier', codeVerifier)
+	window.location.href = url
+}
+```
+
+### [Online access] Step 2: Handle redirect and create SDK instance
+
+```js 
+async function handleCallback() {
+	const params = new URLSearchParams(window.location.search);
+	const code = params.get('code');
+	const codeVerifier = sessionStorage.getItem('pkce_verifier');
+
+	if (!code) throw new Error('Missing ?code in callback URL');
+	if (!codeVerifier) throw new Error('Missing PKCE code_verifier');
+
+	const oauth = new OAuthMethod(
+		'https://api.trade.example.com',
+		CLIENT_ID,
+		'https://your.app/callback',
+		'full'
+	);
+
+	const {accessToken, refreshToken} = await oauth.issueAccessTokenWithAuthCode(code, codeVerifier);
+
+	const sdk = await ClientSdk.create(
+		'wss://ws.trade.example.com/echo/websocket',
+		82,
+		new OAuthMethod(
+			'https://api.trade.example.com',
+			CLIENT_ID,
+			'https://your.app/callback',
+			'full offline_access',
+			undefined,        // no clientSecret in browser
+			accessToken,
+			refreshToken || undefined
+		)
+	);
+
+	const balances = await sdk.balances();
+	console.log(balances.getBalances());
+}
+```
+
+### [Offline access] Step 1: Redirect user to authorization
+
+```js
+import {ClientSdk, OAuthMethod} from '@quadcode-tech/client-sdk-js'
+
+async function startLogin() {
+	const oauth = new OAuthMethod(
+		'https://api.trade.example.com',
+		CLIENT_ID,                                // your client ID
+		'https://your.app/callback',              // redirect URI
+		'offline_access'                          // scope (e.g. 'full' or 'full offline_access')
+	)
+	const {url, codeVerifier} = await oauth.createAuthorizationUrl()
+	sessionStorage.setItem('pkce_verifier', codeVerifier)
+	window.location.href = url
+}
+```
+
+### [Online access] Step 2: Handle redirect and save refresh token on server side
+
+```js 
+import express from 'express'
+import {OAuthMethod} from '@quadcode-tech/client-sdk-js'
+
+const app = express()
+app.use(express.json())
+
+app.post('/api/oauth/exchange', async (req, res) => {
+	const {code, codeVerifier} = req.body
+	if (!code || !codeVerifier) return res.status(400).json({error: 'Bad request'})
+
+	const oauth = new OAuthMethod(
+		'https://api.trade.example.com',
+		Number(process.env.CLIENT_ID),
+		'https://your.app/callback',
+		'full offline_access',
+		process.env.CLIENT_SECRET                 // SECRET: server-side only
+	)
+
+	const {accessToken, refreshToken, expiresIn} = await oauth.issueAccessTokenWithAuthCode(code, codeVerifier)
+
+	// Persist refreshToken securely (DB/kv bound to user/session)
+	await saveUserRefreshToken(req, refreshToken)
+
+	// Return ONLY a short-lived access token to the browser
+	res.json({accessToken, expiresIn})
+})
+
+// Optional refresh endpoint (server uses stored refresh token)
+app.post('/api/oauth/refresh', async (req, res) => {
+	const storedRefreshToken = await loadUserRefreshToken(req)
+	if (!storedRefreshToken) return res.status(401).json({error: 'No refresh token'})
+
+	const oauth = new OAuthMethod(
+		'https://api.trade.example.com',
+		Number(process.env.CLIENT_ID),
+		'https://your.app/callback',
+		'full offline_access',
+		process.env.CLIENT_SECRET,
+		undefined,
+		storedRefreshToken
+	)
+
+	const {accessToken, expiresIn} = await oauth.refreshAccessToken()
+
+	return res.json({accessToken, expiresIn})
+})
+```
+
+### [Offline access] Step 3: Handle redirect and send code to server
+
+```js
+import {ClientSdk, OAuthMethod} from '@quadcode-tech/client-sdk-js'
+
+export async function handleCallbackAndStart() {
+	const params = new URLSearchParams(window.location.search)
+	const code = params.get('code')
+	const codeVerifier = sessionStorage.getItem('pkce_verifier')
+	if (!code || !codeVerifier) throw new Error('Missing code or PKCE verifier')
+
+	// Exchange on the server (server stores refresh; client gets only accessToken)
+	const r = await fetch('/api/oauth/exchange', {
+		method: 'POST',
+		headers: {'Content-Type': 'application/json'},
+		body: JSON.stringify({code, codeVerifier})
+	})
+	const {accessToken} = await r.json()
+
+	const sdk = await ClientSdk.create(
+		'wss://ws.trade.example.com/echo/websocket',
+		82,
+		new OAuthMethod(
+			'https://api.trade.example.com',
+			CLIENT_ID,
+			'https://your.app/callback',
+			'full offline_access',
+			undefined,         // NEVER put clientSecret in the browser
+			accessToken        // no refresh token in the browser
+		)
+	)
+
+	// use SDK
+	const balances = await sdk.balances()
+	console.log(balances.getBalances())
+}
+```
+
+## Quick start with Login/Password authentication
 
 ```js
 import {
@@ -129,7 +293,7 @@ console.log(putOption)
 const blitzOptions = await sdk.blitzOptions()
 const positions = await sdk.positions()
 
-console.log(positions.getAllPositions().filter((position) => position.instrumentType === InstrumentType.BlitzOption))
+console.log(positions.getOpenedPositions().filter((position) => position.instrumentType === InstrumentType.BlitzOption))
 
 positions.subscribeOnUpdatePosition((position) => {
 	if (position.instrumentType === InstrumentType.BlitzOption) {
@@ -145,6 +309,10 @@ const blitzOptions = await sdk.blitzOptions()
 const positions = await sdk.positions()
 const positionsHistory = await positions.getPositionsHistory()
 
+if (positionsHistory.hasPrevPage()) {
+	await positionsHistory.fetchPrevPage()
+}
+
 console.log(positionsHistory.getPositions())
 ```
 
@@ -152,7 +320,7 @@ console.log(positionsHistory.getPositions())
 
 ```js
 const positions = await sdk.positions()
-const position = positions.getAllPositions().find((position) => position.externalId == 1)
+const position = positions.getOpenedPositions().find((position) => position.externalId == 1)
 await position.sell() // not available for blitz options 
 ```
 
@@ -160,7 +328,7 @@ await position.sell() // not available for blitz options
 
 ```js
 const positions = await sdk.positions()
-const position = positions.getAllPositions().find((position) => position.externalId == 1)
+const position = positions.getOpenedPositions().find((position) => position.externalId == 1)
 console.log(position.pnlNet)
 console.log(position.sellProfit)
 ```
@@ -193,7 +361,7 @@ console.log(putOption)
 const turboOptions = await sdk.turboOptions()
 const positions = await sdk.positions()
 
-console.log(positions.getAllPositions().filter((position) => position.instrumentType === InstrumentType.TurboOption))
+console.log(positions.getOpenedPositions().filter((position) => position.instrumentType === InstrumentType.TurboOption))
 
 positions.subscribeOnUpdatePosition((position) => {
 	if (position.instrumentType === InstrumentType.TurboOption) {
@@ -252,7 +420,7 @@ const durationRemainingForPurchase = firstInstrument.durationRemainingForPurchas
 const binaryOptions = await sdk.binaryOptions()
 const positions = await sdk.positions()
 
-console.log(positions.getAllPositions().filter((position) => position.instrumentType === InstrumentType.BinaryOption))
+console.log(positions.getOpenedPositions().filter((position) => position.instrumentType === InstrumentType.BinaryOption))
 
 binaryOptionsPositions.subscribeOnUpdatePosition((position) => {
 	if (position.instrumentType === InstrumentType.BinaryOption) {
@@ -291,7 +459,7 @@ console.log(putOption)
 const digitalOptions = await sdk.digitalOptions()
 const positions = await sdk.positions()
 
-console.log(digitalOptionsPositions.getAllPositions().filter((position) => position.instrumentType === InstrumentType.DigitalOption))
+console.log(digitalOptionsPositions.getOpenedPositions().filter((position) => position.instrumentType === InstrumentType.DigitalOption))
 
 digitalOptionsPositions.subscribeOnUpdatePosition((position) => {
 	if (position.instrumentType === InstrumentType.DigitalOption) {
@@ -360,6 +528,7 @@ npm install @quadcode-tech/client-sdk-js lightweight-charts @mantine/core
 ## Example (React)
 
 ### src/App.tsx
+
 ```tsx
 import React from 'react';
 import {SdkProvider} from "../provider/SdkProvider.tsx";
@@ -375,6 +544,7 @@ export default function App() {
 ```
 
 ### src/context/SdkContext.ts
+
 ```ts
 import {createContext} from 'react';
 import {ClientSdk} from "@quadcode-tech/client-sdk-js";
@@ -383,6 +553,7 @@ export const SdkContext = createContext<ClientSdk | null>(null);
 ```
 
 ### src/provider/SdkProvider.tsx
+
 ```tsx
 import {ReactNode, useEffect, useRef, useState} from 'react';
 import {ClientSdk, SsidAuthMethod} from '@quadcode-tech/client-sdk-js';
@@ -433,21 +604,23 @@ export const SdkProvider = ({children}: { children: ReactNode }) => {
 ```
 
 ### src/hooks/useSdk.ts
+
 ```tsx
 import {useContext} from 'react';
 import {SdkContext} from '../context/SdkContext';
 import type {ClientSdk} from '@quadcode-tech/client-sdk-js';
 
 export const useSdk = (): ClientSdk => {
-   const sdk = useContext(SdkContext);
-   if (!sdk) {
-      throw new Error('useSdk must be used within SdkProvider');
-   }
-   return sdk;
+    const sdk = useContext(SdkContext);
+    if (!sdk) {
+        throw new Error('useSdk must be used within SdkProvider');
+    }
+    return sdk;
 };
 ```
 
 ### src/pages/Home.page.tsx
+
 ```tsx
 import {Chart} from '../components/Chart';
 import {Flex, Select} from "@mantine/core";
@@ -531,6 +704,7 @@ export default function HomePage() {
 ```
 
 ### src/components/Chart.tsx
+
 ```tsx
 import {useEffect, useRef} from 'react';
 import {CandlestickSeries, createChart, UTCTimestamp} from 'lightweight-charts';
@@ -538,92 +712,92 @@ import {useSdk} from '../hooks/useSdk.ts';
 import {Candle} from '@quadcode-tech/client-sdk-js';
 
 interface ChartProps {
-   activeId: number;
-   candleSize: number;
-   chartHeight?: number;
-   chartMinutesBack?: number;
+    activeId: number;
+    candleSize: number;
+    chartHeight?: number;
+    chartMinutesBack?: number;
 }
 
 export function Chart({activeId, candleSize, chartHeight = 400, chartMinutesBack = 60}: ChartProps) {
-   const sdk = useSdk();
-   const containerRef = useRef<HTMLDivElement>(null);
-   const earliestLoadedRef = useRef<number | null>(null);
-   const fetchingRef = useRef<boolean>(false);
+    const sdk = useSdk();
+    const containerRef = useRef<HTMLDivElement>(null);
+    const earliestLoadedRef = useRef<number | null>(null);
+    const fetchingRef = useRef<boolean>(false);
 
-   useEffect(() => {
-      if (!sdk || !containerRef.current) return;
+    useEffect(() => {
+        if (!sdk || !containerRef.current) return;
 
-      const chart = createChart(containerRef.current, {
-         layout: {textColor: 'black'},
-         height: chartHeight,
-      });
+        const chart = createChart(containerRef.current, {
+            layout: {textColor: 'black'},
+            height: chartHeight,
+        });
 
-      const series = chart.addSeries(CandlestickSeries);
+        const series = chart.addSeries(CandlestickSeries);
 
-      const initChart = async () => {
-         const chartLayer = await sdk.realTimeChartDataLayer(activeId, candleSize);
-         const from = Math.floor(Date.now() / 1000) - chartMinutesBack * 60;
-         const candles = await chartLayer.fetchAllCandles(from);
+        const initChart = async () => {
+            const chartLayer = await sdk.realTimeChartDataLayer(activeId, candleSize);
+            const from = Math.floor(Date.now() / 1000) - chartMinutesBack * 60;
+            const candles = await chartLayer.fetchAllCandles(from);
 
-         const format = (cs: Candle[]) =>
-                 cs.map((c) => ({
+            const format = (cs: Candle[]) =>
+                cs.map((c) => ({
                     time: c.from as UTCTimestamp,
                     open: c.open,
                     high: c.max,
                     low: c.min,
                     close: c.close,
-                 }));
+                }));
 
-         series.setData(format(candles));
+            series.setData(format(candles));
 
-         if (candles.length > 0) {
-            earliestLoadedRef.current = candles[0].from as number;
-         }
-
-         chartLayer.subscribeOnLastCandleChanged((candle) => {
-            series.update({
-               time: candle.from as UTCTimestamp,
-               open: candle.open,
-               high: candle.max,
-               low: candle.min,
-               close: candle.close,
-            });
-         });
-
-         chartLayer.subscribeOnConsistencyRecovered(() => {
-            const all = chartLayer.getAllCandles();
-            series.setData(format(all));
-         });
-
-         chart.timeScale().subscribeVisibleTimeRangeChange((range) => {
-            if (!range || !earliestLoadedRef.current || fetchingRef.current) return;
-
-            if ((range.from as number) <= earliestLoadedRef.current) {
-               fetchingRef.current = true;
-               const fetchFrom = earliestLoadedRef.current - chartMinutesBack * 60;
-
-               chartLayer.fetchAllCandles(fetchFrom).then((moreData) => {
-                  const formatted = format(moreData);
-
-                  series.setData(formatted); // можно заменить на merge если нужно
-                  if (formatted.length > 0) {
-                     earliestLoadedRef.current = formatted[0].time;
-                  }
-               }).finally(() => {
-                  fetchingRef.current = false;
-               });
+            if (candles.length > 0) {
+                earliestLoadedRef.current = candles[0].from as number;
             }
-         });
-      };
 
-      initChart().then();
+            chartLayer.subscribeOnLastCandleChanged((candle) => {
+                series.update({
+                    time: candle.from as UTCTimestamp,
+                    open: candle.open,
+                    high: candle.max,
+                    low: candle.min,
+                    close: candle.close,
+                });
+            });
 
-      return () => {
-         chart.remove();
-      };
-   }, [sdk, containerRef, activeId, candleSize, chartHeight, chartMinutesBack]);
+            chartLayer.subscribeOnConsistencyRecovered(() => {
+                const all = chartLayer.getAllCandles();
+                series.setData(format(all));
+            });
 
-   return <div ref={containerRef} style={{width: '100%', height: chartHeight}}/>;
+            chart.timeScale().subscribeVisibleTimeRangeChange((range) => {
+                if (!range || !earliestLoadedRef.current || fetchingRef.current) return;
+
+                if ((range.from as number) <= earliestLoadedRef.current) {
+                    fetchingRef.current = true;
+                    const fetchFrom = earliestLoadedRef.current - chartMinutesBack * 60;
+
+                    chartLayer.fetchAllCandles(fetchFrom).then((moreData) => {
+                        const formatted = format(moreData);
+
+                        series.setData(formatted); // можно заменить на merge если нужно
+                        if (formatted.length > 0) {
+                            earliestLoadedRef.current = formatted[0].time;
+                        }
+                    }).finally(() => {
+                        fetchingRef.current = false;
+                    });
+                }
+            });
+        };
+
+        initChart().then();
+
+        return () => {
+            chart.remove();
+        };
+    }, [sdk, containerRef, activeId, candleSize, chartHeight, chartMinutesBack]);
+
+    return <div ref={containerRef} style={{width: '100%', height: chartHeight}}/>;
 }
 ```
 

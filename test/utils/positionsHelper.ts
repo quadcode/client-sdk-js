@@ -47,11 +47,11 @@ export class PositionsHelper {
 
     public findPositionByExternalId(position_id: number | undefined): Position | undefined {
         if (position_id === undefined) throw new Error('Parameter position_id is undefined')
-        return this.positions.getAllPositions().find(value => value.externalId === position_id);
+        return this.positions.getOpenedPositions().find(value => value.externalId === position_id);
     }
 
     public findPositionByPredicate(predicate: (value: Position) => boolean): Position | undefined {
-        return this.positions.getAllPositions().find(predicate);
+        return this.positions.getOpenedPositions().find(predicate);
     }
 
     public findOrder(order_id: number | undefined): Order | undefined {
@@ -80,7 +80,7 @@ export class PositionsHelper {
     }
 
     public async closeOpenedPositions() {
-        for (const position of this.positions.getAllPositions()) {
+        for (const position of this.positions.getOpenedPositions()) {
             await position.sell();
         }
     }

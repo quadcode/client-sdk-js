@@ -666,6 +666,7 @@ export class OAuthMethod implements AuthMethod {
      */
     public async issueAccessTokenWithAuthCode(code: string, codeVerifier: string): Promise<{
         accessToken: string,
+        expiresIn: number,
         refreshToken?: string
     }> {
         const httpApiClient = this.httpApiClient()
@@ -679,6 +680,7 @@ export class OAuthMethod implements AuthMethod {
 
             return {
                 accessToken: response.data.accessToken,
+                expiresIn: response.data.expiresIn,
                 refreshToken: response.data.refreshToken
             }
         } else {
@@ -715,9 +717,13 @@ export class OAuthMethod implements AuthMethod {
         return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
     }
 
-    private async refreshAccessToken(): Promise<boolean> {
+    public async refreshAccessToken(): Promise<{
+        accessToken: string,
+        expiresIn: number,
+        refreshToken?: string
+    }> {
         if (!this.refreshToken || !this.clientSecret) {
-            return false
+            return Promise.reject('Refresh token or client secret is not set');
         }
 
         const httpApiClient = this.httpApiClient()
@@ -729,10 +735,14 @@ export class OAuthMethod implements AuthMethod {
             this.accessToken = response.data.accessToken
             this.refreshToken = response.data.refreshToken
 
-            return true
+            return {
+                accessToken: response.data.accessToken,
+                expiresIn: response.data.expiresIn,
+                refreshToken: response.data.refreshToken
+            }
         }
 
-        return false
+        return Promise.reject(`Failed to refresh access token: ${response.status}`);
     }
 
     private httpApiClient() {
@@ -2629,9 +2639,23 @@ export class Positions {
     }
 
     /**
+     * @deprecated. Use {@link Positions.getOpenedPositions} instead.
      * Returns list of all positions.
      */
     public getAllPositions(): Position[] {
+        const list = []
+
+        for (const [index] of this.positions) {
+            list.push(this.positions.get(index)!)
+        }
+
+        return list
+    }
+
+    /**
+     * Returns list of opened positions.
+     */
+    public getOpenedPositions(): Position[] {
         const list = []
 
         for (const [index] of this.positions) {
@@ -3216,7 +3240,9 @@ class PositionsHistory {
     }
 
     /**
-     * Returns positions history.
+     * Returns list of loaded pages of positions history.
+     *
+     * Note: call after {@link fetchPrevPage} method.
      */
     public getPositions(): Position[] {
         const positions = [];
