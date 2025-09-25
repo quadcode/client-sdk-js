@@ -172,26 +172,6 @@ export async function handleCallbackAndStart() {
 }
 ```
 
-## Quick start with Login/Password authentication
-
-```js
-import {
-	ClientSdk,
-	BalanceType,
-	BinaryOptionsDirection,
-	BlitzOptionsDirection,
-	DigitalOptionsDirection,
-	SsidAuthMethod,
-	TurboOptionsDirection
-} from '@quadcode-tech/client-sdk-js'
-
-const sdk = await ClientSdk.create(
-	'wss://ws.trade.example.com/echo/websocket',
-	82,
-	new LoginPasswordAuthMethod('https://api.trade.example.com', "login", "password")
-)
-```
-
 ### Optional SDK Configuration
 
 The `ClientSdk.create` method accepts an optional fourth parameter for additional configuration:
@@ -200,8 +180,15 @@ The `ClientSdk.create` method accepts an optional fourth parameter for additiona
 const sdk = await ClientSdk.create(
 	'wss://ws.trade.example.com/echo/websocket',
 	82,
-	new LoginPasswordAuthMethod('https://api.trade.example.com', "login", "password"),
-	{
+	new OAuthMethod(
+		'https://api.trade.example.com',
+		CLIENT_ID,
+		'https://your.app/callback',
+		'full offline_access',
+		undefined,         // NEVER put clientSecret in the browser
+		accessToken        // no refresh token in the browser
+	),
+    {
 		// Optional: Override the default static files host
 		// Default: 'https://static.cdnroute.io/files'
 		staticHost: 'https://your-static-host.com/files',
