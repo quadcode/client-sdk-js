@@ -755,6 +755,7 @@ export class OAuthMethod implements AuthMethod {
 }
 
 /**
+ * @deprecated Use {@link OAuthMethod} instead.
  * Implements login/password authentication flow.
  */
 export class LoginPasswordAuthMethod implements AuthMethod {
@@ -763,23 +764,31 @@ export class LoginPasswordAuthMethod implements AuthMethod {
     /**
      * Accepts login and password for authentication.
      *
-     * @param httpApiUrl
-     * @param login
-     * @param password
+     * @param httpApiUrl Base URL for HTTP API.
+     * @param login User login.
+     * @param password User password.
      */
-    public constructor(private readonly httpApiUrl: string, private readonly login: string, private readonly password: string) {
+    public constructor(
+        private readonly httpApiUrl: string,
+        private readonly login: string,
+        private readonly password: string
+    ) {
         this.httpApiClient = new HttpApiClient(this.httpApiUrl)
     }
 
     /**
      * Authenticates client in WebSocket API.
-     * @param wsApiClient
+     * @param wsApiClient WebSocket API client instance.
      */
     public async authenticateWsApiClient(wsApiClient: WsApiClient): Promise<boolean> {
-        const response = await this.httpApiClient.doRequest(new HttpLoginRequest(this.login, this.password))
+        const response = await this.httpApiClient.doRequest(
+            new HttpLoginRequest(this.login, this.password)
+        )
 
         if (response.status === 200 && response.data.code === 'success') {
-            const authResponse = await wsApiClient.doRequest<Authenticated>(new Authenticate(response.data.ssid))
+            const authResponse = await wsApiClient.doRequest<Authenticated>(
+                new Authenticate(response.data.ssid)
+            )
             return authResponse.isSuccessful
         }
 
