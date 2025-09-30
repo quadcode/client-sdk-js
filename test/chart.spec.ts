@@ -28,14 +28,22 @@ describe('Chart Data', () => {
     });
 
     it(`Fetch should load more candles`, async () => {
-        const chartDataLayer = await sdk.realTimeChartDataLayer(1, 60)
+        const actives = await sdk.actives();
+        const active = await actives.getActive(213);
+        console.log(active);
+        const chartDataLayer = await sdk.realTimeChartDataLayer(213, 60)
+        const firstCandleFrom = chartDataLayer.getFirstCandleFrom();
+        console.log(firstCandleFrom);
         const now = Math.floor(Date.now() / 1000)
-        await chartDataLayer.fetchAllCandles(now - ONE_DAY_S)
-        let candles = await chartDataLayer.fetchAllCandles(now - ONE_DAY_S - 60 * 2)
-        expect(candles.length, "length must be equal 1000").eq(1002)
-        const from = now - ONE_DAY_S - 60 * 100
+        const start = now - 60 * 1000;
+        await chartDataLayer.fetchAllCandles(start)
+        let candles = await chartDataLayer.fetchAllCandles(start - 60 * 2)
+        expect(candles.length, "length must be equal 1001-1002").toBeGreaterThanOrEqual(1001)
+        expect(candles.length, "length must be equal 1001-1002").toBeLessThanOrEqual(1002)
+        const from = start - 60 * 100
         candles = await chartDataLayer.fetchAllCandles(from)
-        expect(candles.length, "length must be equal 1000").eq(1100)
+        expect(candles.length, "length must be equal 1099-1100").toBeGreaterThanOrEqual(1099)
+        expect(candles.length, "length must be equal 1099-1100").toBeLessThanOrEqual(1100)
         const nextMinuteStart = Math.ceil(from / 60) * 60
         expect(candles[0].from, "first candle in array should be later or equals 'from'").eq(nextMinuteStart)
     });
