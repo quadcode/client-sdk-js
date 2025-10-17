@@ -26,90 +26,105 @@ export class ClientSdk {
      * @private
      */
     private wsConnectionStateFacade: WsConnectionState | undefined
+    private wsConnectionStatePromise: Promise<WsConnectionState> | undefined
 
     /**
      * Balances facade cache.
      * @private
      */
     private balancesFacade: Balances | undefined
+    private balancesPromise: Promise<Balances> | undefined
 
     /**
      * Positions facade cache.
      * @private
      */
     private positionsFacade: Positions | undefined
+    private positionsPromise: Promise<Positions> | undefined
 
     /**
      * Orders facade cache.
      * @private
      */
     private ordersFacade: Orders | undefined
+    private ordersPromise: Promise<Orders> | undefined
 
     /**
      * Quotes facade cache.
      * @private
      */
     private quotesFacade: Quotes | undefined
+    private quotesPromise: Promise<Quotes> | undefined
 
     /**
      *  Actives facade cache.
      *  @private
      */
     private activesFacade: Actives | undefined
+    private activesPromise: Promise<Actives> | undefined
 
     /**
      * Currencies facade cache.
      * @private
      */
     private currenciesFacade: Currencies | undefined
+    private currenciesPromise: Promise<Currencies> | undefined
 
     /**
      * Blitz options facade cache.
      * @private
      */
     private blitzOptionsFacade: BlitzOptions | undefined
+    private blitzOptionsPromise: Promise<BlitzOptions> | undefined
 
     /**
      * Turbo options facade cache.
      * @private
      */
     private turboOptionsFacade: TurboOptions | undefined
+    private turboOptionsPromise: Promise<TurboOptions> | undefined
 
     /**
      * Binary options facade cache.
      * @private
      */
     private binaryOptionsFacade: BinaryOptions | undefined
+    private binaryOptionsPromise: Promise<BinaryOptions> | undefined
 
     /**
      * Digital options facade cache.
      * @private
      */
     private digitalOptionsFacade: DigitalOptions | undefined
+    private digitalOptionsPromise: Promise<DigitalOptions> | undefined
 
     /**
      * Margin forex facade cache.
      * @private
      */
     private marginForexFacade: MarginForex | undefined
+    private marginForexPromise: Promise<MarginForex> | undefined
 
     /**
      * Margin cfd facade cache
      * @private
      */
     private marginCfdFacade: MarginCfd | undefined
+    private marginCfdPromise: Promise<MarginCfd> | undefined
 
     /**
      * Margin crypto facade cache
      * @private
      */
     private marginCryptoFacade: MarginCrypto | undefined
+    private marginCryptoPromise: Promise<MarginCrypto> | undefined
 
     /**
      * Candles facade cache
      * @private
      */
     private candlesFacade: Candles | undefined
+    private candlesPromise: Promise<Candles> | undefined
 
     /**
      * Host for static resources.
@@ -128,6 +143,7 @@ export class ClientSdk {
      * @private
      */
     private translationsFacade: Translations | undefined
+    private translationsPromise: Promise<Translations> | undefined
 
     /**
      * Real-time chart data layer facade cache.
@@ -140,6 +156,7 @@ export class ClientSdk {
      * @private
      */
     private candlesConsistencyManagerFacade: CandlesConsistencyManager | undefined
+    private candlesConsistencyManagerPromise: Promise<CandlesConsistencyManager> | undefined
 
     /**
      * Creates instance of class.
@@ -226,64 +243,99 @@ export class ClientSdk {
      * Returns balances facade class.
      */
     public async balances(): Promise<Balances> {
-        if (!this.balancesFacade) {
-            this.balancesFacade = await Balances.create(this.wsApiClient)
+        if (this.balancesFacade) return this.balancesFacade;
+        if (!this.balancesPromise) {
+            this.balancesPromise = (async () => {
+                const inst = await Balances.create(this.wsApiClient);
+                this.balancesFacade = inst;
+                this.balancesPromise = undefined;
+                return inst;
+            })();
         }
-        return this.balancesFacade
+        return this.balancesPromise;
     }
 
     /**
      * Returns positions facade class.
      */
     public async positions(): Promise<Positions> {
-        if (!this.positionsFacade) {
-            const actives = await this.actives()
-            const state = await this.wsConnectionState()
-            this.positionsFacade = await Positions.create(this.wsApiClient, this.userProfile.userId, actives, state)
+        if (this.positionsFacade) return this.positionsFacade;
+        if (!this.positionsPromise) {
+            this.positionsPromise = (async () => {
+                const actives = await this.actives();
+                const state = await this.wsConnectionState();
+                const inst = await Positions.create(this.wsApiClient, this.userProfile.userId, actives, state);
+                this.positionsFacade = inst;
+                this.positionsPromise = undefined;
+                return inst;
+            })();
         }
-        return this.positionsFacade
+        return this.positionsPromise;
     }
 
     /**
      * Returns actives facade class.
      */
     public async actives(): Promise<Actives> {
-        if (!this.activesFacade) {
-            const translations = await this.translations()
-            this.activesFacade = new Actives(this.wsApiClient, this.staticHost, translations)
+        if (this.activesFacade) return this.activesFacade;
+        if (!this.activesPromise) {
+            this.activesPromise = (async () => {
+                const translations = await this.translations();
+                const inst = new Actives(this.wsApiClient, this.staticHost, translations);
+                this.activesFacade = inst;
+                this.activesPromise = undefined;
+                return inst;
+            })();
         }
-        return this.activesFacade
+        return this.activesPromise;
     }
 
     public async currencies(): Promise<Currencies> {
-        if (!this.currenciesFacade) {
-            this.currenciesFacade = new Currencies(this.wsApiClient, this.staticHost)
+        if (this.currenciesFacade) return this.currenciesFacade;
+        if (!this.currenciesPromise) {
+            this.currenciesPromise = (async () => {
+                const inst = new Currencies(this.wsApiClient, this.staticHost);
+                this.currenciesFacade = inst;
+                this.currenciesPromise = undefined;
+                return inst;
+            })();
         }
-        return this.currenciesFacade
+        return this.currenciesPromise;
     }
 
     /**
      * Returns quotes facade class.
      */
     public async quotes(): Promise<Quotes> {
-        if (!this.quotesFacade) {
-            this.quotesFacade = new Quotes(this.wsApiClient)
+        if (this.quotesFacade) return this.quotesFacade;
+        if (!this.quotesPromise) {
+            this.quotesPromise = (async () => {
+                const inst = new Quotes(this.wsApiClient);
+                this.quotesFacade = inst;
+                this.quotesPromise = undefined;
+                return inst;
+            })();
         }
-        return this.quotesFacade
+        return this.quotesPromise;
     }
 
     /**
      * Returns blitz options facade class.
      */
     public async blitzOptions(): Promise<BlitzOptions> {
-        if (!this.blitzOptionsFacade) {
-            if (!await this.blitzOptionsIsAvailable()) {
-                throw new Error('Blitz options are not available')
-            }
-
-            this.blitzOptionsFacade = await BlitzOptions.create(this.wsApiClient)
+        if (this.blitzOptionsFacade) return this.blitzOptionsFacade;
+        if (!this.blitzOptionsPromise) {
+            this.blitzOptionsPromise = (async () => {
+                if (!await this.blitzOptionsIsAvailable()) {
+                    throw new Error('Blitz options are not available');
+                }
+                const inst = await BlitzOptions.create(this.wsApiClient);
+                this.blitzOptionsFacade = inst;
+                this.blitzOptionsPromise = undefined;
+                return inst;
+            })();
         }
-        return this.blitzOptionsFacade
+        return this.blitzOptionsPromise;
     }
 
     /**
@@ -297,14 +349,19 @@ export class ClientSdk {
      * Returns turbo options facade class.
      */
     public async turboOptions(): Promise<TurboOptions> {
-        if (!this.turboOptionsFacade) {
-            if (!await this.turboOptionsIsAvailable()) {
-                throw new Error('Turbo options are not available')
-            }
-
-            this.turboOptionsFacade = await TurboOptions.create(this.wsApiClient)
+        if (this.turboOptionsFacade) return this.turboOptionsFacade;
+        if (!this.turboOptionsPromise) {
+            this.turboOptionsPromise = (async () => {
+                if (!await this.turboOptionsIsAvailable()) {
+                    throw new Error('Turbo options are not available');
+                }
+                const inst = await TurboOptions.create(this.wsApiClient);
+                this.turboOptionsFacade = inst;
+                this.turboOptionsPromise = undefined;
+                return inst;
+            })();
         }
-        return this.turboOptionsFacade
+        return this.turboOptionsPromise;
     }
 
     /**
@@ -318,14 +375,19 @@ export class ClientSdk {
      * Returns binary options facade class.
      */
     public async binaryOptions(): Promise<BinaryOptions> {
-        if (!this.binaryOptionsFacade) {
-            if (!await this.binaryOptionsIsAvailable()) {
-                throw new Error('Binary options are not available')
-            }
-
-            this.binaryOptionsFacade = await BinaryOptions.create(this.wsApiClient)
+        if (this.binaryOptionsFacade) return this.binaryOptionsFacade;
+        if (!this.binaryOptionsPromise) {
+            this.binaryOptionsPromise = (async () => {
+                if (!await this.binaryOptionsIsAvailable()) {
+                    throw new Error('Binary options are not available');
+                }
+                const inst = await BinaryOptions.create(this.wsApiClient);
+                this.binaryOptionsFacade = inst;
+                this.binaryOptionsPromise = undefined;
+                return inst;
+            })();
         }
-        return this.binaryOptionsFacade
+        return this.binaryOptionsPromise;
     }
 
     /**
@@ -339,14 +401,19 @@ export class ClientSdk {
      * Returns digital options facade class.
      */
     public async digitalOptions(): Promise<DigitalOptions> {
-        if (!this.digitalOptionsFacade) {
-            if (!await this.digitalOptionsIsAvailable()) {
-                throw new Error('Digital options are not available')
-            }
-
-            this.digitalOptionsFacade = await DigitalOptions.create(this.wsApiClient)
+        if (this.digitalOptionsFacade) return this.digitalOptionsFacade;
+        if (!this.digitalOptionsPromise) {
+            this.digitalOptionsPromise = (async () => {
+                if (!await this.digitalOptionsIsAvailable()) {
+                    throw new Error('Digital options are not available');
+                }
+                const inst = await DigitalOptions.create(this.wsApiClient);
+                this.digitalOptionsFacade = inst;
+                this.digitalOptionsPromise = undefined;
+                return inst;
+            })();
         }
-        return this.digitalOptionsFacade
+        return this.digitalOptionsPromise;
     }
 
     /**
@@ -360,14 +427,19 @@ export class ClientSdk {
      * Returns margin forex facade class.
      */
     public async marginForex(): Promise<MarginForex> {
-        if (!this.marginForexFacade) {
-            if (!await this.marginForexIsAvailable()) {
-                throw new Error('Margin forex is not available')
-            }
-
-            this.marginForexFacade = await MarginForex.create(this.wsApiClient)
+        if (this.marginForexFacade) return this.marginForexFacade;
+        if (!this.marginForexPromise) {
+            this.marginForexPromise = (async () => {
+                if (!await this.marginForexIsAvailable()) {
+                    throw new Error('Margin forex is not available');
+                }
+                const inst = await MarginForex.create(this.wsApiClient);
+                this.marginForexFacade = inst;
+                this.marginForexPromise = undefined;
+                return inst;
+            })();
         }
-        return this.marginForexFacade
+        return this.marginForexPromise;
     }
 
     /**
@@ -381,14 +453,19 @@ export class ClientSdk {
      * Returns margin cfd facade class.
      */
     public async marginCfd(): Promise<MarginCfd> {
-        if (!this.marginCfdFacade) {
-            if (!await this.marginCfdIsAvailable()) {
-                throw new Error('Margin CFD is not available')
-            }
-
-            this.marginCfdFacade = await MarginCfd.create(this.wsApiClient)
+        if (this.marginCfdFacade) return this.marginCfdFacade;
+        if (!this.marginCfdPromise) {
+            this.marginCfdPromise = (async () => {
+                if (!await this.marginCfdIsAvailable()) {
+                    throw new Error('Margin CFD is not available');
+                }
+                const inst = await MarginCfd.create(this.wsApiClient);
+                this.marginCfdFacade = inst;
+                this.marginCfdPromise = undefined;
+                return inst;
+            })();
         }
-        return this.marginCfdFacade
+        return this.marginCfdPromise;
     }
 
     /**
@@ -402,14 +479,19 @@ export class ClientSdk {
      * Returns margin crypto facade class.
      */
     public async marginCrypto(): Promise<MarginCrypto> {
-        if (!this.marginCryptoFacade) {
-            if (!await this.marginCryptoIsAvailable()) {
-                throw new Error('Margin crypto is not available')
-            }
-
-            this.marginCryptoFacade = await MarginCrypto.create(this.wsApiClient)
+        if (this.marginCryptoFacade) return this.marginCryptoFacade;
+        if (!this.marginCryptoPromise) {
+            this.marginCryptoPromise = (async () => {
+                if (!await this.marginCryptoIsAvailable()) {
+                    throw new Error('Margin crypto is not available');
+                }
+                const inst = await MarginCrypto.create(this.wsApiClient);
+                this.marginCryptoFacade = inst;
+                this.marginCryptoPromise = undefined;
+                return inst;
+            })();
         }
-        return this.marginCryptoFacade
+        return this.marginCryptoPromise;
     }
 
     /**
@@ -440,20 +522,31 @@ export class ClientSdk {
      * Returns orders facade class.
      */
     public async orders(): Promise<Orders> {
-        if (!this.ordersFacade) {
-            const balances = await this.balances()
-            const balanceIds = balances.getBalances().map(balance => balance.id)
-            this.ordersFacade = await Orders.create(this.wsApiClient, this.userProfile.userId, balanceIds)
+        if (this.ordersFacade) return this.ordersFacade;
+        if (!this.ordersPromise) {
+            this.ordersPromise = (async () => {
+                const balances = await this.balances();
+                const balanceIds = balances.getBalances().map(b => b.id);
+                const inst = await Orders.create(this.wsApiClient, this.userProfile.userId, balanceIds);
+                this.ordersFacade = inst;
+                this.ordersPromise = undefined;
+                return inst;
+            })();
         }
-        return this.ordersFacade
+        return this.ordersPromise;
     }
 
     public async candles(): Promise<Candles> {
-        if (!this.candlesFacade) {
-            this.candlesFacade = new Candles(this.wsApiClient)
+        if (this.candlesFacade) return this.candlesFacade;
+        if (!this.candlesPromise) {
+            this.candlesPromise = (async () => {
+                const inst = new Candles(this.wsApiClient);
+                this.candlesFacade = inst;
+                this.candlesPromise = undefined;
+                return inst;
+            })();
         }
-
-        return this.candlesFacade
+        return this.candlesPromise;
     }
 
     public async realTimeChartDataLayer(activeId: number, size: number): Promise<RealTimeChartDataLayer> {
@@ -504,30 +597,47 @@ export class ClientSdk {
      * Get WebSocket connection state facade.
      */
     public async wsConnectionState(): Promise<WsConnectionState> {
-        if (this.wsConnectionStateFacade === undefined) {
-            this.wsConnectionStateFacade = await WsConnectionState.create(this.wsApiClient)
+        if (this.wsConnectionStateFacade) return this.wsConnectionStateFacade;
+        if (!this.wsConnectionStatePromise) {
+            this.wsConnectionStatePromise = (async () => {
+                const inst = await WsConnectionState.create(this.wsApiClient);
+                this.wsConnectionStateFacade = inst;
+                this.wsConnectionStatePromise = undefined;
+                return inst;
+            })();
         }
-        return this.wsConnectionStateFacade
+        return this.wsConnectionStatePromise;
     }
 
     /**
      * Returns translations facade class.
      */
     public async translations(): Promise<Translations> {
-        if (!this.translationsFacade) {
-            this.translationsFacade = await Translations.create(this.host)
+        if (this.translationsFacade) return this.translationsFacade;
+        if (!this.translationsPromise) {
+            this.translationsPromise = (async () => {
+                const inst = await Translations.create(this.host);
+                this.translationsFacade = inst;
+                this.translationsPromise = undefined;
+                return inst;
+            })();
         }
-        return this.translationsFacade
+        return this.translationsPromise;
     }
 
     private async candlesConsistencyManager(): Promise<CandlesConsistencyManager> {
-        if (!this.candlesConsistencyManagerFacade) {
-            const candles = await this.candles();
-            const wsConnectionState = await this.wsConnectionState();
-            this.candlesConsistencyManagerFacade = new CandlesConsistencyManager(wsConnectionState, candles);
+        if (this.candlesConsistencyManagerFacade) return this.candlesConsistencyManagerFacade;
+        if (!this.candlesConsistencyManagerPromise) {
+            this.candlesConsistencyManagerPromise = (async () => {
+                const candles = await this.candles();
+                const wsConnectionState = await this.wsConnectionState();
+                const inst = new CandlesConsistencyManager(wsConnectionState, candles);
+                this.candlesConsistencyManagerFacade = inst;
+                this.candlesConsistencyManagerPromise = undefined;
+                return inst;
+            })();
         }
-
-        return this.candlesConsistencyManagerFacade;
+        return this.candlesConsistencyManagerPromise;
     }
 }
 
