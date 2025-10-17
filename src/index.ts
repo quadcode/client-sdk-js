@@ -2701,7 +2701,7 @@ export class Positions {
         await positionsFacade.syncOldActivePositions()
         await positionsFacade.subscribePositionChanged(userId)
         await positionsFacade.subscribePositionsState()
-        positionsFacade.subscribePositions()
+        await positionsFacade.subscribePositions()
 
         state.subscribeOnStateChanged(((state) => {
             if (state === WsConnectionStateEnum.Connected) {
@@ -2894,7 +2894,7 @@ export class Positions {
         this.onUpdatePositionObserver.notify(position)
 
         if (isNewPosition) {
-            this.subscribePositions()
+            this.subscribePositions().then()
         }
 
         if (!position.active && position.activeId) {
@@ -2926,7 +2926,7 @@ export class Positions {
         this.onUpdatePositionObserver.notify(position)
 
         if (isNewPosition) {
-            this.subscribePositions()
+            this.subscribePositions().then()
         }
 
         if (!position.active && position.activeId) {
@@ -2962,7 +2962,7 @@ export class Positions {
         this.onUpdatePositionObserver.notify(position)
 
         if (isNewPosition) {
-            this.subscribePositions()
+            this.subscribePositions().then()
         }
 
         if (!position.active && position.activeId) {
@@ -2978,7 +2978,7 @@ export class Positions {
         }
     }
 
-    private subscribePositions(): void {
+    private async subscribePositions(): Promise<void> {
         const internalIds: string[] = [];
         for (const position of this.positions.values()) {
             if (position.status === "open") {
@@ -2986,7 +2986,8 @@ export class Positions {
             }
         }
 
-        this.wsApiClient!.doRequest<Result>(new CallPortfolioSubscribePositions("frequent", internalIds)).then(() => {
+        await this.wsApiClient!.doRequest<Result>(
+            new CallPortfolioSubscribePositions("frequent", internalIds)).then(() => {
         })
     }
 
