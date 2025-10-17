@@ -18,6 +18,16 @@ describe('Candles', () => {
         await sdk.shutdown();
     });
 
+    it('should be singleton object', async () => {
+        const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
+        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+        const [candles1, candles2] = await Promise.all([
+            sdk.candles(),
+            sdk.candles(),
+        ]);
+        expect(candles1, "Candles facade differ").eq(candles2)
+    });
+
     it('should return candles', async () => {
         const binaryOptions = await sdk.binaryOptions();
         const binaryOptionsActives = binaryOptions.getActives();

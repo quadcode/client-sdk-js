@@ -92,6 +92,16 @@ describe('Margin Forex/CFD/Crypto', () => {
             return await marginCFD.buyLimit(instrument, direction, instrument.minQty, demoBalance, price, stopLoss, takeProfit);
         }
 
+        it('should be singleton object', async () => {
+            const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
+            sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+            const [marginCfd1, marginCfd2] = await Promise.all([
+                sdk.marginCfd(),
+                sdk.marginCfd(),
+            ]);
+            expect(marginCfd1, "marginCfd facade differ").eq(marginCfd2)
+        });
+
         it('should return time to purchase', async () => {
             const availableForBuy = await getUnderlyingInstrument();
             const currentTime = sdk.currentTime().getTime();
@@ -194,6 +204,16 @@ describe('Margin Forex/CFD/Crypto', () => {
                                            takeProfit: MarginTradingTPSL | null = null,) {
             return await marginCrypto.buyLimit(instrument, direction, instrument.minQty, demoBalance, price, stopLoss, takeProfit);
         }
+
+        it('should be singleton object', async () => {
+            const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
+            sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+            const [marginCrypto1, marginCrypto2] = await Promise.all([
+                sdk.marginCrypto(),
+                sdk.marginCrypto(),
+            ]);
+            expect(marginCrypto1, "marginCrypto facade differ").eq(marginCrypto2)
+        });
 
         it('should return time to purchase', async () => {
             const availableForBuy = await getUnderlyingInstrument();
@@ -299,6 +319,16 @@ describe('Margin Forex/CFD/Crypto', () => {
             const count = instrument.minQty * 10 ** 5;
             return await marginForex.buyLimit(instrument, direction, count, demoBalance, price, stopLoss, takeProfit);
         }
+
+        it('should be singleton object', async () => {
+            const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
+            sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+            const [marginForex1, marginForex2] = await Promise.all([
+                sdk.marginForex(),
+                sdk.marginForex(),
+            ]);
+            expect(marginForex1, "marginForex facade differ").eq(marginForex2)
+        });
 
         it('should return time to purchase', async () => {
             const availableForBuy = await getUnderlyingInstrument();

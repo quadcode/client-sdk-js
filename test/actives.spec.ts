@@ -5,15 +5,26 @@ import {afterAll, beforeAll, describe, expect, it} from "vitest";
 
 describe('Actives', () => {
     let sdk: ClientSdk
+    let user: User
 
     beforeAll(async () => {
-        const user = getUserByTitle('regular_user') as User
+        user = getUserByTitle('regular_user') as User
         const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
         sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options)
     });
 
     afterAll(async function () {
         await sdk.shutdown();
+    });
+
+    it('should be singleton object', async () => {
+        const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
+        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+        const [actives1, actives2] = await Promise.all([
+            sdk.actives(),
+            sdk.actives(),
+        ]);
+        expect(actives1, "Actives facade differ").eq(actives2)
     });
 
     it(`Active should be valid`, async () => {

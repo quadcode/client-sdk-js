@@ -36,6 +36,16 @@ describe('Balances', () => {
         await options.buy(availableForBuyAt, BinaryOptionsDirection.Put, amount, balance)
     }
 
+    it('should be singleton object', async () => {
+        const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
+        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+        const [balances1, balances2] = await Promise.all([
+            sdk.balances(),
+            sdk.balances(),
+        ]);
+        expect(balances1, "Balances facade differ").eq(balances2)
+    });
+
     it('should reset demo balance', async () => {
         const balance = getBalance(BalanceType.Demo);
         const balanceAmount = balance.amount;

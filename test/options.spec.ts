@@ -22,12 +22,13 @@ import {PositionsHelper} from "./utils/positionsHelper";
 
 describe('Options', () => {
     let sdk: ClientSdk;
+    let user: User;
     let positionsHelper: PositionsHelper;
     let demoBalance: Balance;
     let realBalance: Balance;
 
     beforeAll(async () => {
-        const user = getUserByTitle('regular_user') as User;
+        user = getUserByTitle('regular_user') as User;
         const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
         sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
         const balances = await sdk.balances();
@@ -65,6 +66,16 @@ describe('Options', () => {
 
         it('should return binary option actives', async () => {
             expect(binaryOptions.getActives().length, 'Invalid binary-option actives count').to.be.above(0);
+        });
+
+        it('should be singleton object', async () => {
+            const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
+            sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+            const [binaryOptions1, binaryOptions2] = await Promise.all([
+                sdk.binaryOptions(),
+                sdk.binaryOptions(),
+            ]);
+            expect(binaryOptions1, "Binary options differ").eq(binaryOptions2)
         });
 
         describe('Getting binary-option instruments', async () => {
@@ -156,6 +167,16 @@ describe('Options', () => {
             expect(turboOptions.getActives().length, 'Invalid turbo-option actives count').to.be.above(0);
         });
 
+        it('should be singleton object', async () => {
+            const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
+            sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+            const [turboOptions1, turboOptions2] = await Promise.all([
+                sdk.turboOptions(),
+                sdk.turboOptions(),
+            ]);
+            expect(turboOptions1, "Turbo options differ").eq(turboOptions2)
+        });
+
         describe('Getting turbo-option instruments', async () => {
             let instruments: TurboOptionsActiveInstrument[];
 
@@ -241,6 +262,16 @@ describe('Options', () => {
 
         it('should return blitz option actives', async () => {
             expect(blitzOptions.getActives().length, 'Invalid blitz-option actives count').to.be.above(0);
+        });
+
+        it('should be singleton object', async () => {
+            const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
+            sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+            const [blitzOptions1, blitzOptions2] = await Promise.all([
+                sdk.blitzOptions(),
+                sdk.blitzOptions(),
+            ]);
+            expect(blitzOptions1, "Blitz options differ").eq(blitzOptions2)
         });
 
         describe('Buy option', () => {
