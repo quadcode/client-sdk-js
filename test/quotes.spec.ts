@@ -19,6 +19,16 @@ describe('Quotes', () => {
         await sdk.shutdown();
     });
 
+    it('should be singleton object', async () => {
+        const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
+        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+        const [quotes1, quotes2] = await Promise.all([
+            sdk.quotes(),
+            sdk.quotes(),
+        ]);
+        expect(quotes1, "Quotes facade differ").eq(quotes2)
+    });
+
     it('should return current quote', async () => {
         const binaryOptions = await sdk.binaryOptions();
         const binaryOptionsActives = binaryOptions.getActives();

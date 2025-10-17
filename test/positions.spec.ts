@@ -29,6 +29,16 @@ describe('Positions', () => {
         return await binaryOptions.buy(availableForBuyAt, BinaryOptionsDirection.Call, 10, demoBalance!)
     }
 
+    it('should be singleton object', async () => {
+        const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
+        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+        const [positions1, positions2] = await Promise.all([
+            sdk.positions(),
+            sdk.positions(),
+        ]);
+        expect(positions1, "Positions facade differ").eq(positions2)
+    });
+
     it(`Position should contains direction and expiration time (subscribe on updated position before opening)`, async () => {
         const binaryOptionsOption = await openBinaryOption()
         const position = await positionsHelper.waitForPosition(position => position.orderIds.includes(binaryOptionsOption.id))
