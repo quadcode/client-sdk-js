@@ -563,7 +563,7 @@ export class ClientSdk {
                 const candles = await this.candles();
                 const wsConnectionState = await this.wsConnectionState();
                 const consistencyManager = await this.candlesConsistencyManager();
-                return new RealTimeChartDataLayer(this.wsApiClient, wsConnectionState, consistencyManager, candles, activeId, size);
+                return RealTimeChartDataLayer.create(this.wsApiClient, wsConnectionState, consistencyManager, candles, activeId, size);
             })();
         }
 
@@ -865,6 +865,7 @@ export class OAuthMethod implements AuthMethod {
 }
 
 /**
+ * @deprecated Use {@link OAuthMethod} instead.
  * Implements login/password authentication flow.
  */
 export class LoginPasswordAuthMethod implements AuthMethod {
@@ -873,23 +874,31 @@ export class LoginPasswordAuthMethod implements AuthMethod {
     /**
      * Accepts login and password for authentication.
      *
-     * @param httpApiUrl
-     * @param login
-     * @param password
+     * @param httpApiUrl Base URL for HTTP API.
+     * @param login User login.
+     * @param password User password.
      */
-    public constructor(private readonly httpApiUrl: string, private readonly login: string, private readonly password: string) {
+    public constructor(
+        private readonly httpApiUrl: string,
+        private readonly login: string,
+        private readonly password: string
+    ) {
         this.httpApiClient = new HttpApiClient(this.httpApiUrl)
     }
 
     /**
      * Authenticates client in WebSocket API.
-     * @param wsApiClient
+     * @param wsApiClient WebSocket API client instance.
      */
     public async authenticateWsApiClient(wsApiClient: WsApiClient): Promise<boolean> {
-        const response = await this.httpApiClient.doRequest(new HttpLoginRequest(this.login, this.password))
+        const response = await this.httpApiClient.doRequest(
+            new HttpLoginRequest(this.login, this.password)
+        )
 
         if (response.status === 200 && response.data.code === 'success') {
-            const authResponse = await wsApiClient.doRequest<Authenticated>(new Authenticate(response.data.ssid))
+            const authResponse = await wsApiClient.doRequest<Authenticated>(
+                new Authenticate(response.data.ssid)
+            )
             return authResponse.isSuccessful
         }
 
@@ -1907,21 +1916,21 @@ export class RealTimeChartDataLayer {
     private isProcessingQueue = false;
     private candlesMutationsLock: Promise<void> = Promise.resolve();
 
-    constructor(wsApiClient: WsApiClient, wsConnectionState: WsConnectionState, consistencyManager: CandlesConsistencyManager, candles: Candles, activeId: number, candleSize: number) {
+    private constructor(
+        wsApiClient: WsApiClient,
+        wsConnectionState: WsConnectionState,
+        consistencyManager: CandlesConsistencyManager,
+        candles: Candles,
+        activeId: number,
+        candleSize: number,
+        firstCandleFrom: number | null, // <-- передаём готовое значение
+    ) {
         this.wsApiClient = wsApiClient;
         this.candlesFacade = candles;
         this.candlesConsistencyManager = consistencyManager;
         this.activeId = activeId;
         this.candleSize = candleSize;
-
-        this.wsApiClient.doRequest<QuotesFirstCandlesV1>(new CallQuotesGetFirstCandlesV1(activeId))
-            .then((response) => {
-                const candle = response.candlesBySize[candleSize];
-
-                if (candle) {
-                    this.firstCandleFrom = candle.from;
-                }
-            })
+        this.firstCandleFrom = firstCandleFrom;
 
         wsConnectionState.subscribeOnStateChanged((state: WsConnectionStateEnum) => {
             switch (state) {
@@ -1929,8 +1938,8 @@ export class RealTimeChartDataLayer {
                     this.loadMissedCandlesOnReconnect().then(() => {
                         this.connected = true;
                         this.processQueue().then(() => {
-                        })
-                    })
+                        });
+                    });
                     break;
                 case WsConnectionStateEnum.Disconnected:
                     this.connected = false;
@@ -1946,9 +1955,40 @@ export class RealTimeChartDataLayer {
                     }
 
                     this.candleQueue = [];
-                    break
+                    break;
             }
-        })
+        });
+    }
+
+    public static async create(
+        wsApiClient: WsApiClient,
+        wsConnectionState: WsConnectionState,
+        consistencyManager: CandlesConsistencyManager,
+        candles: Candles,
+        activeId: number,
+        candleSize: number
+    ): Promise<RealTimeChartDataLayer> {
+        let firstCandleFrom: number | null = null;
+
+        try {
+            const response = await wsApiClient.doRequest<QuotesFirstCandlesV1>(
+                new CallQuotesGetFirstCandlesV1(activeId)
+            );
+            const candle = response.candlesBySize?.[candleSize];
+            if (candle) firstCandleFrom = candle.from;
+        } catch (e) {
+            console.warn('Failed to fetch first candle:', e);
+        }
+
+        return new RealTimeChartDataLayer(
+            wsApiClient,
+            wsConnectionState,
+            consistencyManager,
+            candles,
+            activeId,
+            candleSize,
+            firstCandleFrom
+        );
     }
 
     /**
@@ -2661,7 +2701,7 @@ export class Positions {
         await positionsFacade.syncOldActivePositions()
         await positionsFacade.subscribePositionChanged(userId)
         await positionsFacade.subscribePositionsState()
-        positionsFacade.subscribePositions()
+        await positionsFacade.subscribePositions()
 
         state.subscribeOnStateChanged(((state) => {
             if (state === WsConnectionStateEnum.Connected) {
@@ -2854,7 +2894,7 @@ export class Positions {
         this.onUpdatePositionObserver.notify(position)
 
         if (isNewPosition) {
-            this.subscribePositions()
+            this.subscribePositions().then()
         }
 
         if (!position.active && position.activeId) {
@@ -2886,7 +2926,7 @@ export class Positions {
         this.onUpdatePositionObserver.notify(position)
 
         if (isNewPosition) {
-            this.subscribePositions()
+            this.subscribePositions().then()
         }
 
         if (!position.active && position.activeId) {
@@ -2922,7 +2962,7 @@ export class Positions {
         this.onUpdatePositionObserver.notify(position)
 
         if (isNewPosition) {
-            this.subscribePositions()
+            this.subscribePositions().then()
         }
 
         if (!position.active && position.activeId) {
@@ -2938,7 +2978,7 @@ export class Positions {
         }
     }
 
-    private subscribePositions(): void {
+    private async subscribePositions(): Promise<void> {
         const internalIds: string[] = [];
         for (const position of this.positions.values()) {
             if (position.status === "open") {
@@ -2946,7 +2986,8 @@ export class Positions {
             }
         }
 
-        this.wsApiClient!.doRequest<Result>(new CallPortfolioSubscribePositions("frequent", internalIds)).then(() => {
+        await this.wsApiClient!.doRequest<Result>(
+            new CallPortfolioSubscribePositions("frequent", internalIds)).then(() => {
         })
     }
 
