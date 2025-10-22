@@ -7079,7 +7079,7 @@ class WsApiClient {
                         const requestMetaData = this.pendingRequests.get(frame.request_id)!
                         if (frame.status >= 4000) {
                             this.pendingRequests.delete(frame.request_id)
-                            requestMetaData.reject(new Error(`request is failed with status ${frame.status} and message: ${frame.msg.message}`))
+                            requestMetaData.reject(new Error(`request ${frame.microserviceName}.${frame.name} is failed with status ${frame.status} and message: ${frame.msg.message}`))
                             return
                         }
 
