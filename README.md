@@ -6,6 +6,49 @@
 npm install @quadcode-tech/client-sdk-js
 ```
 
+## Quick Vite + React + TypeScript example
+
+### Create a new Vite + React + TypeScript project
+
+```shell
+npm create vite@latest my-app -- --template react-ts &&
+cd my-app &&
+npm i && 
+npm i @quadcode-tech/client-sdk-js
+```
+
+### Edit `vite.config.ts` to add proxy for local development REQUIRED FOR LOCAL TESTING
+
+```ts
+import {defineConfig} from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+    plugins: [react()],
+    server: {
+        proxy: {
+            '/api/lang/route-translations': {
+                target: 'https://trade.example.com',      // local browser calls http://localhost:5173/api/lang/route-translations
+                changeOrigin: true,
+            },
+            '/proxy/api': {
+                target: 'https://api.trade.example.com',  // local REST base: http://localhost:5173/proxy/api
+                changeOrigin: true,
+                secure: false,
+                rewrite: (p) => p.replace(/^\/proxy\/api/, ''),
+            },
+            '/proxy/ws': {
+                target: 'wss://ws.trade.example.com',     // local WS base: ws://localhost:5173/proxy/ws
+                ws: true,
+                changeOrigin: true,
+                rewriteWsOrigin: true,
+                rewrite: (p) => p.replace(/^\/proxy\/ws/, ''),
+            },
+        },
+    },
+})
+```
+
 ## Quick start with OAuth (PKCE) authentication
 
 ### [Online access] Step 1: Redirect user to authorization
@@ -15,9 +58,9 @@ import {ClientSdk, OAuthMethod} from '@quadcode-tech/client-sdk-js'
 
 async function startLogin() {
 	const oauth = new OAuthMethod(
-		'https://api.trade.example.com',
+		'https://api.trade.example.com',          // local: use the same prod host (DO NOT use localhost) — this is the OAuth/Token server; redirects are handled by the provider, not via Vite proxy
 		CLIENT_ID,                                // your client ID (you can request CLIENT_ID and CLIENT_SECRET by creating an issue on GitHub)
-		'https://your.app/callback',              // redirect URI
+		'https://your.app/callback',              // redirect URI ( local: http://localhost:5173/callback )
 		'full'                                    // scope (e.g. 'full' or 'full offline_access')
 	)
 	const {url, codeVerifier} = await oauth.createAuthorizationUrl()
@@ -38,22 +81,22 @@ async function handleCallback() {
 	if (!codeVerifier) throw new Error('Missing PKCE code_verifier');
 
 	const oauth = new OAuthMethod(
-		'https://api.trade.example.com',
+		'https://api.trade.example.com', // local (dev via Vite proxy from the browser): http://localhost:5173/proxy/api
 		CLIENT_ID,
-		'https://your.app/callback',
+		'https://your.app/callback',     // local: http://localhost:5173/callback
 		'full'
 	);
 
 	const {accessToken, refreshToken} = await oauth.issueAccessTokenWithAuthCode(code, codeVerifier);
 
 	const sdk = await ClientSdk.create(
-		'wss://ws.trade.example.com/echo/websocket',
+		'wss://ws.trade.example.com/echo/websocket', // local (dev via Vite proxy): ws://localhost:5173/proxy/ws/echo/websocket
 		82,
 		new OAuthMethod(
-			'https://api.trade.example.com',
+			'https://api.trade.example.com', // local (dev via Vite proxy from the browser): http://localhost:5173/proxy/api
 			CLIENT_ID,
-			'https://your.app/callback',
-			'full offline_access',
+			'https://your.app/callback', // local: http://localhost:5173/callback
+			'full',
 			undefined,        // no clientSecret in browser
 			accessToken,
 			refreshToken || undefined
@@ -72,10 +115,10 @@ import {ClientSdk, OAuthMethod} from '@quadcode-tech/client-sdk-js'
 
 async function startLogin() {
 	const oauth = new OAuthMethod(
-		'https://api.trade.example.com',
+		'https://api.trade.example.com',          // local: use the same prod host (DO NOT use localhost) — this is the OAuth/Token server; redirects are handled by the provider, not via Vite proxy
 		CLIENT_ID,                                // your client ID (you can request CLIENT_ID and CLIENT_SECRET by creating an issue on GitHub)
 		'https://your.app/callback',              // redirect URI
-		'offline_access'                          // scope (e.g. 'full' or 'full offline_access')
+		'full offline_access'                     // scope (e.g. 'full' or 'full offline_access')
 	)
 	const {url, codeVerifier} = await oauth.createAuthorizationUrl()
 	sessionStorage.setItem('pkce_verifier', codeVerifier)
@@ -154,12 +197,12 @@ export async function handleCallbackAndStart() {
 	const {accessToken} = await r.json()
 
 	const sdk = await ClientSdk.create(
-		'wss://ws.trade.example.com/echo/websocket',
+		'wss://ws.trade.example.com/echo/websocket',  // local (dev via Vite proxy): ws://localhost:5173/proxy/ws/echo/websocket
 		82,
 		new OAuthMethod(
-			'https://api.trade.example.com',
+			'https://api.trade.example.com',   // local (dev via Vite proxy from the browser): http://localhost:5173/proxy/api
 			CLIENT_ID,
-			'https://your.app/callback',
+			'https://your.app/callback',       // local: http://localhost:5173/callback
 			'full offline_access',
 			undefined,         // NEVER put clientSecret in the browser
 			accessToken        // no refresh token in the browser
@@ -188,7 +231,7 @@ const sdk = await ClientSdk.create(
 		undefined,         // NEVER put clientSecret in the browser
 		accessToken        // no refresh token in the browser
 	),
-    {
+	{
 		// Optional: Override the default static files host
 		// Default: 'https://static.cdnroute.io/files'
 		staticHost: 'https://your-static-host.com/files',
