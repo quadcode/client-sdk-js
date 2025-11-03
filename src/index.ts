@@ -6921,6 +6921,8 @@ class Observable<T> {
 class HttpApiClient {
     private readonly apiUrl: string
 
+    private isBrowser = typeof window !== 'undefined';
+
     constructor(apiUrl: string) {
         this.apiUrl = apiUrl
     }
@@ -6939,12 +6941,15 @@ class HttpApiClient {
         }
 
         const requestUrl = url.toString()
+        const headers: any = {
+            'Content-Type': 'application/json',
+        }
+        if (!this.isBrowser) {
+            headers['User-Agent'] = 'quadcode-client-sdk-js/1.3.11'
+        }
         const requestOptions = {
             method: request.method(),
-            headers: {
-                'Content-Type': 'application/json',
-                'User-Agent': 'quadcode-client-sdk-js/1.3.11'
-            },
+            headers: headers,
             body: request.method() !== 'GET' ? JSON.stringify(request.messageBody()) : undefined
         }
 
