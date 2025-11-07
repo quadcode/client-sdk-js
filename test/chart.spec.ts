@@ -28,12 +28,7 @@ describe('Chart Data', () => {
     });
 
     it(`Fetch should load more candles`, async () => {
-        const actives = await sdk.actives();
-        const active = await actives.getActive(213);
-        console.log(active);
         const chartDataLayer = await sdk.realTimeChartDataLayer(213, 60)
-        const firstCandleFrom = chartDataLayer.getFirstCandleFrom();
-        console.log(firstCandleFrom);
         const now = Math.floor(Date.now() / 1000)
         const start = now - 60 * 1000;
         await chartDataLayer.fetchAllCandles(start)

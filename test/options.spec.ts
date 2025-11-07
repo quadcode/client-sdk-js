@@ -120,6 +120,11 @@ describe('Options', () => {
                     .to.eq(firstInstrument.purchaseEndTime().getTime() - currentTime.getTime())
             });
 
+            it('should return valid profitPercent', () => {
+                const firstInstrument = getAvailableInstrument();
+                expect(firstInstrument.profitPercent(), 'Invalid profitPercent').eq(100 - firstInstrument.profitCommissionPercent)
+            });
+
             describe('Buy option', () => {
 
                 it('insufficient funds for this transaction', async () => {
@@ -211,6 +216,11 @@ describe('Options', () => {
                     .to.eq(firstInstrument.purchaseEndTime().getTime() - currentTime.getTime())
             });
 
+            it('should return valid profitPercent', () => {
+                const firstInstrument = getAvailableInstrument();
+                expect(firstInstrument.profitPercent(), 'Invalid profitPercent').eq(100 - firstInstrument.profitCommissionPercent)
+            });
+
             describe('Buy option', () => {
 
                 it('insufficient funds for this transaction', async () => {
@@ -281,6 +291,14 @@ describe('Options', () => {
                 const expirationSize = active!.expirationTimes[0];
                 await expect(blitzOptions.buy(active!, BlitzOptionsDirection.Put, expirationSize, 10, realBalance))
                     .rejects.toThrow("Insufficient funds for this transaction.")
+            });
+
+            it('should return valid profitPercent', () => {
+                const active = blitzOptions.getActives().find((a) => a.canBeBoughtAt(sdk.currentTime()));
+                if (!active) {
+                    throw new Error('Blitz active not found');
+                }
+                expect(active.profitPercent(), 'Invalid profitPercent').eq(100 - active.profitCommissionPercent)
             });
 
             async function openOption() {
@@ -360,6 +378,15 @@ describe('Options', () => {
                 const currentTime = sdk.currentTime();
                 expect(firstInstrument.durationRemainingForPurchase(currentTime), 'Invalid duration remaining for purchase')
                     .to.eq(firstInstrument.purchaseEndTime().getTime() - currentTime.getTime())
+            });
+
+            it('should return valid profitPercent', async () => {
+                const firstInstrument = availableInstruments[0];
+                await firstInstrument.subscribeOnStrikesAskBidPrices()
+                await justWait(2000)
+                const profitPercent = firstInstrument.profitPercent(12);
+                expect(profitPercent, 'Invalid profitPercent').to.be.a('number').and.not.be.NaN;
+                expect(profitPercent).to.be.greaterThan(0);
             });
 
             it('should return ask/bid prices if subscribed', async () => {
