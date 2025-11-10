@@ -3788,7 +3788,7 @@ export class BlitzOptions {
             expirationSize,
             price,
             balance.id,
-            100 - active.profitCommissionPercent,
+            active.profitPercent(),
         )
         const response = await this.wsApiClient.doRequest<BinaryOptionsOptionV1>(request)
         return new BlitzOptionsOption(response)
@@ -3936,6 +3936,13 @@ export class BlitzOptionsActive {
         return this.schedule.findIndex((session: BlitzOptionsActiveTradingSession): boolean => {
             return session.from.getTime() <= atUnixTimeMilli && session.to.getTime() >= atUnixTimeMilli
         }) >= 0
+    }
+
+    /**
+     * Returns profit percent for the active.
+     */
+    public profitPercent(): number {
+        return 100 - this.profitCommissionPercent
     }
 
     /**
@@ -4138,7 +4145,7 @@ export class TurboOptions {
             direction,
             price,
             balance.id,
-            100 - instrument.profitCommissionPercent,
+            instrument.profitPercent(),
         )
         const response = await this.wsApiClient.doRequest<BinaryOptionsOptionV1>(request)
         return new TurboOptionsOption(response)
@@ -4523,6 +4530,13 @@ export class TurboOptionsActiveInstrument {
     }
 
     /**
+     * Returns profit percent.
+     */
+    public profitPercent(): number {
+        return 100 - this.profitCommissionPercent
+    }
+
+    /**
      * Updates the instance from DTO.
      * @param deadtime - How many seconds before expiration time the ability to purchase options for this instrument will not be allowed.
      * @private
@@ -4690,7 +4704,7 @@ export class BinaryOptions {
             direction,
             price,
             balance.id,
-            100 - instrument.profitCommissionPercent,
+            instrument.profitPercent(),
         )
         const response = await this.wsApiClient.doRequest<BinaryOptionsOptionV1>(request)
         return new BinaryOptionsOption(response)
@@ -5133,6 +5147,13 @@ export class BinaryOptionsActiveInstrument {
      */
     public durationRemainingForPurchase(currentTime: Date): number {
         return this.purchaseEndTime().getTime() - currentTime.getTime();
+    }
+
+    /**
+     * Returns profit percent.
+     */
+    public profitPercent(): number {
+        return 100 - this.profitCommissionPercent
     }
 
     /**
@@ -5793,6 +5814,30 @@ export class DigitalOptionsUnderlyingInstrument {
         }
 
         throw new Error(`Strike with price '${price}' and direction '${direction}' is not found`)
+    }
+
+    /**
+     * Calculates profit percent for specified amount and strike price.
+     *
+     * @param amount
+     * @param price
+     */
+    public profitPercent(amount: number, price: string = "SPT"): number {
+        const callStrike = this.getStrikeByPriceAndDirection(price, DigitalOptionsDirection.Call)
+        if (callStrike.ask === undefined || callStrike.bid === undefined) {
+            throw new Error(`Can't get profit percent for strike with price '${price}' because ask/bid prices are undefined`)
+        }
+
+        const callProfitPercent = (100 / callStrike.ask * amount - amount) / amount * 100
+
+        const putStrike = this.getStrikeByPriceAndDirection(price, DigitalOptionsDirection.Put)
+        if (putStrike.ask === undefined || putStrike.bid === undefined) {
+            throw new Error(`Can't get profit percent for strike with price '${price}' because ask/bid prices are undefined`)
+        }
+
+        const putProfitPercent = (100 / putStrike.ask * amount - amount) / amount * 100
+
+        return Math.floor(Math.min(callProfitPercent, putProfitPercent));
     }
 
     /**
