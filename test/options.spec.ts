@@ -93,7 +93,7 @@ describe('Options', () => {
             });
 
             function getAvailableInstrument() {
-                return instruments.filter(value => value.durationRemainingForPurchase(sdk.currentTime()) > 1000)[0];
+                return instruments.filter(value => value.durationRemainingForPurchase(sdk.currentTime()) > 3000)[0];
             }
 
             it('should return instruments array', () => {
@@ -130,8 +130,8 @@ describe('Options', () => {
 
                 it('insufficient funds for this transaction', async () => {
                     const firstInstrument = getAvailableInstrument();
-                    await expect(binaryOptions.buy(firstInstrument, BinaryOptionsDirection.Put, 10, realBalance)).rejects
-                        .toThrow("Insufficient funds for this transaction.")
+                    await expect(binaryOptions.buy(firstInstrument, BinaryOptionsDirection.Put, 10, realBalance))
+                        .rejects.toThrow("Insufficient funds for this transaction.")
                 });
 
                 async function openOption() {
@@ -197,7 +197,7 @@ describe('Options', () => {
             });
 
             function getAvailableInstrument() {
-                return instruments.filter(value => value.durationRemainingForPurchase(sdk.currentTime()) > 1000)[0];
+                return instruments.filter(value => value.durationRemainingForPurchase(sdk.currentTime()) > 3000)[0];
             }
 
             it('should return instruments array', () => {
