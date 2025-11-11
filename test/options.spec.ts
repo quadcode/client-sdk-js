@@ -9,6 +9,7 @@ import {
     DigitalOptions,
     DigitalOptionsDirection,
     DigitalOptionsUnderlyingInstrument,
+    DigitalOptionsUnderlyingInstrumentStrike,
     LoginPasswordAuthMethod,
     TurboOptions,
     TurboOptionsActiveInstrument,
@@ -380,30 +381,36 @@ describe('Options', () => {
                     .to.eq(firstInstrument.purchaseEndTime().getTime() - currentTime.getTime())
             });
 
-            it('should return valid profitPercent', async () => {
-                const firstInstrument = availableInstruments[0];
-                await firstInstrument.subscribeOnStrikesAskBidPrices()
-                await justWait(2000)
-                const profitPercent = firstInstrument.profitPercent(12);
-                expect(profitPercent, 'Invalid profitPercent').to.be.a('number').and.not.be.NaN;
-                expect(profitPercent).to.be.greaterThan(0);
-            });
+            describe('Subscribe on strikes updates', () => {
 
-            it('should return ask/bid prices if subscribed', async () => {
-                const instrument = availableInstruments.find(instr => instr.period === 300);
-                if (!instrument)
-                    throw new Error("Instrument with 5min expiration wasn't found");
-                const strikes = Array.from(instrument.strikes.values());
-                expect(strikes.filter(value => value.bid !== undefined || value.ask !== undefined),
-                    'Strikes should not have ask/bid prices').lengthOf(0)
+                let instrument: DigitalOptionsUnderlyingInstrument;
+                let strikes: DigitalOptionsUnderlyingInstrumentStrike[];
 
-                await instrument.subscribeOnStrikesAskBidPrices();
-                await justWait(2000) // wait 2 sec
+                beforeAll(async () => {
+                    const digitalOptionsUnderlyingInstrument = availableInstruments.find(instr => instr.period === 300);
+                    if (!digitalOptionsUnderlyingInstrument)
+                        throw new Error("Instrument with 5min expiration wasn't found");
+                    instrument = digitalOptionsUnderlyingInstrument
+                    strikes = Array.from(instrument.strikes.values());
+                    expect(strikes.filter(value => value.bid !== undefined || value.ask !== undefined),
+                        'Strikes should not have ask/bid prices').lengthOf(0)
 
-                const strikesWithPrices = Array.from(instrument.strikes.values())
-                    .filter(value => value.bid !== undefined || value.ask !== undefined);
-                expect(strikesWithPrices.length, 'Strikes must have ask/bid prices').eq(strikes.length)
-            });
+                    await instrument.subscribeOnStrikesAskBidPrices();
+                    await justWait(2000) // wait 2 sec
+                })
+
+                it('should return valid profitPercent', async () => {
+                    const profitPercent = instrument?.profitPercent(12);
+                    expect(profitPercent, 'Invalid profitPercent').to.be.a('number').and.not.be.NaN;
+                    expect(profitPercent).to.be.greaterThan(0);
+                });
+
+                it('should return ask/bid prices if subscribed', async () => {
+                    const strikesWithPrices = Array.from(instrument.strikes.values())
+                        .filter(value => value.bid !== undefined || value.ask !== undefined);
+                    expect(strikesWithPrices.length, 'Strikes must have ask/bid prices').eq(strikes.length)
+                });
+            })
 
             describe('Buy option', () => {
 
