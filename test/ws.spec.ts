@@ -1,5 +1,5 @@
-import {ClientSdk, LoginPasswordAuthMethod, TurboOptionsDirection, WsConnectionStateEnum} from "../src";
-import {API_URL, User, WS_URL} from "./vars";
+import {ClientSdk, OAuthMethod, TurboOptionsDirection, WsConnectionStateEnum} from "../src";
+import {API_URL, CLIENT_ID, CLIENT_SECRET, User, WS_URL} from "./vars";
 import {afterAll, describe, expect, it} from "vitest";
 import {getUserByTitle} from "./utils/userUtils";
 import {justWait, waitForCondition} from "./utils/waiters";
@@ -16,7 +16,7 @@ describe('ws connection state', () => {
     });
 
     it.skip('should reconnected', async () => {
-        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
+        sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token));
         const wsConnectionState = await sdk.wsConnectionState();
         let ws: WsConnectionStateEnum;
         wsConnectionState.subscribeOnStateChanged(state => ws = state)
@@ -28,7 +28,7 @@ describe('ws connection state', () => {
 
 
     it('should subscribeOnWsCurrentTime update time', async () => {
-        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
+        sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token));
         let time: Date = sdk.currentTime()
         let prev: Date = time;
         sdk.subscribeOnWsCurrentTime(currentTime => time = currentTime)
@@ -54,7 +54,7 @@ describe('ws connection state', () => {
 
 
     it.skip('should reconnect and update positions', async () => {
-        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password));
+        sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token));
         const positions = await sdk.positions()
         const wsConnectionState = await sdk.wsConnectionState()
         const option = await openOption()

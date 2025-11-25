@@ -1,17 +1,17 @@
 import {
     Balance,
     ClientSdk,
-    LoginPasswordAuthMethod,
     MarginCfd,
     MarginCrypto,
     MarginDirection,
     MarginForex,
     MarginTradingTPSL,
     MarginUnderlyingInstrument,
+    OAuthMethod,
     Quotes
 } from "../src";
 import {getUserByTitle} from "./utils/userUtils";
-import {API_URL, BASE_HOST, User, WS_URL} from "./vars";
+import {API_URL, BASE_HOST, CLIENT_ID, CLIENT_SECRET, User, WS_URL} from "./vars";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {PositionsHelper} from "./utils/positionsHelper";
 import {justWait, waitForCondition} from "./utils/waiters";
@@ -28,7 +28,7 @@ describe('Margin Forex/CFD/Crypto', () => {
     beforeAll(async () => {
         user = getUserByTitle('margin_user') as User;
         const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
-        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+        sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token), options);
         const balances = await sdk.balances();
         quotes = await sdk.quotes();
         demoBalance = balances.getBalances().filter(value => value.type === "demo")[0];
@@ -94,7 +94,7 @@ describe('Margin Forex/CFD/Crypto', () => {
 
         it('should be singleton object', async () => {
             const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
-            sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+            sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token), options);
             const [marginCfd1, marginCfd2] = await Promise.all([
                 sdk.marginCfd(),
                 sdk.marginCfd(),
@@ -207,7 +207,7 @@ describe('Margin Forex/CFD/Crypto', () => {
 
         it('should be singleton object', async () => {
             const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
-            sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+            sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token), options);
             const [marginCrypto1, marginCrypto2] = await Promise.all([
                 sdk.marginCrypto(),
                 sdk.marginCrypto(),
@@ -322,7 +322,7 @@ describe('Margin Forex/CFD/Crypto', () => {
 
         it('should be singleton object', async () => {
             const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
-            sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+            sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token), options);
             const [marginForex1, marginForex2] = await Promise.all([
                 sdk.marginForex(),
                 sdk.marginForex(),
