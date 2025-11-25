@@ -1,6 +1,6 @@
-import {ClientSdk, LoginPasswordAuthMethod} from "../src";
+import {ClientSdk, OAuthMethod} from "../src";
 import {getUserByTitle} from "./utils/userUtils";
-import {API_URL, BASE_HOST, User, WS_URL} from "./vars";
+import {API_URL, BASE_HOST, CLIENT_ID, CLIENT_SECRET, User, WS_URL} from "./vars";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 
 describe('Currencies', () => {
@@ -9,7 +9,7 @@ describe('Currencies', () => {
     beforeAll(async () => {
         const user = getUserByTitle('regular_user') as User
         const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
-        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options)
+        sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token), options)
     });
 
     afterAll(async function () {

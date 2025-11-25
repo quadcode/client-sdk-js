@@ -10,13 +10,13 @@ import {
     DigitalOptionsDirection,
     DigitalOptionsUnderlyingInstrument,
     DigitalOptionsUnderlyingInstrumentStrike,
-    LoginPasswordAuthMethod,
+    OAuthMethod,
     TurboOptions,
     TurboOptionsActiveInstrument,
     TurboOptionsDirection
 } from "../src";
 import {getUserByTitle} from "./utils/userUtils";
-import {API_URL, BASE_HOST, User, WS_URL} from "./vars";
+import {API_URL, BASE_HOST, CLIENT_ID, CLIENT_SECRET, User, WS_URL} from "./vars";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {justWait, waitForCondition} from "./utils/waiters";
 import {PositionsHelper} from "./utils/positionsHelper";
@@ -31,7 +31,7 @@ describe('Options', () => {
     beforeAll(async () => {
         user = getUserByTitle('regular_user') as User;
         const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
-        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+        sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token), options);
         const balances = await sdk.balances();
         demoBalance = balances.getBalances().filter(value => value.type === "demo")[0];
         realBalance = balances.getBalances().filter(value => value.type === "real")[0];
@@ -71,7 +71,7 @@ describe('Options', () => {
 
         it('should be singleton object', async () => {
             const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
-            sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+            sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token), options);
             const [binaryOptions1, binaryOptions2] = await Promise.all([
                 sdk.binaryOptions(),
                 sdk.binaryOptions(),
@@ -175,7 +175,7 @@ describe('Options', () => {
 
         it('should be singleton object', async () => {
             const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
-            sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+            sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token), options);
             const [turboOptions1, turboOptions2] = await Promise.all([
                 sdk.turboOptions(),
                 sdk.turboOptions(),
@@ -277,7 +277,7 @@ describe('Options', () => {
 
         it('should be singleton object', async () => {
             const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
-            sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+            sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token), options);
             const [blitzOptions1, blitzOptions2] = await Promise.all([
                 sdk.blitzOptions(),
                 sdk.blitzOptions(),

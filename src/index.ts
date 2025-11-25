@@ -726,15 +726,15 @@ export class OAuthMethod implements AuthMethod {
             if (authResponse.isSuccessful) {
                 return authResponse.isSuccessful
             }
+        }
 
-            if (!this.refreshToken || !this.clientSecret) {
-                return false
-            }
+        if (!this.refreshToken || !this.clientSecret) {
+            return false
+        }
 
-            const hasNewAccessToken = await this.refreshAccessToken()
-            if (hasNewAccessToken) {
-                return this.authenticateWsApiClient(wsApiClient)
-            }
+        const hasNewAccessToken = await this.refreshAccessToken()
+        if (hasNewAccessToken) {
+            return this.authenticateWsApiClient(wsApiClient)
         }
 
         return false
@@ -7165,7 +7165,7 @@ class WsApiClient {
                 } else if (frame.name && frame.name === 'authenticated' && frame.msg === false) {
                     for (const [, requestMetaData] of this.pendingRequests) {
                         if (requestMetaData.request instanceof Authenticate) {
-                            requestMetaData.reject(new Error('authentication is failed'))
+                            requestMetaData.resolve(new Authenticated(false))
                         }
                     }
                 }

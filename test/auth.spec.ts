@@ -1,5 +1,5 @@
-import {ClientSdk, LoginPasswordAuthMethod, SsidAuthMethod} from "../src";
-import {API_URL, BASE_HOST, User, WS_URL} from "./vars";
+import {ClientSdk, LoginPasswordAuthMethod, OAuthMethod, SsidAuthMethod} from "../src";
+import {API_URL, BASE_HOST, CLIENT_ID, CLIENT_SECRET, User, WS_URL} from "./vars";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {getUserByTitle} from "./utils/userUtils";
 
@@ -36,5 +36,18 @@ describe('Authentication with ssid', () => {
             WS_URL,
             82,
             new SsidAuthMethod("invalid_ssid"))).rejects.toThrow("authentication is failed")
+    });
+});
+
+describe('Authentication with oauth', () => {
+    const user = getUserByTitle("balance_user") as User;
+
+    it('should authenticate user with oauth method', async () => {
+
+        const auth = new OAuthMethod(API_URL, CLIENT_ID, 'http://localhost:5173/#/oauth/callback', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token)
+        const sdk = await ClientSdk.create(WS_URL, 82, auth);
+
+        const balances = (await sdk.balances()).getBalances();
+        expect(balances.length, "Invalid balances count").to.be.above(0);
     });
 });
