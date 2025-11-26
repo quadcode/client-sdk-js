@@ -71,7 +71,24 @@ async function startLogin() {
 
 ### [Online access] Step 2: Handle redirect and create SDK instance
 
-```js 
+```js
+// Example of in-memory tokens storage (you can implement your own persistent storage)
+// NOTE: In a real application, consider using localStorage/sessionStorage or IndexedDB for persistence across page reloads.
+class InMemoryOAuthTokensStorage {
+	private tokens: { accessToken: string; refreshToken?: string } = {
+		accessToken: '',
+	};
+
+	get(): { accessToken: string; refreshToken?: string } {
+		return this.tokens;
+	}
+
+	set(tokens: { accessToken: string; refreshToken?: string }): void {
+		this.tokens = tokens;
+	}
+}
+
+
 async function handleCallback() {
 	const params = new URLSearchParams(window.location.search);
 	const code = params.get('code');
@@ -84,23 +101,22 @@ async function handleCallback() {
 		'https://api.trade.example.com', // local (dev via Vite proxy from the browser): http://localhost:5173/proxy/api
 		CLIENT_ID,
 		'https://your.app/callback',     // local: http://localhost:5173/callback
-		'full'
+		'full',
+		undefined,        // no clientSecret in browser
+		undefined,        // accessToken is managed by tokensStorage
+		undefined,        // refreshToken is managed by tokensStorage
+		undefined,
+		undefined,
+		undefined,
+		tokensStorage     // custom tokens storage to persist tokens in memory (or use localStorage/sessionStorage)
 	);
 
-	const {accessToken, refreshToken} = await oauth.issueAccessTokenWithAuthCode(code, codeVerifier);
+	await oauth.issueAccessTokenWithAuthCode(code, codeVerifier);
 
 	const sdk = await ClientSdk.create(
 		'wss://ws.trade.example.com/echo/websocket', // local (dev via Vite proxy): ws://localhost:5173/proxy/ws/echo/websocket
 		82,
-		new OAuthMethod(
-			'https://api.trade.example.com', // local (dev via Vite proxy from the browser): http://localhost:5173/proxy/api
-			CLIENT_ID,
-			'https://your.app/callback', // local: http://localhost:5173/callback
-			'full',
-			undefined,        // no clientSecret in browser
-			accessToken,
-			refreshToken || undefined
-		)
+		oauth
 	);
 
 	const balances = await sdk.balances();
@@ -144,7 +160,13 @@ app.post('/api/oauth/exchange', async (req, res) => {
 		Number(process.env.CLIENT_ID),
 		'https://your.app/callback',
 		'full offline_access',
-		process.env.CLIENT_SECRET                 // SECRET: server-side only
+		process.env.CLIENT_SECRET,                // SECRET: server-side only
+		undefined,                                // accessToken is managed by tokensStorage
+		undefined,                                // refreshToken is managed by tokensStorage
+		undefined,
+		undefined,
+		undefined,
+		tokensStorage                             // server-side tokens storage (DB/kv bound to user/session)
 	)
 
 	const {accessToken, refreshToken, expiresIn} = await oauth.issueAccessTokenWithAuthCode(code, codeVerifier)
@@ -158,17 +180,18 @@ app.post('/api/oauth/exchange', async (req, res) => {
 
 // Optional refresh endpoint (server uses stored refresh token)
 app.post('/api/oauth/refresh', async (req, res) => {
-	const storedRefreshToken = await loadUserRefreshToken(req)
-	if (!storedRefreshToken) return res.status(401).json({error: 'No refresh token'})
-
 	const oauth = new OAuthMethod(
 		'https://api.trade.example.com',
 		Number(process.env.CLIENT_ID),
 		'https://your.app/callback',
 		'full offline_access',
 		process.env.CLIENT_SECRET,
+		undefined,                                // accessToken is managed by tokensStorage
+		undefined,                                // refreshToken is managed by tokensStorage
 		undefined,
-		storedRefreshToken
+		undefined,
+		undefined,
+		tokensStorage                             // server-side tokens storage (DB/kv bound to user/session)
 	)
 
 	const {accessToken, expiresIn} = await oauth.refreshAccessToken()
