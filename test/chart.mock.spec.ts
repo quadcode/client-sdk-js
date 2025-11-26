@@ -1,8 +1,8 @@
-import {Candle, ClientSdk, ClientSDKAdditionalOptions, OAuthMethod} from "../src";
+import {Candle, ClientSdk} from "../src";
 import {getUserByTitle} from "./utils/userUtils";
 import {afterEach, beforeAll, beforeEach, describe, expect, it, vi} from "vitest";
 import WS from "vitest-websocket-mock";
-import {API_URL, BASE_HOST, CLIENT_ID, CLIENT_SECRET, User} from "./vars";
+import {User} from "./vars";
 import {randomInt, safeJsonParse, uuid} from "./utils/utils";
 import {
     generateCandlesJson,
@@ -12,6 +12,7 @@ import {
 } from "./utils/candleMock";
 import {Client} from "mock-socket";
 import {justWait} from "./utils/waiters";
+import {getOAuthMethod} from "./utils/authHelper";
 
 const ONE_DAY_S = 24 * 60 * 60;
 
@@ -36,12 +37,10 @@ describe('Chart Data mock', () => {
     let socket: Client;
     let now: number;
     let user: User;
-    let options: ClientSDKAdditionalOptions | undefined;
     let stopStream: () => void
 
     beforeAll(() => {
         user = getUserByTitle('regular_user') as User
-        options = IS_BROWSER ? {host: BASE_HOST} : undefined;
     })
 
     beforeEach(() => {
@@ -114,7 +113,8 @@ describe('Chart Data mock', () => {
     });
 
     it('should filling history gaps', async () => {
-        sdk = await ClientSdk.create("ws://localhost:1234", 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token), options)
+        const {oauth, options} = getOAuthMethod(user);
+        sdk = await ClientSdk.create("ws://localhost:1234", 82, oauth, options)
         now = Math.floor(Date.now() / 1000);
 
         const candlesReq = vi.fn();
@@ -219,7 +219,8 @@ describe('Chart Data mock', () => {
     })
 
     it('should filling history gaps when call fetchCandles', async () => {
-        sdk = await ClientSdk.create("ws://localhost:1234", 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token), options)
+        const {oauth, options} = getOAuthMethod(user);
+        sdk = await ClientSdk.create("ws://localhost:1234", 82, oauth, options)
         now = Math.floor(Date.now() / 1000);
 
         const candlesReq = vi.fn();
@@ -353,7 +354,8 @@ describe('Chart Data mock', () => {
     })
 
     it('should filling gaps in current candles', async () => {
-        sdk = await ClientSdk.create("ws://localhost:1234", 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token), options)
+        const {oauth, options} = getOAuthMethod(user);
+        sdk = await ClientSdk.create("ws://localhost:1234", 82, oauth, options)
         const size = 1;
         const layer = await sdk.realTimeChartDataLayer(1, size);
         const missingSpy = vi.fn();
@@ -446,7 +448,8 @@ describe('Chart Data mock', () => {
     })
 
     it('should reject request if disconnect happened', async () => {
-        sdk = await ClientSdk.create("ws://localhost:1234", 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token), options)
+        const {oauth, options} = getOAuthMethod(user);
+        sdk = await ClientSdk.create("ws://localhost:1234", 82, oauth, options)
         now = Math.floor(Date.now() / 1000);
         const layer = await sdk.realTimeChartDataLayer(1, 60);
         const fetchPromise = layer.fetchAllCandles(now - ONE_DAY_S);

@@ -1,22 +1,17 @@
 import {ClientSdk, OAuthMethod, TurboOptionsDirection, WsConnectionStateEnum} from "../src";
 import {API_URL, CLIENT_ID, CLIENT_SECRET, User, WS_URL} from "./vars";
-import {afterAll, describe, expect, it} from "vitest";
+import {describe, expect, it} from "vitest";
 import {getUserByTitle} from "./utils/userUtils";
 import {justWait, waitForCondition} from "./utils/waiters";
 import {PositionsHelper} from "./utils/positionsHelper";
 import {randomFloat} from "./utils/utils";
+import {getOAuthMethod} from "./utils/authHelper";
 
-describe('ws connection state', () => {
-    let sdk: ClientSdk;
+describe('WS connection state', () => {
     const user = getUserByTitle("regular_user") as User;
 
-
-    afterAll(async function () {
-        await sdk.shutdown();
-    });
-
     it.skip('should reconnected', async () => {
-        sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token));
+        const sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token));
         const wsConnectionState = await sdk.wsConnectionState();
         let ws: WsConnectionStateEnum;
         wsConnectionState.subscribeOnStateChanged(state => ws = state)
@@ -24,11 +19,13 @@ describe('ws connection state', () => {
         expect(await waitForCondition(() => ws === WsConnectionStateEnum.Disconnected, 120000)).to.be.true;
         console.log("Connect this device...")
         expect(await waitForCondition(() => ws === WsConnectionStateEnum.Connected, 120000)).to.be.true;
+        await sdk.shutdown()
     });
 
 
     it('should subscribeOnWsCurrentTime update time', async () => {
-        sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token));
+        const {oauth, options} = getOAuthMethod(user);
+        const sdk = await ClientSdk.create(WS_URL, 82, oauth, options);
         let time: Date = sdk.currentTime()
         let prev: Date = time;
         sdk.subscribeOnWsCurrentTime(currentTime => time = currentTime)
@@ -37,9 +34,10 @@ describe('ws connection state', () => {
             expect(time.getTime() - prev.getTime()).greaterThanOrEqual(900);
             prev = time;
         }
+        await sdk.shutdown()
     });
 
-    async function openOption() {
+    async function openOption(sdk: ClientSdk) {
         const options = await sdk.turboOptions();
         const activeInstruments = await options.getActives()
             .filter(active => active.canBeBoughtAt(sdk.currentTime()))[0].instruments();
@@ -54,10 +52,11 @@ describe('ws connection state', () => {
 
 
     it.skip('should reconnect and update positions', async () => {
-        sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token));
+        const {oauth, options} = getOAuthMethod(user);
+        const sdk = await ClientSdk.create(WS_URL, 82, oauth, options)
         const positions = await sdk.positions()
         const wsConnectionState = await sdk.wsConnectionState()
-        const option = await openOption()
+        const option = await openOption(sdk)
         const positionsHelper = await PositionsHelper.create(sdk)
         let ws: WsConnectionStateEnum
         wsConnectionState.subscribeOnStateChanged(state => ws = state)
@@ -76,5 +75,6 @@ describe('ws connection state', () => {
         positionsHelper.findPositionByPredicate(position => position.invest == invest && position.status == "open")
         console.log("Check that second position is in the history positions")
         expect(positionsHelper.findHistoryPosition(position1.externalId)).not.undefined;
+        await sdk.shutdown()
     });
 });

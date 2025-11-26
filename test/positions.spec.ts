@@ -1,8 +1,9 @@
-import {BinaryOptionsDirection, ClientSdk, OAuthMethod} from "../src";
+import {BinaryOptionsDirection, ClientSdk} from "../src";
 import {getUserByTitle} from "./utils/userUtils";
-import {API_URL, BASE_HOST, CLIENT_ID, CLIENT_SECRET, User, WS_URL} from "./vars";
+import {User, WS_URL} from "./vars";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {PositionsHelper} from "./utils/positionsHelper";
+import {getOAuthMethod} from "./utils/authHelper";
 
 describe('Positions', () => {
     let user: User
@@ -11,8 +12,8 @@ describe('Positions', () => {
 
     beforeAll(async () => {
         user = getUserByTitle('positions_user') as User
-        const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
-        sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token), options)
+        const {oauth, options} = getOAuthMethod(user);
+        sdk = await ClientSdk.create(WS_URL, 82, oauth, options)
         positionsHelper = await PositionsHelper.create(sdk)
     });
 
@@ -30,8 +31,8 @@ describe('Positions', () => {
     }
 
     it('should be singleton object', async () => {
-        const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
-        sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token), options);
+        const {oauth, options} = getOAuthMethod(user);
+        sdk = await ClientSdk.create(WS_URL, 82, oauth, options)
         const [positions1, positions2] = await Promise.all([
             sdk.positions(),
             sdk.positions(),
@@ -48,8 +49,8 @@ describe('Positions', () => {
 
     it(`Position should contains direction and expiration time (subscribe on updated position after opening)`, async () => {
         const binaryOptionsOption = await openBinaryOption()
-        const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
-        const sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token), options)
+        const {oauth, options} = getOAuthMethod(user);
+        sdk = await ClientSdk.create(WS_URL, 82, oauth, options)
         const positionsHelper = await PositionsHelper.create(sdk)
         const position = await positionsHelper.waitForPosition(position => position.orderIds.includes(binaryOptionsOption.id))
         expect(position.direction, "Direction should be define in position object").to.be.not.undefined
@@ -64,8 +65,8 @@ describe('History positions', () => {
 
     beforeAll(async () => {
         user = getUserByTitle('history_positions_user') as User
-        const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
-        sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token), options)
+        const {oauth, options} = getOAuthMethod(user);
+        sdk = await ClientSdk.create(WS_URL, 82, oauth, options)
         positionsHelper = await PositionsHelper.create(sdk)
     });
 

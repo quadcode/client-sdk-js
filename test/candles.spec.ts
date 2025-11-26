@@ -1,7 +1,8 @@
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
-import {Candles, ClientSdk, OAuthMethod} from "../src";
-import {API_URL, BASE_HOST, CLIENT_ID, CLIENT_SECRET, User, WS_URL} from "./vars";
+import {Candles, ClientSdk} from "../src";
+import {User, WS_URL} from "./vars";
 import {getUserByTitle} from "./utils/userUtils";
+import {getOAuthMethod} from "./utils/authHelper";
 
 describe('Candles', () => {
     let sdk: ClientSdk;
@@ -9,8 +10,8 @@ describe('Candles', () => {
     const user = getUserByTitle('regular_user') as User;
 
     beforeAll(async () => {
-        const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
-        sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token), options);
+        const {oauth, options} = getOAuthMethod(user);
+        sdk = await ClientSdk.create(WS_URL, 82, oauth, options);
         candles = await sdk.candles();
     })
 
@@ -19,8 +20,8 @@ describe('Candles', () => {
     });
 
     it('should be singleton object', async () => {
-        const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
-        sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token), options);
+        const {oauth, options} = getOAuthMethod(user);
+        sdk = await ClientSdk.create(WS_URL, 82, oauth, options);
         const [candles1, candles2] = await Promise.all([
             sdk.candles(),
             sdk.candles(),

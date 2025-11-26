@@ -1,8 +1,9 @@
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
-import {ClientSdk, OAuthMethod, Quotes} from "../src";
-import {API_URL, BASE_HOST, CLIENT_ID, CLIENT_SECRET, User, WS_URL} from "./vars";
+import {ClientSdk, Quotes} from "../src";
+import {User, WS_URL} from "./vars";
 import {getUserByTitle} from "./utils/userUtils";
 import {getCurrentQuote} from "./utils/utils";
+import {getOAuthMethod} from "./utils/authHelper";
 
 describe('Quotes', () => {
     let sdk: ClientSdk;
@@ -10,8 +11,8 @@ describe('Quotes', () => {
     const user = getUserByTitle('regular_user') as User;
 
     beforeAll(async () => {
-        const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
-        sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token), options);
+        const {oauth, options} = getOAuthMethod(user);
+        sdk = await ClientSdk.create(WS_URL, 82, oauth, options)
         quotes = await sdk.quotes();
     })
 
@@ -20,8 +21,8 @@ describe('Quotes', () => {
     });
 
     it('should be singleton object', async () => {
-        const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
-        sdk = await ClientSdk.create(WS_URL, 82, new OAuthMethod(API_URL, CLIENT_ID, '', 'full offline_access', CLIENT_SECRET, user.access_token, user.refresh_token), options);
+        const {oauth, options} = getOAuthMethod(user);
+        sdk = await ClientSdk.create(WS_URL, 82, oauth, options)
         const [quotes1, quotes2] = await Promise.all([
             sdk.quotes(),
             sdk.quotes(),

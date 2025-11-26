@@ -1,7 +1,7 @@
 declare global {
     const IS_BROWSER: boolean;
 }
-export const BASE_HOST: string;
+export const BASE_URL: string;
 export const API_URL: string;
 export const WS_URL: string;
 export const CLIENT_ID: number;
