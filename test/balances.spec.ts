@@ -1,8 +1,9 @@
-import {Balance, Balances, BalanceType, BinaryOptionsDirection, ClientSdk, LoginPasswordAuthMethod} from "../src";
-import {API_URL, BASE_HOST, User, WS_URL} from "./vars";
+import {Balance, Balances, BalanceType, BinaryOptionsDirection, ClientSdk} from "../src";
+import {User, WS_URL} from "./vars";
 import {getUserByTitle} from "./utils/userUtils";
 import {waitForCondition} from "./utils/waiters";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
+import {getOAuthMethod} from "./utils/authHelper";
 
 describe('Balances', () => {
     let sdk: ClientSdk;
@@ -10,8 +11,8 @@ describe('Balances', () => {
     const user = getUserByTitle('balance_user') as User;
 
     beforeAll(async () => {
-        const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
-        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+        const {oauth, options} = getOAuthMethod(user);
+        sdk = await ClientSdk.create(WS_URL, 82, oauth, options);
         balances = await sdk.balances();
     })
 
@@ -37,8 +38,8 @@ describe('Balances', () => {
     }
 
     it('should be singleton object', async () => {
-        const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
-        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+        const {oauth, options} = getOAuthMethod(user);
+        sdk = await ClientSdk.create(WS_URL, 82, oauth, options);
         const [balances1, balances2] = await Promise.all([
             sdk.balances(),
             sdk.balances(),
@@ -64,8 +65,8 @@ describe('Balances', () => {
 
     it('balance should changed', async () => {
         const user = getUserByTitle('balance_user1') as User;
-        const options = IS_BROWSER ? {host: BASE_HOST} : undefined;
-        sdk = await ClientSdk.create(WS_URL, 82, new LoginPasswordAuthMethod(API_URL, user.email, user.password), options);
+        const {oauth, options} = getOAuthMethod(user);
+        sdk = await ClientSdk.create(WS_URL, 82, oauth, options);
         balances = await sdk.balances();
         const balance = getBalance(BalanceType.Demo);
         let balanceAmount: number = 0;

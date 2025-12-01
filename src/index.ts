@@ -203,7 +203,17 @@ export class ClientSdk {
      */
     public static async create(apiUrl: string, platformId: number, authMethod: AuthMethod, options?: ClientSDKAdditionalOptions): Promise<ClientSdk> {
         const wsApiClient = new WsApiClient(apiUrl, platformId, authMethod)
-        await wsApiClient.connect()
+
+        try {
+            await wsApiClient.connect()
+        } catch (err) {
+            if (err instanceof AuthMethodRequestedReconnectException) {
+                await wsApiClient.connect()
+            } else {
+                throw err;
+            }
+        }
+
         const userProfile = await UserProfile.create(wsApiClient)
         return new ClientSdk(userProfile, wsApiClient, options)
     }
@@ -658,6 +668,38 @@ export interface AuthMethod {
 }
 
 /**
+ * Storage interface for OAuth tokens.
+ */
+export interface OAuthTokensStorage {
+    /**
+     * Gets stored OAuth tokens.
+     */
+    get(): { accessToken: string; refreshToken?: string };
+
+    /**
+     * Stores OAuth tokens.
+     *
+     * @param tokens
+     */
+    set(tokens: { accessToken: string; refreshToken?: string }): void;
+}
+
+/**
+ * Dummy implementation of OAuth tokens storage.
+ */
+class DummyOAuthTokensStorage implements OAuthTokensStorage {
+    private tokens: { accessToken: string; refreshToken?: string } = {accessToken: ''};
+
+    get(): { accessToken: string; refreshToken?: string } {
+        return this.tokens;
+    }
+
+    set(tokens: { accessToken: string; refreshToken?: string }): void {
+        this.tokens = tokens;
+    }
+}
+
+/**
  * Implements SSID authentication flow.
  */
 export class SsidAuthMethod implements AuthMethod {
@@ -693,10 +735,11 @@ export class OAuthMethod implements AuthMethod {
      * @param scope - Scope.
      * @param clientSecret - Client secret (optional, only for server-side applications).
      * @param accessToken - Access token (optional).
-     * @param refreshToken - Refresh token (optional only for server-side applications).
+     * @param refreshToken - Refresh token (optional, only for server-side applications). @deprecated Use tokensStorage instead.
      * @param affId - Affiliate ID (optional).
      * @param afftrack - Affiliate tracking info (optional).
      * @param affModel - Affiliate model (optional).
+     * @param tokensStorage - Storage for OAuth tokens (optional).
      */
     public constructor(
         private readonly apiBaseUrl: string,
@@ -709,7 +752,17 @@ export class OAuthMethod implements AuthMethod {
         private readonly affId?: number,
         private readonly afftrack?: string,
         private readonly affModel?: string,
+        private readonly tokensStorage?: OAuthTokensStorage,
     ) {
+        if (!this.tokensStorage) {
+            this.tokensStorage = new DummyOAuthTokensStorage();
+
+            this.tokensStorage.set({
+                accessToken: this.accessToken || '',
+                refreshToken: this.refreshToken,
+            });
+        }
+
         if (this.isBrowser && this.clientSecret) {
             throw new Error('Client secret should not be used in browser applications');
         }
@@ -720,24 +773,46 @@ export class OAuthMethod implements AuthMethod {
      * @param wsApiClient
      */
     public async authenticateWsApiClient(wsApiClient: WsApiClient): Promise<boolean> {
-        if (this.accessToken) {
-            const authResponse = await wsApiClient.doRequest<Authenticated>(new Authenticate(this.accessToken))
+        const tokens = this.tokensStorage!.get();
+
+        if (tokens.accessToken) {
+            const authResponse = await wsApiClient.doRequest<Authenticated>(new Authenticate(tokens.accessToken))
 
             if (authResponse.isSuccessful) {
                 return authResponse.isSuccessful
             }
 
-            if (!this.refreshToken || !this.clientSecret) {
+            if (!tokens.refreshToken || !this.clientSecret) {
                 return false
             }
 
-            const hasNewAccessToken = await this.refreshAccessToken()
-            if (hasNewAccessToken) {
-                return this.authenticateWsApiClient(wsApiClient)
+            const maxAttempts = 3;
+
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                const ok = await this.refreshAccessToken()
+                    .then(() => true)
+                    .catch(() => {
+                        return false;
+                    });
+
+                if (ok) {
+                    throw new AuthMethodRequestedReconnectException();
+                } else {
+                    if (attempt === maxAttempts - 1) {
+                        return false;
+                    }
+
+                    const backoffMs = Math.min(500 * 2 ** attempt, 5000);
+                    await this.sleep(backoffMs);
+                }
             }
         }
 
         return false
+    }
+
+    private sleep(ms: number): Promise<void> {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     /**
@@ -785,8 +860,10 @@ export class OAuthMethod implements AuthMethod {
         )
 
         if (response.status === 200 && response.data.accessToken) {
-            this.accessToken = response.data.accessToken
-            this.refreshToken = response.data.refreshToken
+            this.tokensStorage!.set({
+                accessToken: response.data.accessToken,
+                refreshToken: response.data.refreshToken
+            })
 
             return {
                 accessToken: response.data.accessToken,
@@ -832,18 +909,22 @@ export class OAuthMethod implements AuthMethod {
         expiresIn: number,
         refreshToken?: string
     }> {
-        if (!this.refreshToken || !this.clientSecret) {
+        const refreshToken = this.tokensStorage!.get().refreshToken;
+
+        if (!refreshToken || !this.clientSecret) {
             return Promise.reject('Refresh token or client secret is not set');
         }
 
         const httpApiClient = this.httpApiClient()
         const response = await httpApiClient.doRequest(
-            new HttpRefreshAccessTokenRequest(this.refreshToken, this.clientId, this.clientSecret)
+            new HttpRefreshAccessTokenRequest(refreshToken, this.clientId, this.clientSecret)
         )
 
         if (response.status === 200 && response.data.accessToken) {
-            this.accessToken = response.data.accessToken
-            this.refreshToken = response.data.refreshToken
+            this.tokensStorage!.set({
+                accessToken: response.data.accessToken,
+                refreshToken: response.data.refreshToken
+            })
 
             return {
                 accessToken: response.data.accessToken,
@@ -903,6 +984,19 @@ export class LoginPasswordAuthMethod implements AuthMethod {
         }
 
         return false
+    }
+}
+
+export class AuthMethodRequestedReconnectException extends Error {
+    constructor(message = "Auth method requested reconnect", options?: { cause?: unknown }) {
+        super(message);
+        this.name = "AuthMethodRequestedReconnectException";
+
+        if (options?.cause) {
+            this.cause = options.cause;
+        }
+
+        Object.setPrototypeOf(this, new.target.prototype);
     }
 }
 
@@ -7165,7 +7259,7 @@ class WsApiClient {
                 } else if (frame.name && frame.name === 'authenticated' && frame.msg === false) {
                     for (const [, requestMetaData] of this.pendingRequests) {
                         if (requestMetaData.request instanceof Authenticate) {
-                            requestMetaData.reject(new Error('authentication is failed'))
+                            requestMetaData.resolve(new Authenticated(false))
                         }
                     }
                 }
@@ -7213,6 +7307,7 @@ class WsApiClient {
 
                     return resolve()
                 } catch (e) {
+                    this.clear()
                     return reject(e)
                 }
             }
@@ -7222,6 +7317,11 @@ class WsApiClient {
     disconnect() {
         this.disconnecting = true;
 
+        this.clear()
+        this.onConnectionStateChanged?.(WsConnectionStateEnum.Disconnected);
+    }
+
+    clear() {
         if (this.reconnectTimeoutHandle) {
             clearTimeout(this.reconnectTimeoutHandle);
             this.reconnectTimeoutHandle = undefined;
@@ -7229,7 +7329,6 @@ class WsApiClient {
 
         this.stopTimeSyncMonitoring();
         this.forceCloseConnection();
-        this.onConnectionStateChanged?.(WsConnectionStateEnum.Disconnected);
         this.reconnecting = false;
         this.lastRequestId = 0;
         this.subscriptions.clear();
