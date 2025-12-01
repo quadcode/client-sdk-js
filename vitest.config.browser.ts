@@ -5,6 +5,7 @@ export default defineConfig({
         IS_BROWSER: true
     },
     test: {
+        hookTimeout: 65000,
         testTimeout: 35000,
         browser: {
             provider: "webdriverio",
