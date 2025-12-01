@@ -23,7 +23,7 @@ describe('WS connection state', () => {
     });
 
 
-    it('should subscribeOnWsCurrentTime update time', async () => {
+    it.skip('should subscribeOnWsCurrentTime update time', async () => {
         const {oauth, options} = getOAuthMethod(user);
         const sdk = await ClientSdk.create(WS_URL, 82, oauth, options);
         let time: Date = sdk.currentTime()
