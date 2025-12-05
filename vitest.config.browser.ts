@@ -19,5 +19,6 @@ export default defineConfig({
         },
         include: ['./test/*.spec.{ts,js}'],
         exclude: ['./test/chart.mock.spec.ts'],
+        setupFiles: ['./test/setup.ts'],
     }
 })
