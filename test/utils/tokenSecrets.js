@@ -9,6 +9,16 @@ const GH_API_VERSION = '2022-11-28';
 const tokenCache = new Map();
 const pendingWrites = new Set();
 
+function getEnv() {
+    if (typeof process !== 'undefined' && process?.env) {
+        return process.env;
+    }
+    if (typeof import.meta !== 'undefined' && import.meta?.env) {
+        return import.meta.env;
+    }
+    return {};
+}
+
 const normalizeTitle = (title) => title.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_');
 
 export function secretNameForToken(userTitle, tokenKind) {
@@ -17,7 +27,8 @@ export function secretNameForToken(userTitle, tokenKind) {
 
 export function requireTokenFromEnv(userTitle, tokenKind) {
     const envName = secretNameForToken(userTitle, tokenKind);
-    const value = process.env[envName];
+    const env = getEnv();
+    const value = env[envName] ?? env[`VITE_${envName}`];
     if (!value) {
         throw new Error(`[tokenSecrets] Missing token for "${userTitle}" (${tokenKind}). Set ${envName} secret/env value.`);
     }
