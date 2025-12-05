@@ -4,6 +4,7 @@ export default defineConfig({
     define: {
         IS_BROWSER: true
     },
+    envPrefix: ['SDK_TEST', 'VITE'],
     test: {
         hookTimeout: 65000,
         testTimeout: 35000,
