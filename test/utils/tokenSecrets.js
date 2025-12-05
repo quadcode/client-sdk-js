@@ -7,7 +7,7 @@ const GH_API = 'https://api.github.com';
 const GH_API_VERSION = '2022-11-28';
 
 const tokenCache = new Map();
-const pendingSyncs = new Set();
+const pendingWrites = new Set();
 
 const normalizeTitle = (title) => title.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_');
 
@@ -34,6 +34,14 @@ export function getTokensForUser(userTitle) {
 
     tokenCache.set(userTitle, tokens);
     return tokens;
+}
+
+export function setTokensForUser(userTitle, tokens) {
+    tokenCache.set(userTitle, tokens);
+    const sync = syncGithubSecrets(userTitle, tokens).catch((err) => {
+        console.error('[tokenSecrets] Failed to sync secrets:', err?.message || err);
+    });
+    return trackWrite(sync);
 }
 
 function githubHeaders(token, contentTypeJson = false) {
@@ -100,18 +108,13 @@ async function syncGithubSecrets(userTitle, tokens) {
     }
 }
 
-export function setTokensForUser(userTitle, tokens) {
-    tokenCache.set(userTitle, tokens);
-    const sync = syncGithubSecrets(userTitle, tokens)
-        .catch((err) => {
-            console.error('[tokenSecrets] Failed to sync secrets:', err?.message || err);
-        });
-    pendingSyncs.add(sync);
-    sync.finally(() => pendingSyncs.delete(sync));
-    return sync;
+export async function waitForSecretsSync() {
+    if (!pendingWrites.size) return;
+    await Promise.allSettled(Array.from(pendingWrites));
 }
 
-export async function waitForSecretsSync() {
-    if (!pendingSyncs.size) return;
-    await Promise.allSettled(Array.from(pendingSyncs));
+function trackWrite(promise) {
+    pendingWrites.add(promise);
+    promise.finally(() => pendingWrites.delete(promise));
+    return promise;
 }
