@@ -33,6 +33,7 @@
   },
   "dependencies": {
     "isomorphic-ws": "^5.0.0",
+    "tweetsodium": "^0.0.5",
     "vitest-websocket-mock": "^0.5.0",
     "ws": "^8.14.2"
   }

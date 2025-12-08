@@ -4,6 +4,7 @@ export default defineConfig({
     define: {
         IS_BROWSER: true
     },
+    envPrefix: ['SDK_TEST', 'VITE'],
     test: {
         hookTimeout: 65000,
         testTimeout: 35000,
@@ -19,5 +20,6 @@ export default defineConfig({
         },
         include: ['./test/*.spec.{ts,js}'],
         exclude: ['./test/chart.mock.spec.ts'],
+        setupFiles: ['./test/setup.ts'],
     }
 })

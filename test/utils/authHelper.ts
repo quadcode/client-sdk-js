@@ -1,5 +1,6 @@
 import {API_URL, BASE_URL, CLIENT_ID, CLIENT_SECRET, User} from "../vars";
 import {OAuthMethod, OAuthTokensStorage} from "../../src";
+import {getTokensForUser, setTokensForUser} from "./tokenSecrets.js";
 
 export function getOAuthMethod(user: User) {
     const options = IS_BROWSER ? {host: BASE_URL} : undefined;
@@ -15,28 +16,21 @@ export function getOAuthMethod(user: User) {
         undefined,
         undefined,
         undefined,
-        new InMemoryOAuthTokensStorage(user),
+        new SecretsTokensStorage(user),
     );
     return {oauth, options};
 }
 
-export class InMemoryOAuthTokensStorage implements OAuthTokensStorage{
+export class SecretsTokensStorage implements OAuthTokensStorage {
 
-    constructor(
-        private readonly user: User,
-    ) {
-        this.tokens = {accessToken: user.access_token, refreshToken: user.refresh_token}
+    constructor(private readonly user: User,) {
     }
 
-    private tokens: { accessToken: string; refreshToken?: string } = {
-        accessToken: '',
-    };
-
     get(): { accessToken: string; refreshToken?: string } {
-        return this.tokens;
+        return getTokensForUser(this.user.title);
     }
 
     set(tokens: { accessToken: string; refreshToken?: string }): void {
-        this.tokens = tokens;
+        setTokensForUser(this.user.title, tokens);
     }
 }
