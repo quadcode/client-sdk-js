@@ -773,42 +773,52 @@ export class OAuthMethod implements AuthMethod {
      * @param wsApiClient
      */
     public async authenticateWsApiClient(wsApiClient: WsApiClient): Promise<boolean> {
-        const tokens = this.tokensStorage!.get();
+        const maxAttempts = 3;
 
-        if (tokens.accessToken) {
-            const authResponse = await wsApiClient.doRequest<Authenticated>(new Authenticate(tokens.accessToken))
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const ok = await this.authenticateWsApiClientWithoutAttempts(wsApiClient)
+                .then(() => true)
+                .catch(() => {
+                    return false;
+                });
 
-            if (authResponse.isSuccessful) {
-                return authResponse.isSuccessful
-            }
-
-            if (!tokens.refreshToken || !this.clientSecret) {
-                return false
-            }
-
-            const maxAttempts = 3;
-
-            for (let attempt = 0; attempt < maxAttempts; attempt++) {
-                const ok = await this.refreshAccessToken()
-                    .then(() => true)
-                    .catch(() => {
-                        return false;
-                    });
-
-                if (ok) {
-                    throw new AuthMethodRequestedReconnectException();
-                } else {
-                    if (attempt === maxAttempts - 1) {
-                        return false;
-                    }
-
-                    const backoffMs = Math.min(500 * 2 ** attempt, 5000);
-                    await this.sleep(backoffMs);
+            if (ok) {
+                throw new AuthMethodRequestedReconnectException();
+            } else {
+                if (attempt === maxAttempts - 1) {
+                    return false;
                 }
+
+                const backoffMs = Math.min(500 * 2 ** attempt, 5000);
+                await this.sleep(backoffMs);
             }
         }
 
         return false
+    }
+
+    private async authenticateWsApiClientWithoutAttempts(wsApiClient: WsApiClient): Promise<boolean> {
+        const tokens = this.tokensStorage!.get();
+
+        if (!tokens.accessToken) {
+            return false
+        }
+
+        const authResponse = await wsApiClient.doRequest<Authenticated>(new Authenticate(tokens.accessToken))
+
+        if (authResponse.isSuccessful) {
+            return authResponse.isSuccessful
+        }
+
+        if (!tokens.refreshToken || !this.clientSecret) {
+            return false
+        }
+
+        return await this.refreshAccessToken()
+            .then(() => true)
+            .catch(() => {
+                return false;
+            });
     }
 
     private sleep(ms: number): Promise<void> {
