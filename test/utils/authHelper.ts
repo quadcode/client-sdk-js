@@ -23,14 +23,36 @@ export function getOAuthMethod(user: User) {
 
 export class SecretsTokensStorage implements OAuthTokensStorage {
 
-    constructor(private readonly user: User,) {
+    constructor(private readonly user: User) {
+    }
+
+    private mask(token?: string): string {
+        if (!token) {
+            return 'undefined'
+        }
+
+        return `${token.slice(0, 3)}***`
     }
 
     get(): { accessToken: string; refreshToken?: string } {
-        return getTokensForUser(this.user.title);
+        const tokens = getTokensForUser(this.user.title)
+
+        console.log(
+            `Getting tokens for user: ${this.user.title}`,
+            `accessToken=${this.mask(tokens.accessToken)}`,
+            `refreshToken=${this.mask(tokens.refreshToken)}`
+        )
+
+        return tokens
     }
 
     set(tokens: { accessToken: string; refreshToken?: string }): void {
-        setTokensForUser(this.user.title, tokens);
+        console.log(
+            `Setting tokens for user: ${this.user.title}`,
+            `accessToken=${this.mask(tokens.accessToken)}`,
+            `refreshToken=${this.mask(tokens.refreshToken)}`
+        )
+
+        setTokensForUser(this.user.title, tokens)
     }
 }
