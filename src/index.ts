@@ -204,13 +204,16 @@ export class ClientSdk {
     public static async create(apiUrl: string, platformId: number, authMethod: AuthMethod, options?: ClientSDKAdditionalOptions): Promise<ClientSdk> {
         const wsApiClient = new WsApiClient(apiUrl, platformId, authMethod)
 
-        try {
-            await wsApiClient.connect()
-        } catch (err) {
-            if (err instanceof AuthMethodRequestedReconnectException) {
+        let connected = false
+
+        while (!connected) {
+            try {
                 await wsApiClient.connect()
-            } else {
-                throw err;
+                connected = true
+            } catch (err) {
+                if (!(err instanceof AuthMethodRequestedReconnectException)) {
+                    throw err
+                }
             }
         }
 
