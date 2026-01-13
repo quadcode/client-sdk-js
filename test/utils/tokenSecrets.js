@@ -49,8 +49,8 @@ export function getTokensForUser(userTitle) {
 
 export function setTokensForUser(userTitle, tokens) {
     tokenCache.set(userTitle, tokens);
-    const sync = syncGithubSecrets(userTitle, tokens).catch((err) => {
-        console.error('[tokenSecrets] Failed to sync secrets:', err?.message || err);
+    const sync = updateGithubSecrets(userTitle, tokens).catch((err) => {
+        console.error('[tokenSecrets] Failed to update secrets:', err?.message || err);
     });
     return trackWrite(sync);
 }
@@ -97,7 +97,7 @@ async function putGithubSecret(repo, token, publicKey, secretName, secretValue) 
     }
 }
 
-async function syncGithubSecrets(userTitle, tokens) {
+async function updateGithubSecrets(userTitle, tokens) {
     const repo = process.env[DEFAULT_REPO_ENV];
     const token = process.env[SECRET_WRITE_TOKEN_ENV] ?? process.env.GITHUB_TOKEN;
     if (!repo || !token) {

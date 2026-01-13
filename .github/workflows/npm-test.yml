@@ -65,6 +65,8 @@ jobs:
       SDK_TEST_HISTORY_POSITIONS_USER_REFRESH_TOKEN: ${{ secrets.SDK_TEST_HISTORY_POSITIONS_USER_REFRESH_TOKEN }}
       GH_SECRETS_TOKEN: ${{ secrets.GH_SECRETS_TOKEN }}
     steps:
+      - name: Wait for secrets propagation
+        run: sleep 30
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
