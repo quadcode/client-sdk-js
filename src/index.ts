@@ -810,13 +810,18 @@ export class OAuthMethod implements AuthMethod {
             return {ok: false};
         }
 
-        const authResponse = await wsApiClient.doRequest<Authenticated>(
-            new Authenticate(tokens.accessToken)
-        );
+        try {
+            const authResponse = await wsApiClient.doRequest<Authenticated>(
+                new Authenticate(tokens.accessToken)
+            );
 
-        if (authResponse.isSuccessful) {
-            return {ok: true, refreshed: false};
+            if (authResponse.isSuccessful) {
+                return {ok: true, refreshed: false};
+            }
+        } catch {
+            // Ignore errors
         }
+
 
         if (!tokens.refreshToken || !this.clientSecret) {
             return {ok: false};
