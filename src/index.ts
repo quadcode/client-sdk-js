@@ -940,7 +940,7 @@ export class OAuthMethod implements AuthMethod {
             new HttpRefreshAccessTokenRequest(refreshToken, this.clientId, this.clientSecret)
         )
 
-        if (response.status === 200 && response.data.accessToken) {
+        if (response.status === 200 && 'accessToken' in response.data) {
             this.tokensStorage!.set({
                 accessToken: response.data.accessToken,
                 refreshToken: response.data.refreshToken
@@ -951,6 +951,10 @@ export class OAuthMethod implements AuthMethod {
                 expiresIn: response.data.expiresIn,
                 refreshToken: response.data.refreshToken
             }
+        }
+
+        if ('code' in response.data) {
+            return Promise.reject(`Failed to refresh access token: ${response.data.code} ${response.data.message}`);
         }
 
         return Promise.reject(`Failed to refresh access token: ${response.status}`);
@@ -8819,7 +8823,7 @@ class HttpAccessTokenResponse {
     }
 }
 
-class HttpRefreshAccessTokenRequest implements HttpRequest<HttpResponse<HttpRefreshAccessTokenResponse>> {
+class HttpRefreshAccessTokenRequest implements HttpRequest<HttpResponse<HttpRefreshAccessTokenResult>> {
     constructor(
         private readonly refreshToken: string,
         private readonly clientId: number,
@@ -8844,8 +8848,36 @@ class HttpRefreshAccessTokenRequest implements HttpRequest<HttpResponse<HttpRefr
         }
     }
 
-    createResponse(status: number, data: any): HttpResponse<HttpRefreshAccessTokenResponse> {
-        return new HttpResponse(status, new HttpRefreshAccessTokenResponse(data))
+    createResponse(
+        status: number,
+        data: any
+    ): HttpResponse<HttpRefreshAccessTokenResult> {
+        if (status === 400) {
+            return new HttpResponse(
+                status,
+                new HttpOAuthErrorResponse(data)
+            )
+        }
+
+        return new HttpResponse(
+            status,
+            new HttpRefreshAccessTokenResponse(data)
+        )
+    }
+}
+
+
+type HttpRefreshAccessTokenResult =
+    | HttpRefreshAccessTokenResponse
+    | HttpOAuthErrorResponse
+
+class HttpOAuthErrorResponse {
+    code: string
+    message: string
+
+    constructor(data: any) {
+        this.code = data.code
+        this.message = data.message
     }
 }
 
