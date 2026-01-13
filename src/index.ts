@@ -731,6 +731,7 @@ type AuthResult =
  */
 export class OAuthMethod implements AuthMethod {
     private isBrowser = typeof window !== 'undefined';
+    private attempts = 0;
 
     /**
      * Accepts parameters for OAuth2 authentication.
@@ -778,28 +779,27 @@ export class OAuthMethod implements AuthMethod {
      * @param wsApiClient
      */
     public async authenticateWsApiClient(wsApiClient: WsApiClient): Promise<boolean> {
-        const maxAttempts = 3;
+        const maxAttempts = 4;
+        this.attempts += 1;
 
-        for (let attempt = 0; attempt < maxAttempts; attempt++) {
-            const result = await this.authenticateWsApiClientWithoutAttempts(wsApiClient);
+        const result = await this.authenticateWsApiClientWithoutAttempts(wsApiClient);
 
-            if (result.ok) {
-                if (result.refreshed) {
-                    throw new AuthMethodRequestedReconnectException();
-                }
-
-                return true;
+        if (result.ok) {
+            if (result.refreshed) {
+                throw new AuthMethodRequestedReconnectException();
             }
 
-            if (attempt === maxAttempts - 1) {
-                return false;
-            }
-
-            const backoffMs = Math.min(500 * 2 ** attempt, 5000);
-            await this.sleep(backoffMs);
+            this.attempts = 0;
+            return true;
         }
 
-        return false;
+        if (this.attempts === maxAttempts - 1) {
+            return false;
+        }
+
+        const backoffMs = Math.min(500 * 2 ** this.attempts, 5000);
+        await this.sleep(backoffMs);
+        throw new AuthMethodRequestedReconnectException();
     }
 
 
@@ -810,18 +810,13 @@ export class OAuthMethod implements AuthMethod {
             return {ok: false};
         }
 
-        try {
-            const authResponse = await wsApiClient.doRequest<Authenticated>(
-                new Authenticate(tokens.accessToken)
-            );
+        const authResponse = await wsApiClient.doRequest<Authenticated>(
+            new Authenticate(tokens.accessToken)
+        );
 
-            if (authResponse.isSuccessful) {
-                return {ok: true, refreshed: false};
-            }
-        } catch {
-            // Ignore errors
+        if (authResponse.isSuccessful) {
+            return {ok: true, refreshed: false};
         }
-
 
         if (!tokens.refreshToken || !this.clientSecret) {
             return {ok: false};
@@ -7164,7 +7159,7 @@ class WsApiClient {
 
     private disconnecting = false
     private reconnecting = false
-    private connection: WebSocket | undefined
+    public connection: WebSocket | undefined
     private lastRequestId: number = 0
     private pendingRequests: Map<string, RequestMetaData> = new Map<string, RequestMetaData>()
     private subscriptions: Map<string, SubscriptionMetaData[]> = new Map<string, SubscriptionMetaData[]>()
