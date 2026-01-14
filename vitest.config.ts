@@ -5,14 +5,6 @@ export default defineConfig({
         IS_BROWSER: false
     },
     test: {
-        isolate: false,
-        pool: 'threads',
-        poolOptions: {
-            threads: {
-                singleThread: true,
-            },
-        },
-        fileParallelism: false,
         hookTimeout: 65000,
         testTimeout: 35000,
         include: ['./test/*.spec.{ts,js}'],

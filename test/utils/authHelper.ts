@@ -16,7 +16,7 @@ export function getOAuthMethod(user: User) {
         undefined,
         undefined,
         undefined,
-        new SecretsTokensStorage(user),
+        SecretsTokensStorage.for(user),
     );
     return {oauth, options};
 }
@@ -24,6 +24,18 @@ export function getOAuthMethod(user: User) {
 export class SecretsTokensStorage implements OAuthTokensStorage {
 
     constructor(private readonly user: User) {
+    }
+
+    private static instances = new Map<string, SecretsTokensStorage>();
+
+    static for(user: User): SecretsTokensStorage {
+        const key = user.title;
+        let instance = this.instances.get(key);
+        if (!instance) {
+            instance = new SecretsTokensStorage(user);
+            this.instances.set(key, instance);
+        }
+        return instance;
     }
 
     private mask(token?: string): string {
