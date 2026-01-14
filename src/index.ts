@@ -204,13 +204,16 @@ export class ClientSdk {
     public static async create(apiUrl: string, platformId: number, authMethod: AuthMethod, options?: ClientSDKAdditionalOptions): Promise<ClientSdk> {
         const wsApiClient = new WsApiClient(apiUrl, platformId, authMethod)
 
-        try {
-            await wsApiClient.connect()
-        } catch (err) {
-            if (err instanceof AuthMethodRequestedReconnectException) {
+        let connected = false
+
+        while (!connected) {
+            try {
                 await wsApiClient.connect()
-            } else {
-                throw err;
+                connected = true
+            } catch (err) {
+                if (!(err instanceof AuthMethodRequestedReconnectException)) {
+                    throw err
+                }
             }
         }
 
@@ -721,11 +724,17 @@ export class SsidAuthMethod implements AuthMethod {
     }
 }
 
+type AuthResult =
+    | { ok: true; refreshed: false }
+    | { ok: true; refreshed: true }
+    | { ok: false };
+
 /**
  * Implements OAuth2 authentication flow.
  */
 export class OAuthMethod implements AuthMethod {
     private isBrowser = typeof window !== 'undefined';
+    private attempts = 0;
 
     /**
      * Accepts parameters for OAuth2 authentication.
@@ -773,42 +782,56 @@ export class OAuthMethod implements AuthMethod {
      * @param wsApiClient
      */
     public async authenticateWsApiClient(wsApiClient: WsApiClient): Promise<boolean> {
-        const tokens = this.tokensStorage!.get();
+        const maxAttempts = 4;
+        this.attempts += 1;
 
-        if (tokens.accessToken) {
-            const authResponse = await wsApiClient.doRequest<Authenticated>(new Authenticate(tokens.accessToken))
+        const result = await this.authenticateWsApiClientWithoutAttempts(wsApiClient);
 
-            if (authResponse.isSuccessful) {
-                return authResponse.isSuccessful
+        if (result.ok) {
+            if (result.refreshed) {
+                throw new AuthMethodRequestedReconnectException();
             }
 
-            if (!tokens.refreshToken || !this.clientSecret) {
-                return false
-            }
-
-            const maxAttempts = 3;
-
-            for (let attempt = 0; attempt < maxAttempts; attempt++) {
-                const ok = await this.refreshAccessToken()
-                    .then(() => true)
-                    .catch(() => {
-                        return false;
-                    });
-
-                if (ok) {
-                    throw new AuthMethodRequestedReconnectException();
-                } else {
-                    if (attempt === maxAttempts - 1) {
-                        return false;
-                    }
-
-                    const backoffMs = Math.min(500 * 2 ** attempt, 5000);
-                    await this.sleep(backoffMs);
-                }
-            }
+            this.attempts = 0;
+            return true;
         }
 
-        return false
+        if (this.attempts === maxAttempts - 1) {
+            return false;
+        }
+
+        const backoffMs = Math.min(500 * 2 ** this.attempts, 5000);
+        await this.sleep(backoffMs);
+        throw new AuthMethodRequestedReconnectException();
+    }
+
+
+    private async authenticateWsApiClientWithoutAttempts(wsApiClient: WsApiClient): Promise<AuthResult> {
+        const tokens = this.tokensStorage!.get();
+
+        if (!tokens.accessToken) {
+            return {ok: false};
+        }
+
+        const authResponse = await wsApiClient.doRequest<Authenticated>(
+            new Authenticate(tokens.accessToken)
+        );
+
+        if (authResponse.isSuccessful) {
+            return {ok: true, refreshed: false};
+        }
+
+        if (!tokens.refreshToken || !this.clientSecret) {
+            return {ok: false};
+        }
+
+        try {
+            await this.refreshAccessToken();
+
+            return {ok: true, refreshed: true};
+        } catch {
+            return {ok: false};
+        }
     }
 
     private sleep(ms: number): Promise<void> {
@@ -920,7 +943,7 @@ export class OAuthMethod implements AuthMethod {
             new HttpRefreshAccessTokenRequest(refreshToken, this.clientId, this.clientSecret)
         )
 
-        if (response.status === 200 && response.data.accessToken) {
+        if (response.status === 200 && 'accessToken' in response.data) {
             this.tokensStorage!.set({
                 accessToken: response.data.accessToken,
                 refreshToken: response.data.refreshToken
@@ -931,6 +954,10 @@ export class OAuthMethod implements AuthMethod {
                 expiresIn: response.data.expiresIn,
                 refreshToken: response.data.refreshToken
             }
+        }
+
+        if ('code' in response.data) {
+            return Promise.reject(`Failed to refresh access token: ${response.data.code} ${response.data.message}`);
         }
 
         return Promise.reject(`Failed to refresh access token: ${response.status}`);
@@ -8799,7 +8826,7 @@ class HttpAccessTokenResponse {
     }
 }
 
-class HttpRefreshAccessTokenRequest implements HttpRequest<HttpResponse<HttpRefreshAccessTokenResponse>> {
+class HttpRefreshAccessTokenRequest implements HttpRequest<HttpResponse<HttpRefreshAccessTokenResult>> {
     constructor(
         private readonly refreshToken: string,
         private readonly clientId: number,
@@ -8824,8 +8851,36 @@ class HttpRefreshAccessTokenRequest implements HttpRequest<HttpResponse<HttpRefr
         }
     }
 
-    createResponse(status: number, data: any): HttpResponse<HttpRefreshAccessTokenResponse> {
-        return new HttpResponse(status, new HttpRefreshAccessTokenResponse(data))
+    createResponse(
+        status: number,
+        data: any
+    ): HttpResponse<HttpRefreshAccessTokenResult> {
+        if (status === 400) {
+            return new HttpResponse(
+                status,
+                new HttpOAuthErrorResponse(data)
+            )
+        }
+
+        return new HttpResponse(
+            status,
+            new HttpRefreshAccessTokenResponse(data)
+        )
+    }
+}
+
+
+type HttpRefreshAccessTokenResult =
+    | HttpRefreshAccessTokenResponse
+    | HttpOAuthErrorResponse
+
+class HttpOAuthErrorResponse {
+    code: string
+    message: string
+
+    constructor(data: any) {
+        this.code = data.code
+        this.message = data.message
     }
 }
 

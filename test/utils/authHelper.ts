@@ -16,21 +16,55 @@ export function getOAuthMethod(user: User) {
         undefined,
         undefined,
         undefined,
-        new SecretsTokensStorage(user),
+        SecretsTokensStorage.for(user),
     );
     return {oauth, options};
 }
 
 export class SecretsTokensStorage implements OAuthTokensStorage {
 
-    constructor(private readonly user: User,) {
+    constructor(private readonly user: User) {
+    }
+
+    private static instances = new Map<string, SecretsTokensStorage>();
+
+    static for(user: User): SecretsTokensStorage {
+        const key = user.title;
+        let instance = this.instances.get(key);
+        if (!instance) {
+            instance = new SecretsTokensStorage(user);
+            this.instances.set(key, instance);
+        }
+        return instance;
+    }
+
+    private mask(token?: string): string {
+        if (!token) {
+            return 'undefined'
+        }
+
+        return `${token.slice(0, 3)}***`
     }
 
     get(): { accessToken: string; refreshToken?: string } {
-        return getTokensForUser(this.user.title);
+        const tokens = getTokensForUser(this.user.title)
+
+        console.log(
+            `Getting tokens for user: ${this.user.title}`,
+            `accessToken=${this.mask(tokens.accessToken)}`,
+            `refreshToken=${this.mask(tokens.refreshToken)}`
+        )
+
+        return tokens
     }
 
     set(tokens: { accessToken: string; refreshToken?: string }): void {
-        setTokensForUser(this.user.title, tokens);
+        console.log(
+            `Setting tokens for user: ${this.user.title}`,
+            `accessToken=${this.mask(tokens.accessToken)}`,
+            `refreshToken=${this.mask(tokens.refreshToken)}`
+        )
+
+        setTokensForUser(this.user.title, tokens)
     }
 }

@@ -107,9 +107,9 @@ describe('Chart Data mock', () => {
     })
 
     afterEach(async function () {
-        stopStream?.();               // 1️⃣   останавливаем поток
-        await sdk.shutdown();         // 2️⃣   корректно закрываем клиент → он сам вызовет close()
-        WS.clean();                   // 3️⃣   теперь можно грохнуть mock-socket-сервер
+        stopStream?.();
+        await sdk.shutdown();
+        WS.clean();
     });
 
     it('should filling history gaps', async () => {
