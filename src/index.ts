@@ -7162,7 +7162,7 @@ class WsApiClient {
 
     private disconnecting = false
     private reconnecting = false
-    public connection: WebSocket | undefined
+    private connection: WebSocket | undefined
     private lastRequestId: number = 0
     private pendingRequests: Map<string, RequestMetaData> = new Map<string, RequestMetaData>()
     private subscriptions: Map<string, SubscriptionMetaData[]> = new Map<string, SubscriptionMetaData[]>()
