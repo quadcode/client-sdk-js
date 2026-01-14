@@ -32,6 +32,7 @@
     "webdriverio": "^9.20.0"
   },
   "dependencies": {
+    "@upstash/redis": "^1.36.1",
     "isomorphic-ws": "^5.0.0",
     "tweetsodium": "^0.0.5",
     "vitest-websocket-mock": "^0.5.0",

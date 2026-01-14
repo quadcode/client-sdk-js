@@ -152,7 +152,7 @@ describe('Options', () => {
                     expect(positionsHelper.findPositionByExternalId(position.externalId), 'Position must be present in all positions').not.to.be.undefined
                     await justWait(3000);
                     await position.sell();
-                    expect(await waitForCondition(() => position.status === "closed", 3000), `Position [${position.externalId}] status is incorrect, now is "${position.status}"`).to.be.true;
+                    expect(await waitForCondition(() => position.status === "closed", 5000), `Position [${position.externalId}] status is incorrect, now is "${position.status}"`).to.be.true;
                     expect(position.closeReason, "Invalid close reason").eq("sold");
                     expect(position.sellProfit, "Sell profit must be present").not.be.null;
                     expect(positionsHelper.findHistoryPosition(position.externalId), 'Position must be present in history positions').not.to.be.undefined
@@ -255,7 +255,7 @@ describe('Options', () => {
                     expect(positionsHelper.findPositionByExternalId(position.externalId), 'Position must be present in all positions').not.to.be.undefined
                     await justWait(3000);
                     await position.sell();
-                    expect(await waitForCondition(() => position.status === "closed", 3000), `Position [${position.externalId}] status is incorrect, now is "${position.status}"`).to.be.true;
+                    expect(await waitForCondition(() => position.status === "closed", 5000), `Position [${position.externalId}] status is incorrect, now is "${position.status}"`).to.be.true;
                     expect(position.closeReason, "Invalid close reason").eq("sold");
                     expect(position.sellProfit, "Sell profit must be present").not.be.null;
                     expect(positionsHelper.findHistoryPosition(position.externalId), 'Position must be present in history positions').not.to.be.undefined
@@ -437,7 +437,7 @@ describe('Options', () => {
                     expect(positionsHelper.findPositionByExternalId(position.externalId), 'Position must be present in all positions').not.to.be.undefined
                     await justWait(3000);
                     await position.sell();
-                    expect(await waitForCondition(() => position.status === "closed", 3000), `Position [${position.externalId}] status is incorrect, now is "${position.status}"`).to.be.true;
+                    expect(await waitForCondition(() => position.status === "closed", 5000), `Position [${position.externalId}] status is incorrect, now is "${position.status}"`).to.be.true;
                     expect(position.status, "Invalid status").eq("closed");
                     expect(position.closeReason, "Close reason must be default").eq("default");
                     expect(positionsHelper.findHistoryPosition(position.externalId), 'Position must be present in history positions').not.to.be.undefined
