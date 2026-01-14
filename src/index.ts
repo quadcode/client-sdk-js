@@ -677,14 +677,13 @@ export interface OAuthTokensStorage {
     /**
      * Gets stored OAuth tokens.
      */
-    get(): { accessToken: string; refreshToken?: string };
+    get(): Promise<{ accessToken: string; refreshToken?: string }>;
 
     /**
      * Stores OAuth tokens.
-     *
      * @param tokens
      */
-    set(tokens: { accessToken: string; refreshToken?: string }): void;
+    set(tokens: { accessToken: string; refreshToken?: string }): Promise<void>;
 }
 
 /**
@@ -693,12 +692,13 @@ export interface OAuthTokensStorage {
 class DummyOAuthTokensStorage implements OAuthTokensStorage {
     private tokens: { accessToken: string; refreshToken?: string } = {accessToken: ''};
 
-    get(): { accessToken: string; refreshToken?: string } {
-        return this.tokens;
+    get(): Promise<{ accessToken: string; refreshToken?: string }> {
+        return Promise.resolve(this.tokens);
     }
 
-    set(tokens: { accessToken: string; refreshToken?: string }): void {
+    set(tokens: { accessToken: string; refreshToken?: string }): Promise<void> {
         this.tokens = tokens;
+        return Promise.resolve();
     }
 }
 
@@ -769,7 +769,7 @@ export class OAuthMethod implements AuthMethod {
             this.tokensStorage.set({
                 accessToken: this.accessToken || '',
                 refreshToken: this.refreshToken,
-            });
+            }).then();
         }
 
         if (this.isBrowser && this.clientSecret) {
@@ -807,7 +807,7 @@ export class OAuthMethod implements AuthMethod {
 
 
     private async authenticateWsApiClientWithoutAttempts(wsApiClient: WsApiClient): Promise<AuthResult> {
-        const tokens = this.tokensStorage!.get();
+        const tokens = await this.tokensStorage!.get();
 
         if (!tokens.accessToken) {
             return {ok: false};
@@ -883,7 +883,7 @@ export class OAuthMethod implements AuthMethod {
         )
 
         if (response.status === 200 && response.data.accessToken) {
-            this.tokensStorage!.set({
+            await this.tokensStorage!.set({
                 accessToken: response.data.accessToken,
                 refreshToken: response.data.refreshToken
             })
@@ -932,19 +932,19 @@ export class OAuthMethod implements AuthMethod {
         expiresIn: number,
         refreshToken?: string
     }> {
-        const refreshToken = this.tokensStorage!.get().refreshToken;
+        const tokens = await this.tokensStorage!.get();
 
-        if (!refreshToken || !this.clientSecret) {
+        if (!tokens.refreshToken || !this.clientSecret) {
             return Promise.reject('Refresh token or client secret is not set');
         }
 
         const httpApiClient = this.httpApiClient()
         const response = await httpApiClient.doRequest(
-            new HttpRefreshAccessTokenRequest(refreshToken, this.clientId, this.clientSecret)
+            new HttpRefreshAccessTokenRequest(tokens.refreshToken, this.clientId, this.clientSecret)
         )
 
         if (response.status === 200 && 'accessToken' in response.data) {
-            this.tokensStorage!.set({
+            await this.tokensStorage!.set({
                 accessToken: response.data.accessToken,
                 refreshToken: response.data.refreshToken
             })
