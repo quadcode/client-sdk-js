@@ -6,6 +6,8 @@ export const API_URL: string;
 export const WS_URL: string;
 export const CLIENT_ID: number;
 export const CLIENT_SECRET: string;
+export const UPSTASH_REDIS_REST_URL: string;
+export const UPSTASH_REDIS_REST_TOKEN: string;
 
 export interface User {
     id: number;

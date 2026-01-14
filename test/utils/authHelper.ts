@@ -46,8 +46,8 @@ export class SecretsTokensStorage implements OAuthTokensStorage {
         return `${token.slice(0, 3)}***`
     }
 
-    get(): { accessToken: string; refreshToken?: string } {
-        const tokens = getTokensForUser(this.user.title)
+    async get(): Promise<{ accessToken: string; refreshToken?: string }> {
+        const tokens = await getTokensForUser(this.user.title)
 
         console.log(
             `Getting tokens for user: ${this.user.title}`,
@@ -58,13 +58,13 @@ export class SecretsTokensStorage implements OAuthTokensStorage {
         return tokens
     }
 
-    set(tokens: { accessToken: string; refreshToken?: string }): void {
+    async set(tokens: { accessToken: string; refreshToken?: string }): Promise<void> {
         console.log(
             `Setting tokens for user: ${this.user.title}`,
             `accessToken=${this.mask(tokens.accessToken)}`,
             `refreshToken=${this.mask(tokens.refreshToken)}`
         )
 
-        setTokensForUser(this.user.title, tokens)
+        await setTokensForUser(this.user.title, tokens)
     }
 }
