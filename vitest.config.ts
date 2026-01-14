@@ -7,7 +7,12 @@ export default defineConfig({
     test: {
         isolate: false,
         pool: 'threads',
-        poolOptions: { threads: { minThreads: 1, maxThreads: 10 } },
+        poolOptions: {
+            threads: {
+                singleThread: true,
+            },
+        },
+        fileParallelism: false,
         hookTimeout: 65000,
         testTimeout: 35000,
         include: ['./test/*.spec.{ts,js}'],
