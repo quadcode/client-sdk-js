@@ -7501,9 +7501,7 @@ class WsApiClient {
         }))
 
         return new Promise<T>((resolve, reject) => {
-            if (request.messageName() !== 'subscribeMessage') {
-                this.pendingRequests.set(requestId, new RequestMetaData(request, resolve, reject))
-            }
+            this.pendingRequests.set(requestId, new RequestMetaData(request, resolve, reject))
         })
     }
 
