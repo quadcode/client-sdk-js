@@ -2022,6 +2022,7 @@ export class RealTimeChartDataLayer {
     private loadedTo: number | null = null;
     private firstCandleFrom: number | null = null;
     private currentReject: ((err: any) => void) | null = null;
+    private wsUnsubscribe: null | (() => void) = null;
     private onUpdateObserver: Observable<Candle> = new Observable<Candle>();
     private onConsistencyUpdateObserver: Observable<{ from: number, to: number }> = new Observable<{
         from: number,
@@ -2290,6 +2291,7 @@ export class RealTimeChartDataLayer {
      */
     subscribeOnLastCandleChanged(handler: (candle: Candle) => void) {
         if (!this.subscribed) {
+            this.subscribed = true;
             this.wsApiClient.subscribe<CandleGeneratedV1>(new SubscribeCandleGeneratedV1(this.activeId, this.candleSize), (event: CandleGeneratedV1) => {
                 if (event.activeId !== this.activeId || event.size !== this.candleSize) {
                     return
@@ -2298,7 +2300,17 @@ export class RealTimeChartDataLayer {
                 if (this.connected) {
                     this.handleRealtimeUpdate(event).then()
                 }
-            }).then()
+            }).then(() => {
+                this.wsUnsubscribe = () => {
+                    this.wsApiClient.doRequest(new UnsubscribeCandleGeneratedV1(this.activeId, this.candleSize)).then()
+                };
+
+                if (this.onUpdateObserver.observers.length === 0) {
+                    this.wsUnsubscribe();
+                    this.wsUnsubscribe = null;
+                    this.subscribed = false;
+                }
+            })
         }
 
         this.onUpdateObserver.subscribe(handler);
@@ -2310,6 +2322,12 @@ export class RealTimeChartDataLayer {
      */
     unsubscribeOnLastCandleChanged(handler: (candle: Candle) => void) {
         this.onUpdateObserver.unsubscribe(handler);
+
+        if (this.onUpdateObserver.observers.length === 0 && this.wsUnsubscribe !== null) {
+            this.wsUnsubscribe();
+            this.wsUnsubscribe = null;
+            this.subscribed = false;
+        }
     }
 
     /**
@@ -9954,6 +9972,41 @@ class SubscribeCandleGeneratedV1 implements SubscribeRequest<CandleGeneratedV1> 
 
     createEvent(data: any): CandleGeneratedV1 {
         return new CandleGeneratedV1(data)
+    }
+}
+
+class UnsubscribeCandleGeneratedV1 implements Request<Result> {
+    activeId
+    size
+
+    constructor(activeId: number, size: number) {
+        this.activeId = activeId
+        this.size = size
+    }
+
+    messageName() {
+        return 'unsubscribeMessage'
+    }
+
+    messageBody() {
+        return {
+            name: `candle-generated`,
+            version: '1.0',
+            params: {
+                routingFilters: {
+                    active_id: this.activeId,
+                    size: this.size,
+                }
+            }
+        }
+    }
+
+    createResponse(data: any): Result {
+        return new Result(data)
+    }
+
+    resultOnly(): boolean {
+        return true
     }
 }
 
