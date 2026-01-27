@@ -225,7 +225,7 @@ export class ClientSdk {
      * Shuts down instance of SDK entry point class.
      */
     public async shutdown(): Promise<void> {
-        this.wsApiClient.disconnect()
+        await this.wsApiClient.disconnectGracefully();
 
         if (this.blitzOptionsFacade) {
             this.blitzOptionsFacade.close()
@@ -7418,6 +7418,33 @@ class WsApiClient {
                 }
             }
         })
+    }
+
+    private sleep(ms: number): Promise<void> {
+        return new Promise((r) => setTimeout(r, ms));
+    }
+
+    public async disconnectGracefully(): Promise<void> {
+        const timeoutMs = 500;
+
+        this.disconnecting = true;
+
+        this.stopTimeSyncMonitoring();
+        if (this.reconnectTimeoutHandle) {
+            clearTimeout(this.reconnectTimeoutHandle);
+            this.reconnectTimeoutHandle = undefined;
+        }
+
+        if (this.pendingRequests.size > 0) {
+            await this.sleep(timeoutMs);
+        }
+
+        if (this.pendingRequests.size > 0) {
+            this.rejectAllPendingRequests(new Error('WebSocket disconnected (graceful timeout)'));
+        }
+
+        this.clear();
+        this.onConnectionStateChanged?.(WsConnectionStateEnum.Disconnected);
     }
 
     disconnect() {
