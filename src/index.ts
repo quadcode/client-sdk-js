@@ -1598,6 +1598,12 @@ export class Translations {
     private loadedLanguages: Set<string> = new Set()
     private loadedGroups: Set<TranslationGroup> = new Set()
 
+    private inFlight: Map<string, Promise<void>> = new Map()
+
+    private readonly retryAttempts = 3
+    private readonly retryBaseDelayMs = 300
+    private readonly retryMaxDelayMs = 2000
+
     private constructor(host: string) {
         this.httpApiClient = new HttpApiClient(host)
     }
@@ -1626,16 +1632,87 @@ export class Translations {
      * @param groups - Array of translation groups to fetch
      */
     public async fetchTranslations(lang: string, groups: TranslationGroup[]): Promise<void> {
-        const response = await this.httpApiClient.doRequest<HttpGetTranslationsResponse>(new HttpGetTranslationsRequest(lang, groups))
-        if (response.isSuccessful && response.data) {
-            if (!this.translations[lang]) {
-                this.translations[lang] = {}
+        const key = this.makeFetchKey(lang, groups)
+
+        const existing = this.inFlight.get(key)
+        if (existing) return existing
+
+        const promise = this.fetchTranslationsWithRetry(lang, groups).catch((err) => {
+            console.warn(`[Translations] Failed to fetch translations: lang=${lang} groups=${groups.join(',')}`, err)
+        }).finally(() => {
+            this.inFlight.delete(key)
+        })
+
+        this.inFlight.set(key, promise)
+        return promise
+    }
+
+    private async fetchTranslationsWithRetry(lang: string, groups: TranslationGroup[]): Promise<void> {
+        for (let attempt = 1; attempt <= this.retryAttempts; attempt++) {
+            const res = await this.tryFetchTranslationsOnce(lang, groups, attempt)
+
+            if (res.ok) {
+                return
             }
-            this.translations[lang] = {...this.translations[lang], ...response.data.result[lang]}
+
+            if (attempt === this.retryAttempts) {
+                console.warn(
+                    `[Translations] Could not fetch translations after ${this.retryAttempts} attempts: lang=${lang} groups=${groups.join(',')}`,
+                    res.error
+                )
+                return
+            }
+
+            await this.sleep(this.calcRetryDelay(attempt))
+        }
+    }
+
+    private async tryFetchTranslationsOnce(
+        lang: string,
+        groups: TranslationGroup[],
+        attempt: number
+    ): Promise<{ ok: true } | { ok: false; error: unknown }> {
+        try {
+            const response = await this.httpApiClient.doRequest<HttpGetTranslationsResponse>(
+                new HttpGetTranslationsRequest(lang, groups),
+            )
+
+            if (!response.isSuccessful || !response.data) {
+                return {ok: false, error: new Error(`Unsuccessful response (attempt ${attempt})`)}
+            }
+
+            const next = response.data.result?.[lang]
+            if (!next || Object.keys(next).length === 0) {
+                return {
+                    ok: false,
+                    error: new Error(`Empty translations payload for lang=${lang} (attempt ${attempt})`)
+                }
+            }
+
+            this.translations[lang] = {...(this.translations[lang] ?? {}), ...next}
 
             this.loadedLanguages.add(lang)
             groups.forEach(group => this.loadedGroups.add(group))
+
+            return {ok: true}
+        } catch (err) {
+            return {ok: false, error: err}
         }
+    }
+
+    private makeFetchKey(lang: string, groups: TranslationGroup[]): string {
+        const sorted = [...groups].sort().join(',')
+        return `${lang}:${sorted}`
+    }
+
+    private calcRetryDelay(attempt: number): number {
+        const exp = Math.min(this.retryMaxDelayMs, this.retryBaseDelayMs * Math.pow(2, attempt - 1))
+        const jitter = Math.floor(Math.random() * 100)
+        return exp + jitter
+    }
+
+    private sleep(ms: number): Promise<void> {
+        return new Promise((resolve) => setTimeout(resolve, ms))
     }
 
     /**
@@ -1655,6 +1732,8 @@ export class Translations {
             clearInterval(this.reloadInterval)
             this.reloadInterval = undefined
         }
+
+        this.inFlight.clear()
     }
 }
 
