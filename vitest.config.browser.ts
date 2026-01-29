@@ -19,6 +19,6 @@ export default defineConfig({
             ],
         },
         include: ['./test/*.spec.{ts,js}'],
-        exclude: ['./test/chart.mock.spec.ts'],
+        exclude: ['./test/chart.mock.spec.ts', './test/ws.disconnectGracefully.spec.ts'],
     }
 })
