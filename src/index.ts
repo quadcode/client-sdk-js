@@ -7249,6 +7249,8 @@ class WsApiClient {
     private timeSyncInterval: NodeJS.Timeout | undefined
     private lastTimeSyncReceived: number = 0
     private reconnectTimeoutHandle: NodeJS.Timeout | undefined = undefined;
+    private isClosing = false;
+    private pendingDrainWaiters: Array<() => void> = [];
 
     constructor(apiUrl: string, platformId: number, authMethod: AuthMethod) {
         this.currentTime = new WsApiClientCurrentTime(new Date().getTime())
@@ -7328,7 +7330,7 @@ class WsApiClient {
                     if (this.pendingRequests.has(frame.request_id)) {
                         const requestMetaData = this.pendingRequests.get(frame.request_id)!
                         if (frame.status >= 4000) {
-                            this.pendingRequests.delete(frame.request_id)
+                            this.finalizeRequest(frame.request_id)
                             requestMetaData.reject(new Error(`request is failed with status ${frame.status} and message: ${frame.msg.message}`))
                             return
                         }
@@ -7336,6 +7338,7 @@ class WsApiClient {
                         if (frame.name === 'result' && !requestMetaData.request.resultOnly()) {
                             const result = new Result(frame.msg)
                             if (!result.success) {
+                                this.finalizeRequest(frame.request_id);
                                 requestMetaData.reject(`request result is not successful`)
                             }
                             return
@@ -7346,7 +7349,7 @@ class WsApiClient {
                         } catch (e) {
                             requestMetaData.reject(e)
                         } finally {
-                            this.pendingRequests.delete(frame.request_id)
+                            this.finalizeRequest(frame.request_id)
                         }
                     }
                 } else if (frame.microserviceName && frame.name) {
@@ -7420,31 +7423,60 @@ class WsApiClient {
         })
     }
 
-    private sleep(ms: number): Promise<void> {
-        return new Promise((r) => setTimeout(r, ms));
-    }
-
-    public async disconnectGracefully(): Promise<void> {
-        const timeoutMs = 500;
+    public async disconnectGracefully(timeoutMs = 5000): Promise<void> {
+        if (this.disconnecting) return;
 
         this.disconnecting = true;
+        this.isClosing = true;
 
         this.stopTimeSyncMonitoring();
+
         if (this.reconnectTimeoutHandle) {
             clearTimeout(this.reconnectTimeoutHandle);
             this.reconnectTimeoutHandle = undefined;
         }
 
-        if (this.pendingRequests.size > 0) {
-            await this.sleep(timeoutMs);
-        }
+        this.reconnecting = false;
 
-        if (this.pendingRequests.size > 0) {
+        const drained = await this.waitForPendingRequestsEmpty(timeoutMs);
+
+        if (!drained && this.pendingRequests.size > 0) {
             this.rejectAllPendingRequests(new Error('WebSocket disconnected (graceful timeout)'));
         }
 
-        this.clear();
+        this.forceCloseConnection();
+
+        this.subscriptions.clear();
+        this.lastRequestId = 0;
+
         this.onConnectionStateChanged?.(WsConnectionStateEnum.Disconnected);
+    }
+
+    private notifyPendingDrainIfNeeded() {
+        if (this.pendingRequests.size === 0 && this.pendingDrainWaiters.length > 0) {
+            const waiters = this.pendingDrainWaiters;
+            this.pendingDrainWaiters = [];
+            waiters.forEach((w) => w());
+        }
+    }
+
+    private waitForPendingRequestsEmpty(timeoutMs: number): Promise<boolean> {
+        if (this.pendingRequests.size === 0) return Promise.resolve(true);
+
+        return new Promise<boolean>((resolve) => {
+            const onDrained = () => {
+                clearTimeout(timer);
+                resolve(true);
+            };
+
+            const timer = setTimeout(() => {
+                const idx = this.pendingDrainWaiters.indexOf(onDrained);
+                if (idx >= 0) this.pendingDrainWaiters.splice(idx, 1);
+                resolve(false);
+            }, timeoutMs);
+
+            this.pendingDrainWaiters.push(onDrained);
+        });
     }
 
     disconnect() {
@@ -7514,7 +7546,16 @@ class WsApiClient {
         return Math.floor(Math.random() * 1000);
     }
 
+    private finalizeRequest(requestId: string) {
+        this.pendingRequests.delete(requestId);
+        this.notifyPendingDrainIfNeeded();
+    }
+
     doRequest<T>(request: Request<T>): Promise<T> {
+        if (this.isClosing || this.disconnecting) {
+            return Promise.reject(new Error('WebSocket is closing; new requests are rejected'));
+        }
+
         const requestId = (++this.lastRequestId).toString()
 
         if (!this.connection || this.connection.readyState !== WebSocket.OPEN) {
