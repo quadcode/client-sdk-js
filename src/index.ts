@@ -225,7 +225,7 @@ export class ClientSdk {
      * Shuts down instance of SDK entry point class.
      */
     public async shutdown(): Promise<void> {
-        this.wsApiClient.disconnect()
+        await this.wsApiClient.disconnectGracefully();
 
         if (this.blitzOptionsFacade) {
             this.blitzOptionsFacade.close()
@@ -1598,6 +1598,12 @@ export class Translations {
     private loadedLanguages: Set<string> = new Set()
     private loadedGroups: Set<TranslationGroup> = new Set()
 
+    private inFlight: Map<string, Promise<void>> = new Map()
+
+    private readonly retryAttempts = 3
+    private readonly retryBaseDelayMs = 300
+    private readonly retryMaxDelayMs = 2000
+
     private constructor(host: string) {
         this.httpApiClient = new HttpApiClient(host)
     }
@@ -1626,16 +1632,87 @@ export class Translations {
      * @param groups - Array of translation groups to fetch
      */
     public async fetchTranslations(lang: string, groups: TranslationGroup[]): Promise<void> {
-        const response = await this.httpApiClient.doRequest<HttpGetTranslationsResponse>(new HttpGetTranslationsRequest(lang, groups))
-        if (response.isSuccessful && response.data) {
-            if (!this.translations[lang]) {
-                this.translations[lang] = {}
+        const key = this.makeFetchKey(lang, groups)
+
+        const existing = this.inFlight.get(key)
+        if (existing) return existing
+
+        const promise = this.fetchTranslationsWithRetry(lang, groups).catch((err) => {
+            console.warn(`[Translations] Failed to fetch translations: lang=${lang} groups=${groups.join(',')}`, err)
+        }).finally(() => {
+            this.inFlight.delete(key)
+        })
+
+        this.inFlight.set(key, promise)
+        return promise
+    }
+
+    private async fetchTranslationsWithRetry(lang: string, groups: TranslationGroup[]): Promise<void> {
+        for (let attempt = 1; attempt <= this.retryAttempts; attempt++) {
+            const res = await this.tryFetchTranslationsOnce(lang, groups, attempt)
+
+            if (res.ok) {
+                return
             }
-            this.translations[lang] = {...this.translations[lang], ...response.data.result[lang]}
+
+            if (attempt === this.retryAttempts) {
+                console.warn(
+                    `[Translations] Could not fetch translations after ${this.retryAttempts} attempts: lang=${lang} groups=${groups.join(',')}`,
+                    res.error
+                )
+                return
+            }
+
+            await this.sleep(this.calcRetryDelay(attempt))
+        }
+    }
+
+    private async tryFetchTranslationsOnce(
+        lang: string,
+        groups: TranslationGroup[],
+        attempt: number
+    ): Promise<{ ok: true } | { ok: false; error: unknown }> {
+        try {
+            const response = await this.httpApiClient.doRequest<HttpGetTranslationsResponse>(
+                new HttpGetTranslationsRequest(lang, groups),
+            )
+
+            if (!response.isSuccessful || !response.data) {
+                return {ok: false, error: new Error(`Unsuccessful response (attempt ${attempt})`)}
+            }
+
+            const next = response.data.result?.[lang]
+            if (!next || Object.keys(next).length === 0) {
+                return {
+                    ok: false,
+                    error: new Error(`Empty translations payload for lang=${lang} (attempt ${attempt})`)
+                }
+            }
+
+            this.translations[lang] = {...(this.translations[lang] ?? {}), ...next}
 
             this.loadedLanguages.add(lang)
             groups.forEach(group => this.loadedGroups.add(group))
+
+            return {ok: true}
+        } catch (err) {
+            return {ok: false, error: err}
         }
+    }
+
+    private makeFetchKey(lang: string, groups: TranslationGroup[]): string {
+        const sorted = [...groups].sort().join(',')
+        return `${lang}:${sorted}`
+    }
+
+    private calcRetryDelay(attempt: number): number {
+        const exp = Math.min(this.retryMaxDelayMs, this.retryBaseDelayMs * Math.pow(2, attempt - 1))
+        const jitter = Math.floor(Math.random() * 100)
+        return exp + jitter
+    }
+
+    private sleep(ms: number): Promise<void> {
+        return new Promise((resolve) => setTimeout(resolve, ms))
     }
 
     /**
@@ -1655,6 +1732,8 @@ export class Translations {
             clearInterval(this.reloadInterval)
             this.reloadInterval = undefined
         }
+
+        this.inFlight.clear()
     }
 }
 
@@ -7190,6 +7269,8 @@ class WsApiClient {
     private timeSyncInterval: NodeJS.Timeout | undefined
     private lastTimeSyncReceived: number = 0
     private reconnectTimeoutHandle: NodeJS.Timeout | undefined = undefined;
+    private isClosing = false;
+    private pendingDrainWaiters: Array<() => void> = [];
 
     constructor(apiUrl: string, platformId: number, authMethod: AuthMethod) {
         this.currentTime = new WsApiClientCurrentTime(new Date().getTime())
@@ -7269,7 +7350,7 @@ class WsApiClient {
                     if (this.pendingRequests.has(frame.request_id)) {
                         const requestMetaData = this.pendingRequests.get(frame.request_id)!
                         if (frame.status >= 4000) {
-                            this.pendingRequests.delete(frame.request_id)
+                            this.finalizeRequest(frame.request_id)
                             requestMetaData.reject(new Error(`request is failed with status ${frame.status} and message: ${frame.msg.message}`))
                             return
                         }
@@ -7277,6 +7358,7 @@ class WsApiClient {
                         if (frame.name === 'result' && !requestMetaData.request.resultOnly()) {
                             const result = new Result(frame.msg)
                             if (!result.success) {
+                                this.finalizeRequest(frame.request_id);
                                 requestMetaData.reject(`request result is not successful`)
                             }
                             return
@@ -7287,7 +7369,7 @@ class WsApiClient {
                         } catch (e) {
                             requestMetaData.reject(e)
                         } finally {
-                            this.pendingRequests.delete(frame.request_id)
+                            this.finalizeRequest(frame.request_id)
                         }
                     }
                 } else if (frame.microserviceName && frame.name) {
@@ -7361,6 +7443,62 @@ class WsApiClient {
         })
     }
 
+    public async disconnectGracefully(timeoutMs = 5000): Promise<void> {
+        if (this.disconnecting) return;
+
+        this.disconnecting = true;
+        this.isClosing = true;
+
+        this.stopTimeSyncMonitoring();
+
+        if (this.reconnectTimeoutHandle) {
+            clearTimeout(this.reconnectTimeoutHandle);
+            this.reconnectTimeoutHandle = undefined;
+        }
+
+        this.reconnecting = false;
+
+        const drained = await this.waitForPendingRequestsEmpty(timeoutMs);
+
+        if (!drained && this.pendingRequests.size > 0) {
+            this.rejectAllPendingRequests(new Error('WebSocket disconnected (graceful timeout)'));
+        }
+
+        this.forceCloseConnection();
+
+        this.subscriptions.clear();
+        this.lastRequestId = 0;
+
+        this.onConnectionStateChanged?.(WsConnectionStateEnum.Disconnected);
+    }
+
+    private notifyPendingDrainIfNeeded() {
+        if (this.pendingRequests.size === 0 && this.pendingDrainWaiters.length > 0) {
+            const waiters = this.pendingDrainWaiters;
+            this.pendingDrainWaiters = [];
+            waiters.forEach((w) => w());
+        }
+    }
+
+    private waitForPendingRequestsEmpty(timeoutMs: number): Promise<boolean> {
+        if (this.pendingRequests.size === 0) return Promise.resolve(true);
+
+        return new Promise<boolean>((resolve) => {
+            const onDrained = () => {
+                clearTimeout(timer);
+                resolve(true);
+            };
+
+            const timer = setTimeout(() => {
+                const idx = this.pendingDrainWaiters.indexOf(onDrained);
+                if (idx >= 0) this.pendingDrainWaiters.splice(idx, 1);
+                resolve(false);
+            }, timeoutMs);
+
+            this.pendingDrainWaiters.push(onDrained);
+        });
+    }
+
     disconnect() {
         this.disconnecting = true;
 
@@ -7428,7 +7566,16 @@ class WsApiClient {
         return Math.floor(Math.random() * 1000);
     }
 
+    private finalizeRequest(requestId: string) {
+        this.pendingRequests.delete(requestId);
+        this.notifyPendingDrainIfNeeded();
+    }
+
     doRequest<T>(request: Request<T>): Promise<T> {
+        if (this.isClosing || this.disconnecting) {
+            return Promise.reject(new Error('WebSocket is closing; new requests are rejected'));
+        }
+
         const requestId = (++this.lastRequestId).toString()
 
         if (!this.connection || this.connection.readyState !== WebSocket.OPEN) {

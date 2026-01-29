@@ -1,8 +1,6 @@
-export function justWait(timeout: number): Promise<string> {
+export function justWait(timeout: number): Promise<void> {
     return new Promise((resolve) => {
-        setTimeout(() => {
-            resolve("Success");
-        }, timeout);
+        setTimeout(resolve, timeout);
     });
 }
 
