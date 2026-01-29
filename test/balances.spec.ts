@@ -31,9 +31,8 @@ describe('Balances', () => {
         const activeInstruments = await options.getActives()
             .filter(active => active.canBeBoughtAt(sdk.currentTime()))[0].instruments();
         const availableInstruments = activeInstruments.getAvailableForBuyAt(sdk.currentTime());
-        const availableForBuyAt = availableInstruments.reduce((prev, curr) => {
-            return prev.expiredAt > curr.expiredAt ? prev : curr;
-        });
+        const availableForBuyAt = availableInstruments
+            .filter(value => value.durationRemainingForPurchase(sdk.currentTime()) > 3000)[0];
         await options.buy(availableForBuyAt, BinaryOptionsDirection.Put, amount, balance)
     }
 

@@ -2022,6 +2022,7 @@ export class RealTimeChartDataLayer {
     private loadedTo: number | null = null;
     private firstCandleFrom: number | null = null;
     private currentReject: ((err: any) => void) | null = null;
+    private wsUnsubscribe: null | (() => void) = null;
     private onUpdateObserver: Observable<Candle> = new Observable<Candle>();
     private onConsistencyUpdateObserver: Observable<{ from: number, to: number }> = new Observable<{
         from: number,
@@ -2290,7 +2291,10 @@ export class RealTimeChartDataLayer {
      */
     subscribeOnLastCandleChanged(handler: (candle: Candle) => void) {
         if (!this.subscribed) {
-            this.wsApiClient.subscribe<CandleGeneratedV1>(new SubscribeCandleGeneratedV1(this.activeId, this.candleSize), (event: CandleGeneratedV1) => {
+            this.subscribed = true;
+            const subscribeCandleGeneratedV1 = new SubscribeCandleGeneratedV1(this.activeId, this.candleSize);
+
+            this.wsApiClient.subscribe<CandleGeneratedV1>(subscribeCandleGeneratedV1, (event: CandleGeneratedV1) => {
                 if (event.activeId !== this.activeId || event.size !== this.candleSize) {
                     return
                 }
@@ -2298,7 +2302,17 @@ export class RealTimeChartDataLayer {
                 if (this.connected) {
                     this.handleRealtimeUpdate(event).then()
                 }
-            }).then()
+            }).then(() => {
+                this.wsUnsubscribe = () => {
+                    this.wsApiClient.unsubscribe(subscribeCandleGeneratedV1).then();
+                };
+
+                if (this.onUpdateObserver.observers.length === 0) {
+                    this.wsUnsubscribe();
+                    this.wsUnsubscribe = null;
+                    this.subscribed = false;
+                }
+            })
         }
 
         this.onUpdateObserver.subscribe(handler);
@@ -2310,6 +2324,12 @@ export class RealTimeChartDataLayer {
      */
     unsubscribeOnLastCandleChanged(handler: (candle: Candle) => void) {
         this.onUpdateObserver.unsubscribe(handler);
+
+        if (this.onUpdateObserver.observers.length === 0 && this.wsUnsubscribe !== null) {
+            this.wsUnsubscribe();
+            this.wsUnsubscribe = null;
+            this.subscribed = false;
+        }
     }
 
     /**

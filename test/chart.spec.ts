@@ -1,4 +1,4 @@
-import {ClientSdk} from "../src";
+import {Candle, ClientSdk} from "../src";
 import {getUserByTitle} from "./utils/userUtils";
 import {User, WS_URL} from "./vars";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
@@ -62,6 +62,28 @@ describe('Chart Data', () => {
             await justWait(1100)
             expect(at).not.eq(current)
             current = at;
+        }
+    });
+
+    it(`should subscribe on next candle one time`, async () => {
+        const chartDataLayer = await sdk.realTimeChartDataLayer(1, 1)
+
+        const ats: number[] = []
+        const handler = (candle: Candle) => {
+            if (candle.at !== undefined) ats.push(candle.at)
+        }
+        // subscribe twice with the same handler \=> each emitted candle \`at\` should appear exactly twice
+        chartDataLayer.subscribeOnLastCandleChanged(handler)
+        chartDataLayer.subscribeOnLastCandleChanged(handler)
+
+        await justWait(3000)
+
+        const counts = new Map<number, number>()
+        for (const at of ats) {
+            counts.set(at, (counts.get(at) ?? 0) + 1)
+        }
+        for (const [, count] of counts) {
+            expect(count, "each candle.at should appear exactly twice").eq(2)
         }
     });
 });
