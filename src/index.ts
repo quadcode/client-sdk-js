@@ -2929,6 +2929,10 @@ export class Positions {
             }
         }));
 
+        positionsFacade.intervalId = setInterval(async () => {
+            await positionsFacade.subscribePositions()
+        }, 60000)
+
         return positionsFacade
     }
 
@@ -2956,14 +2960,6 @@ export class Positions {
                 this.syncPositionsStateFromEvent(event)
             }).then(() => {
         })
-
-        this.intervalId = setInterval(async () => {
-            await this.wsApiClient!.unsubscribe<PortfolioPositionsStateV1>(new SubscribePortfolioPositionsStateV1())
-            await this.wsApiClient!.subscribe<PortfolioPositionsStateV1>(new SubscribePortfolioPositionsStateV1(),
-                (event: PortfolioPositionsStateV1) => {
-                    this.syncPositionsStateFromEvent(event)
-                })
-        }, 60000)
     }
 
     /**
@@ -3204,6 +3200,10 @@ export class Positions {
             if (position.status === "open") {
                 internalIds.push(position.internalId!)
             }
+        }
+
+        if (internalIds.length === 0) {
+            return
         }
 
         await this.wsApiClient!.doRequest<Result>(
