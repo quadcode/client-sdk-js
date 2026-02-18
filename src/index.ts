@@ -127,6 +127,13 @@ export class ClientSdk {
     private candlesPromise: Promise<Candles> | undefined
 
     /**
+     * Chats facade cache.
+     * @private
+     */
+    private chatsFacade: Chats | undefined
+    private chatsPromise: Promise<Chats> | undefined
+
+    /**
      * Host for static resources.
      * @private
      */
@@ -249,6 +256,10 @@ export class ClientSdk {
 
         if (this.translationsFacade) {
             this.translationsFacade.close()
+        }
+
+        if (this.chatsFacade) {
+            this.chatsFacade.close()
         }
     }
 
@@ -560,6 +571,22 @@ export class ClientSdk {
             })();
         }
         return this.candlesPromise;
+    }
+
+    /**
+     * Returns chats facade class.
+     */
+    public async chats(): Promise<Chats> {
+        if (this.chatsFacade) return this.chatsFacade;
+        if (!this.chatsPromise) {
+            this.chatsPromise = (async () => {
+                const inst = await Chats.create(this.wsApiClient);
+                this.chatsFacade = inst;
+                this.chatsPromise = undefined;
+                return inst;
+            })();
+        }
+        return this.chatsPromise;
     }
 
     public async realTimeChartDataLayer(activeId: number, size: number): Promise<RealTimeChartDataLayer> {
@@ -2830,6 +2857,370 @@ export class CurrentQuote {
  * Callback for handle current quote update.
  */
 export type CallbackForCurrentQuoteUpdate = (currentQuote: CurrentQuote) => void;
+
+/**
+ * Don't use this class directly from your code. Use the following methods instead:
+ *
+ * * {@link ClientSdk.chats}
+ *
+ * Chats facade class. Provides access to chat rooms and real-time chat messages.
+ */
+export class Chats {
+    /**
+     * Instance of WebSocket API client.
+     * @private
+     */
+    private readonly wsApiClient: WsApiClient
+
+    /**
+     * Cached list of available chat rooms.
+     * @private
+     */
+    private chatRooms: ChatRoom[] = []
+
+    /**
+     * Active chat subscriptions keyed by room ID.
+     * @private
+     */
+    private activeSubscriptions: Map<string, SubscribeChatMessagePublicGenerated> = new Map()
+
+    /**
+     * Chat message observers keyed by room ID.
+     * @private
+     */
+    private messageObservers: Map<string, Observable<ChatMessage>> = new Map()
+
+    /**
+     * Creates class instance.
+     * @param wsApiClient - Instance of WebSocket API client.
+     * @internal
+     * @private
+     */
+    private constructor(wsApiClient: WsApiClient) {
+        this.wsApiClient = wsApiClient
+    }
+
+    /**
+     * Creates and initializes Chats facade. Fetches available chat rooms on creation.
+     * @param wsApiClient - Instance of WebSocket API client.
+     * @internal
+     */
+    static async create(wsApiClient: WsApiClient): Promise<Chats> {
+        const instance = new Chats(wsApiClient)
+        await instance.fetchChatRooms()
+        return instance
+    }
+
+    /**
+     * Fetches list of available chat rooms from the server.
+     * @private
+     */
+    private async fetchChatRooms(): Promise<void> {
+        const response = await this.wsApiClient.doRequest<ChatRoomResponse>(new CallRequestChatRoom())
+        this.chatRooms = response.rooms
+    }
+
+    /**
+     * Returns the cached list of available chat rooms.
+     */
+    public getChatRooms(): ReadonlyArray<ChatRoom> {
+        return this.chatRooms
+    }
+
+    /**
+     * Subscribes to real-time messages for the specified chat room.
+     * @param chatId - Chat room ID to subscribe to.
+     * @param callback - Callback that will be called for each incoming message batch.
+     */
+    public async subscribeChat(chatId: string, callback: CallbackForChatMessageEvent): Promise<void> {
+        if (!this.messageObservers.has(chatId)) {
+            this.messageObservers.set(chatId, new Observable<ChatMessage>())
+
+            const subscribeRequest = new SubscribeChatMessagePublicGenerated(chatId)
+            this.activeSubscriptions.set(chatId, subscribeRequest)
+
+            await this.wsApiClient.subscribe<ChatMessageEvent>(subscribeRequest, (event: ChatMessageEvent) => {
+                const observer = this.messageObservers.get(chatId)
+                if (observer) {
+                    event.messages.forEach((message) => {
+                        observer.notify(message)
+                    })
+                }
+            })
+        }
+
+        this.messageObservers.get(chatId)!.subscribe(callback)
+    }
+
+    /**
+     * Unsubscribes a specific callback from chat room messages.
+     * If no callbacks remain, the WebSocket subscription is also removed.
+     * @param chatId - Chat room ID to unsubscribe from.
+     * @param callback - The callback to remove.
+     */
+    public async unsubscribeChat(chatId: string, callback: CallbackForChatMessageEvent): Promise<void> {
+        const observer = this.messageObservers.get(chatId)
+        if (!observer) {
+            return
+        }
+
+        observer.unsubscribe(callback)
+
+        if (observer.observers.length === 0) {
+            const subscribeRequest = this.activeSubscriptions.get(chatId)
+            if (subscribeRequest) {
+                await this.wsApiClient.unsubscribe<ChatMessageEvent>(subscribeRequest)
+                this.activeSubscriptions.delete(chatId)
+            }
+            this.messageObservers.delete(chatId)
+        }
+    }
+
+    /**
+     * Cleans up all active chat subscriptions.
+     */
+    public close(): void {
+        for (const [, subscribeRequest] of this.activeSubscriptions) {
+            this.wsApiClient.unsubscribe<ChatMessageEvent>(subscribeRequest)
+        }
+        this.activeSubscriptions.clear()
+        this.messageObservers.clear()
+    }
+}
+
+/**
+ * Callback for handling chat message events.
+ */
+export type CallbackForChatMessageEvent = (event: ChatMessage) => void;
+
+/**
+ * Chat room information.
+ */
+export class ChatRoom {
+    /**
+     * Chat room ID.
+     */
+    public readonly id: string
+
+    /**
+     * Chat room type (e.g. "global", "notification", "support").
+     */
+    public readonly type: string
+
+    /**
+     * Chat room locale (e.g. "en_US") or null.
+     */
+    public readonly locale: string | null
+
+    /**
+     * Chat room subject.
+     */
+    public readonly subject: string
+
+    /**
+     * Chat room internal name.
+     */
+    public readonly name: string
+
+    /**
+     * Localized chat room name.
+     */
+    public readonly nameLoc: string
+
+    /**
+     * Chat room icon URL.
+     */
+    public readonly icon: string
+
+    /**
+     * Chat room icon 2x URL.
+     */
+    public readonly icon2x: string
+
+    /**
+     * Whether the chat uses real names for senders.
+     */
+    public readonly useRealName: boolean
+
+    /**
+     * Whether the chat is public.
+     */
+    public readonly isPublic: boolean
+
+    /**
+     * Whether writing to the chat is allowed.
+     */
+    public readonly isWrite: boolean
+
+    /**
+     * Whether the chat is regulated.
+     */
+    public readonly isRegulated: boolean | null
+
+    /**
+     * Whether there are unread messages.
+     */
+    public readonly isUnreadMessages: boolean
+
+    /**
+     * Last read message ID.
+     */
+    public readonly lastReadMessageId: string | number
+
+    /**
+     * Number of online users in the chat.
+     */
+    public readonly onlineUsers: number
+
+    constructor(data: any) {
+        this.id = data.id
+        this.type = data.type
+        this.locale = data.locale
+        this.subject = data.subject
+        this.name = data.name
+        this.nameLoc = data.name_loc
+        this.icon = data.icon
+        this.icon2x = data.icon_2x
+        this.useRealName = data.use_real_name
+        this.isPublic = data.is_public
+        this.isWrite = data.is_write
+        this.isRegulated = data.is_regulated
+        this.isUnreadMessages = data.is_unread_messages
+        this.lastReadMessageId = data.last_read_message_id
+        this.onlineUsers = data.online_users
+    }
+}
+
+/**
+ * Incoming chat message event containing one or more messages.
+ */
+export class ChatMessageEvent {
+    /**
+     * Array of chat messages received in this event.
+     */
+    public readonly messages: ChatMessage[]
+
+    constructor(data: any) {
+        this.messages = []
+        if (data.data && Array.isArray(data.data)) {
+            for (const item of data.data) {
+                this.messages.push(new ChatMessage(item))
+            }
+        }
+    }
+}
+
+/**
+ * Individual chat message.
+ */
+export class ChatMessage {
+    /**
+     * Message ID.
+     */
+    public readonly id: string
+
+    /**
+     * Room ID this message belongs to.
+     */
+    public readonly roomId: string
+
+    /**
+     * Message type.
+     */
+    public readonly type: string
+
+    /**
+     * Message text content.
+     */
+    public readonly text: string
+
+    /**
+     * Sender display name.
+     */
+    public readonly sender: string
+
+    /**
+     * Sender user ID.
+     */
+    public readonly senderId: number
+
+    /**
+     * Sender country flag code.
+     */
+    public readonly senderFlag: string
+
+    /**
+     * Sender avatar URL.
+     */
+    public readonly senderAvatarUrl: string
+
+    /**
+     * Whether the sender is a VIP user.
+     */
+    public readonly isSenderVip: boolean
+
+    /**
+     * Whether the sender is a professional.
+     */
+    public readonly isSenderProfessional: boolean
+
+    /**
+     * Whether the sender is an admin.
+     */
+    public readonly isSenderAdmin: boolean
+
+    /**
+     * Whether the sender is a system account.
+     */
+    public readonly isSenderSystem: boolean
+
+    /**
+     * Message timestamp in milliseconds.
+     */
+    public readonly date: Date
+
+    /**
+     * Whether the message has been removed.
+     */
+    public readonly removed: boolean
+
+    /**
+     * Whether the message is visible to author only.
+     */
+    public readonly authorOnly: boolean
+
+    /**
+     * Message attachments.
+     */
+    public readonly attachments: any[]
+
+    /**
+     * Previous message ID in the room.
+     */
+    public readonly previousId: string | null
+
+    constructor(data: any) {
+        this.id = data.id
+        this.roomId = data.room_id
+        this.type = data.type
+        this.text = data.text
+        this.sender = data.sender
+        this.senderId = data.sender_id
+        this.senderFlag = data.sender_flag
+        this.senderAvatarUrl = data.sender_avatar_url
+        this.isSenderVip = data.is_sender_vip
+        this.isSenderProfessional = data.is_sender_professional
+        this.isSenderAdmin = data.is_sender_admin
+        this.isSenderSystem = data.is_sender_system
+        this.date = new Date(data.date)
+        this.removed = data.removed
+        this.authorOnly = data.author_only
+        this.attachments = data.attachments || []
+        this.previousId = data.previous_id || null
+    }
+}
+
+// endregion
 
 /**
  * Don't use this class directly from your code. Use the following methods instead:
@@ -10901,5 +11292,71 @@ class MarginInstrumentsInstrumentsListV1Item {
 
 class MarginInstrumentsInstrumentsListV1Tradable {
     constructor(public from: number, public to: number) {
+    }
+}
+
+class ChatRoomResponse {
+    rooms: ChatRoom[] = []
+
+    constructor(data: any) {
+        if (data.isSuccessful && data.data && Array.isArray(data.data)) {
+            for (const item of data.data) {
+                this.rooms.push(new ChatRoom(item))
+            }
+        }
+    }
+}
+
+class CallRequestChatRoom implements Request<ChatRoomResponse> {
+    messageName() {
+        return 'sendMessage'
+    }
+
+    messageBody() {
+        return {
+            name: 'request-chat-room',
+            version: '1.0'
+        }
+    }
+
+    createResponse(data: any): ChatRoomResponse {
+        return new ChatRoomResponse(data)
+    }
+
+    resultOnly(): boolean {
+        return false
+    }
+}
+
+class SubscribeChatMessagePublicGenerated implements SubscribeRequest<ChatMessageEvent> {
+    constructor(private readonly roomId: string) {
+    }
+
+    messageName() {
+        return 'subscribeMessage'
+    }
+
+    messageBody() {
+        return {
+            name: 'chat-message-public-generated',
+            version: '1.0',
+            params: {
+                routingFilters: {
+                    room_id: this.roomId
+                }
+            }
+        }
+    }
+
+    eventMicroserviceName() {
+        return 'chat'
+    }
+
+    eventName() {
+        return 'chat-message-public-generated'
+    }
+
+    createEvent(data: any): ChatMessageEvent {
+        return new ChatMessageEvent(data)
     }
 }
