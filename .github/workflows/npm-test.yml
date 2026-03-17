@@ -5,6 +5,8 @@ name: Tests
 
 on:
   push:
+  schedule:
+    - cron: '0 9 * * 1' # every Monday at 9:00 UTC
   workflow_call: # workflow can be called by another workflow
   workflow_dispatch: # workflow can be called manually
 
