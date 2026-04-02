@@ -4492,6 +4492,11 @@ export class BlitzOptionsActive {
     public id: number
 
     /**
+     * Active's localization key
+     */
+    public localizationKey: string
+
+    /**
      * Active's ticker (symbol).
      */
     public ticker: string
@@ -4524,6 +4529,7 @@ export class BlitzOptionsActive {
      */
     public constructor(msg: InitializationDataV3BlitzActive) {
         this.id = msg.id
+        this.localizationKey = msg.name
         this.ticker = msg.ticker
         this.isSuspended = msg.isSuspended
         this.expirationTimes = msg.expirationTimes
@@ -4817,6 +4823,11 @@ export class TurboOptionsActive {
     public id: number
 
     /**
+     * Active's localization key
+     */
+    public localizationKey: string
+
+    /**
      * How many seconds before expiration time the ability to buyback options for this active will not be allowed.
      */
     public buybackDeadtime: number
@@ -4882,6 +4893,7 @@ export class TurboOptionsActive {
      */
     public constructor(msg: InitializationDataV3TurboActive, currentTime: WsApiClientCurrentTime) {
         this.id = msg.id
+        this.localizationKey = msg.name
         this.deadtime = msg.deadtime
         this.buybackDeadtime = msg.buybackDeadtime
         this.isBuyback = msg.isBuyback
@@ -5376,6 +5388,11 @@ export class BinaryOptionsActive {
     public id: number
 
     /**
+     * Active's localization key
+     */
+    public localizationKey: string
+
+    /**
      * How many seconds before expiration time the ability to buyback options for this active will not be allowed.
      */
     public buybackDeadtime: number
@@ -5446,6 +5463,7 @@ export class BinaryOptionsActive {
      */
     public constructor(msg: InitializationDataV3BinaryActive, currentTime: WsApiClientCurrentTime) {
         this.id = msg.id
+        this.localizationKey = msg.name
         this.deadtime = msg.deadtime
         this.ticker = msg.ticker
         this.isBuyback = msg.isBuyback
@@ -8388,6 +8406,7 @@ class InitializationDataV3 {
 
 class InitializationDataV3BlitzActive {
     id: number
+    name: string
     ticker: string
     isSuspended: boolean
     expirationTimes: number[]
@@ -8396,6 +8415,7 @@ class InitializationDataV3BlitzActive {
 
     constructor(data: {
         id: number
+        name: string
         ticker: string
         is_suspended: boolean
         option: {
@@ -8407,6 +8427,7 @@ class InitializationDataV3BlitzActive {
         schedule: number[][]
     }) {
         this.id = data.id
+        this.name = data.name
         this.ticker = data.ticker
         this.isSuspended = data.is_suspended
         this.expirationTimes = data.option.expiration_times
@@ -8417,6 +8438,7 @@ class InitializationDataV3BlitzActive {
 
 class InitializationDataV3TurboActive {
     id: number
+    name: string
     buybackDeadtime: number
     deadtime: number
     ticker: string
@@ -8429,6 +8451,7 @@ class InitializationDataV3TurboActive {
 
     constructor(data: {
         id: number
+        name: string
         buyback_deadtime: number
         deadtime: number
         ticker: string
@@ -8444,6 +8467,7 @@ class InitializationDataV3TurboActive {
         schedule: number[][]
     }) {
         this.id = data.id
+        this.name = data.name
         this.buybackDeadtime = data.buyback_deadtime
         this.deadtime = data.deadtime
         this.ticker = data.ticker
@@ -8458,6 +8482,7 @@ class InitializationDataV3TurboActive {
 
 class InitializationDataV3BinaryActive {
     id: number
+    name: string
     buybackDeadtime: number
     deadtime: number
     ticker: string
@@ -8471,6 +8496,7 @@ class InitializationDataV3BinaryActive {
 
     constructor(data: {
         id: number
+        name: string
         buyback_deadtime: number
         deadtime: number
         ticker: string
@@ -8487,6 +8513,7 @@ class InitializationDataV3BinaryActive {
         schedule: number[][]
     }) {
         this.id = data.id
+        this.name = data.name
         this.buybackDeadtime = data.buyback_deadtime
         this.deadtime = data.deadtime
         this.ticker = data.ticker
