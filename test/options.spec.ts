@@ -79,6 +79,11 @@ describe('Options', () => {
             expect(binaryOptions1, "Binary options differ").eq(binaryOptions2)
         });
 
+        it('should return localizationKey', async () => {
+            const active = binaryOptions.getActives()[0];
+            expect(active!.localizationKey).not.empty;
+        });
+
         describe('Getting binary-option instruments', async () => {
             let instruments: BinaryOptionsActiveInstrument[];
 
@@ -183,6 +188,11 @@ describe('Options', () => {
             expect(turboOptions1, "Turbo options differ").eq(turboOptions2)
         });
 
+        it('should return localizationKey', async () => {
+            const active = turboOptions.getActives()[0];
+            expect(active!.localizationKey).not.empty;
+        });
+
         describe('Getting turbo-option instruments', async () => {
             let instruments: TurboOptionsActiveInstrument[];
 
@@ -273,6 +283,11 @@ describe('Options', () => {
 
         it('should return blitz option actives', async () => {
             expect(blitzOptions.getActives().length, 'Invalid blitz-option actives count').to.be.above(0);
+        });
+
+        it('should return localizationKey', async () => {
+            const active = blitzOptions.getActives()[0];
+            expect(active!.localizationKey).not.empty;
         });
 
         it('should be singleton object', async () => {
