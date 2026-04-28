@@ -2142,7 +2142,9 @@ export class RealTimeChartDataLayer {
         reject: (e: any) => void
     }[] = [];
     private isProcessingQueue = false;
+    private isRecoveringMissedCandles = false;
     private candlesMutationsLock: Promise<void> = Promise.resolve();
+    private static readonly MAX_CANDLES_PER_REQUEST = 1000;
 
     private constructor(
         wsApiClient: WsApiClient,
@@ -2163,8 +2165,10 @@ export class RealTimeChartDataLayer {
         wsConnectionState.subscribeOnStateChanged((state: WsConnectionStateEnum) => {
             switch (state) {
                 case WsConnectionStateEnum.Connected:
-                    this.loadMissedCandlesOnReconnect().then(() => {
-                        this.connected = true;
+                    this.connected = true;
+                    this.isRecoveringMissedCandles = true;
+                    this.loadMissedCandlesOnReconnect().finally(() => {
+                        this.isRecoveringMissedCandles = false;
                         this.processQueue().then(() => {
                         });
                     });
@@ -2280,7 +2284,7 @@ export class RealTimeChartDataLayer {
     }
 
     private async processQueue() {
-        if (this.isProcessingQueue || this.candleQueue.length === 0 || !this.connected) {
+        if (this.isProcessingQueue || this.isRecoveringMissedCandles || this.candleQueue.length === 0 || !this.connected) {
             return;
         }
 
@@ -2548,13 +2552,90 @@ export class RealTimeChartDataLayer {
         await this.candlesMutationsLock;
     }
 
+    private buildMissedCandlesRequest(): { from: number; to: number } | null {
+        if (this.loadedTo === null) return null;
+
+        const now = Math.floor(this.wsApiClient.currentTime.unixMilliTime / 1000);
+        const last = this.candles[this.candles.length - 1];
+        const baseFrom = last && this.isOpenCandle(last) ? last.from : this.loadedTo;
+        const maxRangeSeconds = RealTimeChartDataLayer.MAX_CANDLES_PER_REQUEST * this.candleSize;
+
+        let from = Math.min(baseFrom, now);
+        if (now - from > maxRangeSeconds) {
+            from = now - maxRangeSeconds;
+        }
+
+        if (this.firstCandleFrom !== null && from < this.firstCandleFrom) {
+            from = this.firstCandleFrom;
+        }
+
+        if (from >= now) {
+            return null;
+        }
+
+        return {from, to: now};
+    }
+
+    private buildMissedCandlesFallbackRequest(): { to: number; count: number } {
+        return {
+            to: Math.floor(this.wsApiClient.currentTime.unixMilliTime / 1000),
+            count: RealTimeChartDataLayer.MAX_CANDLES_PER_REQUEST,
+        };
+    }
+
+    private isOpenCandle(candle: Candle): boolean {
+        return candle.at !== undefined && candle.to > candle.at / 1_000_000_000;
+    }
+
+    private isRequestErrorWithStatus(error: unknown, status: number): boolean {
+        return error instanceof Error && (error as Error & { status?: number }).status === status;
+    }
+
+    private errorDetails(error: unknown): unknown {
+        return error instanceof Error ? (error as Error & { details?: unknown }).details : undefined;
+    }
+
+    private logMissedCandlesRecoveryError(
+        error: unknown,
+        recoveryRequest: { from: number; to: number } | null,
+        fallbackRequest?: { to: number; count: number }
+    ) {
+        console.error('Failed to load missed candles after reconnect:', {
+            activeId: this.activeId,
+            candleSize: this.candleSize,
+            recoveryRequest,
+            fallbackRequest,
+            error,
+            details: this.errorDetails(error),
+        });
+    }
+
     private async loadMissedCandlesOnReconnect() {
-        if (this.loadedTo === null) return;
+        const recoveryRequest = this.buildMissedCandlesRequest();
+        if (!recoveryRequest) return;
 
         try {
-            const newCandles = await this.candlesFacade.getCandles(this.activeId, this.candleSize, {
-                from: this.loadedTo,
-            });
+            let newCandles: Candle[];
+            try {
+                newCandles = await this.candlesFacade.getCandles(this.activeId, this.candleSize, recoveryRequest);
+            } catch (error) {
+                if (!this.isRequestErrorWithStatus(error, 4220)) {
+                    this.logMissedCandlesRecoveryError(error, recoveryRequest);
+                    return;
+                }
+
+                const fallbackRequest = this.buildMissedCandlesFallbackRequest();
+                try {
+                    newCandles = await this.candlesFacade.getCandles(this.activeId, this.candleSize, fallbackRequest);
+                } catch (fallbackError) {
+                    this.logMissedCandlesRecoveryError(fallbackError, recoveryRequest, fallbackRequest);
+                    return;
+                }
+            }
+
+            if (!this.connected) {
+                return;
+            }
 
             const hasGaps = newCandles.some((c, i, arr) =>
                 i > 0 && c.id - arr[i - 1].id !== 1
@@ -2568,7 +2649,7 @@ export class RealTimeChartDataLayer {
                     const curr = newCandles[i];
                     const delta = curr.id - prev.id;
 
-                    if (delta > 1) {
+                    if (delta > 1 && delta <= RealTimeChartDataLayer.MAX_CANDLES_PER_REQUEST) {
                         const fromIdMissing = prev.id;
                         const toIdMissing = curr.id;
                         missingIntervals.push({fromId: fromIdMissing, toId: toIdMissing});
@@ -2578,23 +2659,26 @@ export class RealTimeChartDataLayer {
                 this.recoverGapsAsync(missingIntervals).then();
             }
 
-            for (const candle of newCandles) {
-                const existingIndex = this.candles.findIndex(c => c.from === candle.from);
+            this.candlesMutationsLock = this.candlesMutationsLock.then(() => {
+                for (const candle of newCandles) {
+                    const existingIndex = this.candles.findIndex(c => c.from === candle.from);
 
-                if (existingIndex !== -1) {
-                    this.candles[existingIndex] = candle;
-                } else {
-                    this.candles.push(candle);
+                    if (existingIndex !== -1) {
+                        this.candles[existingIndex] = candle;
+                    } else {
+                        this.candles.push(candle);
+                    }
+
+                    if (this.loadedTo === null || candle.to > this.loadedTo) {
+                        this.loadedTo = candle.to;
+                    }
+
+                    this.onUpdateObserver.notify(candle);
                 }
-
-                if (this.loadedTo === null || candle.to > this.loadedTo) {
-                    this.loadedTo = candle.to;
-                }
-
-                this.onUpdateObserver.notify(candle);
-            }
+            });
+            await this.candlesMutationsLock;
         } catch (error) {
-            console.error('Failed to load missed candles after reconnect:', error);
+            this.logMissedCandlesRecoveryError(error, recoveryRequest);
         }
     }
 }
@@ -7760,7 +7844,7 @@ class WsApiClient {
                         const requestMetaData = this.pendingRequests.get(frame.request_id)!
                         if (frame.status >= 4000) {
                             this.finalizeRequest(frame.request_id)
-                            requestMetaData.reject(new Error(`request is failed with status ${frame.status} and message: ${frame.msg.message}`))
+                            requestMetaData.reject(this.createRequestError(frame.status, frame.msg, requestMetaData.request))
                             return
                         }
 
@@ -7850,6 +7934,14 @@ class WsApiClient {
                 }
             }
         })
+    }
+
+    private createRequestError(status: number, details: any, request: Request<any>): Error {
+        if (request.createError) {
+            return request.createError(status, details);
+        }
+
+        return new Error(`request is failed with status ${status} and message: ${details?.message}`);
     }
 
     public async disconnectGracefully(timeoutMs = 5000): Promise<void> {
@@ -8079,6 +8171,8 @@ interface Request<ResponseType> {
     resultOnly(): boolean
 
     createResponse(data: any): ResponseType
+
+    createError?(status: number, data: any): Error
 }
 
 interface HttpRequest<ResponseType> {
@@ -10117,6 +10211,66 @@ class CallQuotesHistoryGetCandlesV2 implements Request<QuotesHistoryCandlesV2> {
 
     createResponse(data: any): QuotesHistoryCandlesV2 {
         return new QuotesHistoryCandlesV2(data)
+    }
+
+    createError(status: number, data: any): Error {
+        const error = new Error(`request is failed with status ${status} and message: ${this.formatErrorMessage(data)}`);
+
+        return Object.assign(error, {
+            status,
+            details: data,
+            requestName: 'quotes-history.get-candles',
+            requestVersion: '2.0',
+            activeId: this.activeId,
+            size: this.size,
+            options: {
+                from: this.from,
+                to: this.to,
+                fromId: this.fromId,
+                toId: this.toId,
+                count: this.count,
+                backoff: this.backoff,
+                onlyClosed: this.onlyClosed,
+                kind: this.kind,
+                splitNormalization: this.splitNormalization,
+            }
+        });
+    }
+
+    private formatErrorMessage(data: any): string {
+        if (data && typeof data === 'object' && !Array.isArray(data)) {
+            if ('message' in data && data.message !== undefined) {
+                return String(data.message);
+            }
+
+            const entries = Object.keys(data)
+                .sort()
+                .map((key) => `${key}: ${this.formatErrorValue(data[key])}`);
+
+            if (entries.length > 0) {
+                return entries.join('; ');
+            }
+        }
+
+        if (typeof data === 'string') {
+            return data;
+        }
+
+        return this.stringifyErrorValue(data) ?? 'unknown error';
+    }
+
+    private formatErrorValue(value: any): string {
+        return typeof value === 'string'
+            ? value
+            : this.stringifyErrorValue(value) ?? String(value);
+    }
+
+    private stringifyErrorValue(value: any): string | undefined {
+        try {
+            return JSON.stringify(value);
+        } catch {
+            return undefined;
+        }
     }
 
     resultOnly(): boolean {
