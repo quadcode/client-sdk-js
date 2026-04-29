@@ -1,4 +1,4 @@
-import {Candle, ClientSdk} from "../src";
+import {Candle, ClientSdk, WsConnectionStateEnum} from "../src";
 import {getUserByTitle} from "./utils/userUtils";
 import {afterEach, beforeAll, beforeEach, describe, expect, it, vi} from "vitest";
 import WS from "vitest-websocket-mock";
@@ -29,6 +29,39 @@ function candlesShouldNotHaveGaps(candles: Candle[]) {
         i > 0 && c.id - arr[i - 1].id !== 1
     );
     expect(hasGaps, "Candles array still has gaps").to.be.false;
+}
+
+function sendCandleGenerated(
+    socket: Client,
+    data: {
+        activeId: number;
+        size: number;
+        id: number;
+        from: number;
+        to: number;
+        at: number;
+    }
+) {
+    socket.send(JSON.stringify({
+        name: 'candle-generated',
+        microserviceName: 'quotes',
+        msg: {
+            active_id: data.activeId,
+            size: data.size,
+            id: data.id,
+            from: data.from,
+            to: data.to,
+            at: data.at,
+            open: 1,
+            close: 1,
+            min: 1,
+            max: 1,
+            ask: 1,
+            bid: 1,
+            volume: 1,
+            phase: data.at < data.to * 1_000_000_000 ? 'T' : 'C',
+        },
+    }));
 }
 
 describe('Chart Data mock', () => {
@@ -445,6 +478,179 @@ describe('Chart Data mock', () => {
                 {timeout: 5_000}
             ),
         ).rejects.toThrow();
+    })
+
+    it('should fallback on 4220 reconnect recovery and keep realtime updates', async () => {
+        const {oauth, options} = getOAuthMethod(user);
+        sdk = await ClientSdk.create("ws://localhost:1234", 82, oauth, options)
+
+        const activeId = 1;
+        const size = 60;
+        const wsApiClient = (sdk as any).wsApiClient;
+        const alignedNow = Math.floor(Math.floor(Date.now() / 1000) / size) * size;
+        const serverNow = alignedNow + Math.floor(size / 2);
+        const initialFrom = alignedNow - size * 5;
+        wsApiClient.currentTime.unixMilliTime = serverNow * 1000;
+
+        const recoveryRequests: any[] = [];
+        const fallbackRequests: any[] = [];
+
+        socket.on('message', raw => {
+            const msg = typeof raw === 'string' ? safeJsonParse(raw) : raw;
+
+            if (msg?.msg?.name === 'quotes-history.get-candles') {
+                const body = msg.msg.body;
+
+                if (body.from === initialFrom && body.to === undefined) {
+                    socket.send(JSON.stringify({
+                        msg: generateCandlesJson(1000, initialFrom, size, 5),
+                        request_id: msg.request_id,
+                    }))
+                    return;
+                }
+
+                if (body.count === 1000) {
+                    fallbackRequests.push(body);
+                    socket.send(JSON.stringify({
+                        msg: {candles: []},
+                        request_id: msg.request_id,
+                    }))
+                    return;
+                }
+
+                recoveryRequests.push(body);
+                socket.send(JSON.stringify({
+                    status: 4220,
+                    msg: {from: "must not be greater than current time"},
+                    request_id: msg.request_id,
+                }))
+            }
+
+            if (msg?.msg?.name === 'candle-generated') {
+                socket.send(JSON.stringify({msg: {success: true}, request_id: msg.request_id}));
+                setTimeout(() => sendCandleGenerated(socket, {
+                    activeId,
+                    size,
+                    id: 1005,
+                    from: alignedNow,
+                    to: alignedNow + size,
+                    at: serverNow * 1_000_000_000,
+                }), 0);
+            }
+        })
+
+        const layer = await sdk.realTimeChartDataLayer(activeId, size);
+        const candles = await layer.fetchAllCandles(initialFrom);
+        expect(candles.length).eq(5);
+
+        const updates: number[] = [];
+        layer.subscribeOnLastCandleChanged(candle => updates.push(candle.id));
+
+        await vi.waitFor(() => {
+            expect(updates).toContain(1005);
+        }, {timeout: 5000});
+
+        wsApiClient.onConnectionStateChanged?.(WsConnectionStateEnum.Disconnected);
+        wsApiClient.onConnectionStateChanged?.(WsConnectionStateEnum.Connected);
+
+        await vi.waitFor(() => {
+            expect(recoveryRequests).toHaveLength(1);
+            expect(fallbackRequests).toHaveLength(1);
+        }, {timeout: 5000});
+
+        expect(recoveryRequests[0].from).toBeLessThanOrEqual(recoveryRequests[0].to);
+        expect(recoveryRequests[0].to - recoveryRequests[0].from).toBeLessThanOrEqual(size * 1000);
+        expect(recoveryRequests[0].to).toBeLessThanOrEqual(serverNow);
+        expect(fallbackRequests[0]).toEqual(expect.objectContaining({
+            to: expect.any(Number),
+            count: 1000,
+        }));
+        expect(fallbackRequests[0].from).toBeUndefined();
+
+        sendCandleGenerated(socket, {
+            activeId,
+            size,
+            id: 1006,
+            from: alignedNow + size,
+            to: alignedNow + size * 2,
+            at: (alignedNow + size) * 1_000_000_000,
+        });
+
+        await vi.waitFor(() => {
+            expect(updates).toContain(1006);
+        }, {timeout: 5000});
+        expect(layer.getAllCandles()[layer.getAllCandles().length - 1].id).eq(1006);
+    })
+
+    it('should clamp long reconnect recovery to 1000 candles', async () => {
+        const {oauth, options} = getOAuthMethod(user);
+        sdk = await ClientSdk.create("ws://localhost:1234", 82, oauth, options)
+
+        const activeId = 1;
+        const size = 60;
+        const wsApiClient = (sdk as any).wsApiClient;
+        const alignedNow = Math.floor(Math.floor(Date.now() / 1000) / size) * size;
+        const serverNow = alignedNow + Math.floor(size / 2);
+        const initialFrom = alignedNow - size * 5;
+        const longDisconnectNow = alignedNow + size * 2000;
+        wsApiClient.currentTime.unixMilliTime = serverNow * 1000;
+
+        const recoveryRequests: any[] = [];
+
+        socket.on('message', raw => {
+            const msg = typeof raw === 'string' ? safeJsonParse(raw) : raw;
+
+            if (msg?.msg?.name === 'quotes-history.get-candles') {
+                const body = msg.msg.body;
+
+                if (body.from === initialFrom && body.to === undefined) {
+                    socket.send(JSON.stringify({
+                        msg: generateCandlesJson(1000, initialFrom, size, 5),
+                        request_id: msg.request_id,
+                    }))
+                    return;
+                }
+
+                recoveryRequests.push(body);
+                socket.send(JSON.stringify({
+                    msg: {candles: []},
+                    request_id: msg.request_id,
+                }))
+            }
+
+            if (msg?.msg?.name === 'candle-generated') {
+                socket.send(JSON.stringify({msg: {success: true}, request_id: msg.request_id}));
+                setTimeout(() => sendCandleGenerated(socket, {
+                    activeId,
+                    size,
+                    id: 1005,
+                    from: alignedNow,
+                    to: alignedNow + size,
+                    at: (alignedNow + size) * 1_000_000_000,
+                }), 0);
+            }
+        })
+
+        const layer = await sdk.realTimeChartDataLayer(activeId, size);
+        await layer.fetchAllCandles(initialFrom);
+
+        const updates: number[] = [];
+        layer.subscribeOnLastCandleChanged(candle => updates.push(candle.id));
+        await vi.waitFor(() => {
+            expect(updates).toContain(1005);
+        }, {timeout: 5000});
+
+        wsApiClient.currentTime.unixMilliTime = longDisconnectNow * 1000;
+        wsApiClient.onConnectionStateChanged?.(WsConnectionStateEnum.Disconnected);
+        wsApiClient.onConnectionStateChanged?.(WsConnectionStateEnum.Connected);
+
+        await vi.waitFor(() => {
+            expect(recoveryRequests).toHaveLength(1);
+        }, {timeout: 5000});
+
+        expect(recoveryRequests[0].from).eq(longDisconnectNow - size * 1000);
+        expect(recoveryRequests[0].to).eq(longDisconnectNow);
+        expect(recoveryRequests[0].to - recoveryRequests[0].from).eq(size * 1000);
     })
 
     it('should reject request if disconnect happened', async () => {

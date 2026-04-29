@@ -93,6 +93,31 @@ class TestRequest {
     }
 }
 
+class SendMessageRequest {
+    messageName() {
+        return "sendMessage";
+    }
+    messageBody() {
+        return {
+            name: "test.validation",
+            version: "1.0",
+            body: {ping: true}
+        };
+    }
+    resultOnly() {
+        return false;
+    }
+    createResponse(data: any) {
+        return data;
+    }
+    createError(status: number, data: any) {
+        return Object.assign(
+            new Error(`custom request error ${status}: ${Object.keys(data).sort().map((key) => `${key}=${data[key]}`).join("; ")}`),
+            {status, details: data}
+        );
+    }
+}
+
 describe("WsApiClient.disconnectGracefully", () => {
     let server: Server;
     let setTestHandler: (handler: TestRequestHandler | undefined) => void;
@@ -193,5 +218,62 @@ describe("WsApiClient.disconnectGracefully", () => {
         expect((wsApiClient as any).lastRequestId).toBe(0);
         expect((wsApiClient as any).disconnecting).toBe(true);
         expect((wsApiClient as any).isClosing).toBe(true);
+    });
+
+    it("delegates request errors to request-specific parser", async () => {
+        setTestHandler((frame, socket) => {
+            if (frame.name !== "sendMessage" || frame.msg?.name !== "test.validation") return false;
+
+            socket.send(JSON.stringify({
+                request_id: frame.request_id,
+                status: 4220,
+                msg: {
+                    from: "must not be greater than current time",
+                    count: "must be less than or equal to 1000"
+                }
+            }));
+            return true;
+        });
+
+        const sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod("ssid"));
+        const wsApiClient = (sdk as any).wsApiClient;
+
+        const error = await wsApiClient.doRequest(new SendMessageRequest()).then(
+            () => new Error("Expected request to be rejected"),
+            (err: unknown) => err
+        );
+
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message)
+            .toBe("custom request error 4220: count=must be less than or equal to 1000; from=must not be greater than current time");
+        expect((error as Error).message).not.toContain("undefined");
+        expect((error as any).status).toBe(4220);
+        expect((error as any).details).toEqual({
+            from: "must not be greater than current time",
+            count: "must be less than or equal to 1000"
+        });
+
+        await sdk.shutdown();
+    });
+
+    it("keeps legacy message-field request error text", async () => {
+        setTestHandler((frame, socket) => {
+            if (frame.name !== "test.request") return false;
+
+            socket.send(JSON.stringify({
+                request_id: frame.request_id,
+                status: 4008,
+                msg: {message: "legacy validation message"}
+            }));
+            return true;
+        });
+
+        const sdk = await ClientSdk.create(WS_URL, 82, new SsidAuthMethod("ssid"));
+        const wsApiClient = (sdk as any).wsApiClient;
+
+        await expect(wsApiClient.doRequest(new TestRequest()))
+            .rejects.toThrow("request is failed with status 4008 and message: legacy validation message");
+
+        await sdk.shutdown();
     });
 });

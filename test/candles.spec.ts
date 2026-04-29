@@ -17,7 +17,7 @@ describe('Candles', () => {
 
     afterAll(async () => {
         await sdk.shutdown();
-    });
+    })
 
     it('should be singleton object', async () => {
         const {oauth, options} = getOAuthMethod(user);
@@ -27,7 +27,7 @@ describe('Candles', () => {
             sdk.candles(),
         ]);
         expect(candles1, "Candles facade differ").eq(candles2)
-    });
+    })
 
     it('should return candles', async () => {
         const binaryOptions = await sdk.binaryOptions();
@@ -39,7 +39,7 @@ describe('Candles', () => {
         expect(candleArray.length, "Invalid candle array length").to.be.above(0)
         const candle = candleArray[Math.trunc(candleArray.length / 2)];
         expect(candle.to - candle.from, "Invalid candle size").eq(size)
-    });
+    })
 
     it('should return candles by filter', async () => {
         const binaryOptions = await sdk.binaryOptions();
@@ -61,5 +61,11 @@ describe('Candles', () => {
         const candle = candleArray[Math.trunc(candleArray.length / 2)];
         expect(candle.to - candle.from, "Invalid candle size").eq(size)
         expect(candle.at, "At must be undefined").to.be.undefined
-    });
+    })
+
+    it('should return error when from is in the future', async () => {
+        await expect(candles.getCandles(1, 1, {from: 4112672926})).rejects.toThrowError(
+            'request is failed with status 4220 and message: from: ["from must not be in the future"]'
+        );
+    })
 })
