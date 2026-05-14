@@ -81,6 +81,10 @@ describe('History positions', () => {
         it(`${page} more pages should be loaded, positions count ${count}`, async () => {
             const historyPositions = await positionsHelper.loadHistoryPositions(page);
             expect(historyPositions.length, 'History positions count must be ' + count).eq(count);
+            expect(historyPositions.some(value => value.instrumentType === 'marginal-crypto'),
+                'History positions should contain at least one marginal-crypto position').to.be.true
+            expect(historyPositions.some(value => value.instrumentType === 'marginal-forex'),
+                'History positions should contain at least one marginal-crypto position').to.be.true
         });
     })
 });
