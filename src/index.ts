@@ -3372,7 +3372,7 @@ export class Positions {
      * List of supported instrument types.
      * @private
      */
-    private instrumentTypes: string[] = ["digital-option", "binary-option", "turbo-option", "blitz-option", "marginal-cfd", "marginal-crypto", "marginal-forex"]
+    private instrumentTypes: string[] = getAllPositionInstrumentTypes()
 
     /**
      * Just private constructor. Just private constructor. Use {@link Positions.create create} instead.
@@ -4039,7 +4039,7 @@ class PositionsHistory {
                     limit: this.limit,
                     offset: this.offset,
                     end: this.startTime,
-                    instrumentTypes: ["digital-option", "binary-option", "turbo-option", "blitz-option"],
+                    instrumentTypes: getAllPositionInstrumentTypes(),
                 }
             )
         )
@@ -4061,7 +4061,7 @@ class PositionsHistory {
         const positionsPage = await this.wsApiClient.doRequest<PortfolioPositionsHistoryV2>(
             new CallPortfolioGetHistoryPositionsV2(
                 {
-                    instrumentTypes: ["digital-option", "binary-option", "turbo-option", "blitz-option"],
+                    instrumentTypes: getAllPositionInstrumentTypes(),
                     externalId: externalId,
                 }
             )
@@ -4526,6 +4526,18 @@ export enum InstrumentType {
     MarginForex = "marginal-forex",
     MarginCfd = "marginal-cfd",
     MarginCrypto = "marginal-crypto",
+}
+
+function getAllPositionInstrumentTypes(): string[] {
+    return [
+        InstrumentType.DigitalOption,
+        InstrumentType.BinaryOption,
+        InstrumentType.TurboOption,
+        InstrumentType.BlitzOption,
+        InstrumentType.MarginCfd,
+        InstrumentType.MarginCrypto,
+        InstrumentType.MarginForex,
+    ]
 }
 
 /**
