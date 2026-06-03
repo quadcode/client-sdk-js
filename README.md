@@ -300,6 +300,31 @@ const balance = balances.getBalanceById(12345)
 balance.subscribeOnUpdate((updatedBalance) => console.log(updatedBalance))
 ```
 
+### Get available amount for options and margin trading
+
+The raw `balance.amount` is not always the amount you can actually trade with.
+Use `availableForOptionsAmount()` and `availableForMarginAmount()` to get the
+amount available for each trading type (both correctly account for bonuses and
+margin balances).
+
+```js
+const balances = await sdk.balances()
+
+const balance = balances.getBalances().find((balance) => balance.type === BalanceType.Real)
+
+// Amount available for options trading (blitz / turbo / binary / digital), includes bonuses
+console.log(balance.availableForOptionsAmount())
+
+// Amount available for margin trading (CFD / Forex / Crypto)
+console.log(balance.availableForMarginAmount())
+
+// Keep the available amounts up to date in real time
+balance.subscribeOnUpdate((updatedBalance) => {
+    console.log('options:', updatedBalance.availableForOptionsAmount())
+    console.log('margin:', updatedBalance.availableForMarginAmount())
+})
+```
+
 ### Get current quote for active (underlying)
 
 ```js
