@@ -757,12 +757,92 @@ type AuthResult =
     | { ok: false };
 
 /**
+ * Options for {@link OAuthMethod}.
+ */
+export interface OAuthMethodOptions {
+    /**
+     * Base URL for API requests.
+     */
+    apiBaseUrl: string;
+
+    /**
+     * Client ID.
+     */
+    clientId: number;
+
+    /**
+     * Redirect URI.
+     */
+    redirectUri: string;
+
+    /**
+     * Scope.
+     */
+    scope: string;
+
+    /**
+     * Client secret (only for server-side applications).
+     */
+    clientSecret?: string;
+
+    /**
+     * Access token.
+     */
+    accessToken?: string;
+
+    /**
+     * Refresh token (only for server-side applications).
+     * @deprecated Use tokensStorage instead.
+     */
+    refreshToken?: string;
+
+    /**
+     * Affiliate ID.
+     */
+    affId?: number;
+
+    /**
+     * Affiliate tracking info.
+     */
+    afftrack?: string;
+
+    /**
+     * Affiliate model.
+     */
+    affModel?: string;
+
+    /**
+     * Storage for OAuth tokens. Recommended: with a storage (and, on the server side,
+     * a refresh token) the SDK refreshes the access token by itself when re-authentication
+     * fails during automatic reconnection.
+     */
+    tokensStorage?: OAuthTokensStorage;
+}
+
+/**
  * Implements OAuth2 authentication flow.
  */
 export class OAuthMethod implements AuthMethod {
     private isBrowser = typeof window !== 'undefined';
     private attempts = 0;
 
+    private readonly apiBaseUrl: string;
+    private readonly clientId: number;
+    private readonly redirectUri: string;
+    private readonly scope: string;
+    private readonly clientSecret?: string;
+    private accessToken?: string;
+    private refreshToken?: string;
+    private readonly affId?: number;
+    private readonly afftrack?: string;
+    private readonly affModel?: string;
+    private readonly tokensStorage?: OAuthTokensStorage;
+
+    /**
+     * Accepts options for OAuth2 authentication.
+     * @param options - See {@link OAuthMethodOptions}.
+     */
+    public constructor(options: OAuthMethodOptions);
     /**
      * Accepts parameters for OAuth2 authentication.
      * @param apiBaseUrl - Base URL for API requests.
@@ -776,20 +856,62 @@ export class OAuthMethod implements AuthMethod {
      * @param afftrack - Affiliate tracking info (optional).
      * @param affModel - Affiliate model (optional).
      * @param tokensStorage - Storage for OAuth tokens (optional).
+     * @deprecated Use the {@link OAuthMethodOptions} object form instead: `new OAuthMethod({apiBaseUrl, clientId, ...})`.
      */
     public constructor(
-        private readonly apiBaseUrl: string,
-        private readonly clientId: number,
-        private readonly redirectUri: string,
-        private readonly scope: string,
-        private readonly clientSecret?: string,
-        private accessToken?: string,
-        private refreshToken?: string,
-        private readonly affId?: number,
-        private readonly afftrack?: string,
-        private readonly affModel?: string,
-        private readonly tokensStorage?: OAuthTokensStorage,
+        apiBaseUrl: string,
+        clientId: number,
+        redirectUri: string,
+        scope: string,
+        clientSecret?: string,
+        accessToken?: string,
+        refreshToken?: string,
+        affId?: number,
+        afftrack?: string,
+        affModel?: string,
+        tokensStorage?: OAuthTokensStorage,
+    );
+    public constructor(
+        apiBaseUrlOrOptions: string | OAuthMethodOptions,
+        clientId?: number,
+        redirectUri?: string,
+        scope?: string,
+        clientSecret?: string,
+        accessToken?: string,
+        refreshToken?: string,
+        affId?: number,
+        afftrack?: string,
+        affModel?: string,
+        tokensStorage?: OAuthTokensStorage,
     ) {
+        const options: OAuthMethodOptions = typeof apiBaseUrlOrOptions === 'string'
+            ? {
+                apiBaseUrl: apiBaseUrlOrOptions,
+                clientId: clientId!,
+                redirectUri: redirectUri!,
+                scope: scope!,
+                clientSecret,
+                accessToken,
+                refreshToken,
+                affId,
+                afftrack,
+                affModel,
+                tokensStorage,
+            }
+            : apiBaseUrlOrOptions;
+
+        this.apiBaseUrl = options.apiBaseUrl;
+        this.clientId = options.clientId;
+        this.redirectUri = options.redirectUri;
+        this.scope = options.scope;
+        this.clientSecret = options.clientSecret;
+        this.accessToken = options.accessToken;
+        this.refreshToken = options.refreshToken;
+        this.affId = options.affId;
+        this.afftrack = options.afftrack;
+        this.affModel = options.affModel;
+        this.tokensStorage = options.tokensStorage;
+
         if (!this.tokensStorage) {
             this.tokensStorage = new DummyOAuthTokensStorage();
 
@@ -823,7 +945,7 @@ export class OAuthMethod implements AuthMethod {
             return true;
         }
 
-        if (this.attempts === maxAttempts - 1) {
+        if (this.attempts >= maxAttempts - 1) {
             return false;
         }
 
@@ -1049,6 +1171,23 @@ export class AuthMethodRequestedReconnectException extends Error {
         if (options?.cause) {
             this.cause = options.cause;
         }
+
+        Object.setPrototypeOf(this, new.target.prototype);
+    }
+}
+
+/**
+ * Thrown when the server rejects authentication.
+ *
+ * If re-authentication keeps failing during automatic reconnection, the client stops
+ * reconnecting, switches to the terminal {@link WsConnectionStateEnum.AuthenticationFailed}
+ * state and rejects all new requests with this error. Create a new {@link ClientSdk}
+ * instance with fresh credentials to recover.
+ */
+export class AuthenticationFailedError extends Error {
+    constructor(message = "authentication is failed") {
+        super(message);
+        this.name = "AuthenticationFailedError";
 
         Object.setPrototypeOf(this, new.target.prototype);
     }
@@ -1474,6 +1613,14 @@ export enum WsConnectionStateEnum {
      * WebSocket is disconnected
      */
     Disconnected = 'disconnected',
+
+    /**
+     * Terminal state: the client failed to re-authenticate during automatic reconnection
+     * (e.g. the session/SSID has expired or was invalidated). The client will not reconnect
+     * automatically and all new requests are rejected. Create a new {@link ClientSdk}
+     * instance with fresh credentials to recover.
+     */
+    AuthenticationFailed = 'authenticationFailed',
 }
 
 /**
@@ -2174,6 +2321,7 @@ export class RealTimeChartDataLayer {
                     });
                     break;
                 case WsConnectionStateEnum.Disconnected:
+                case WsConnectionStateEnum.AuthenticationFailed:
                     this.connected = false;
                     this.isProcessingQueue = false;
 
@@ -2709,6 +2857,7 @@ class CandlesConsistencyManager {
                     this.processQueue().then();
                     break;
                 case WsConnectionStateEnum.Disconnected:
+                case WsConnectionStateEnum.AuthenticationFailed:
                     this.connected = false;
                     this.isProcessingQueue = false;
                     break;
@@ -7777,6 +7926,10 @@ class WsApiClient {
     private isClosing = false;
     private pendingDrainWaiters: Array<() => void> = [];
 
+    private readonly maxConsecutiveReauthFailures: number = 5;
+    private consecutiveReauthFailures: number = 0;
+    private authenticationFailed = false;
+
     constructor(apiUrl: string, platformId: number, authMethod: AuthMethod) {
         this.currentTime = new WsApiClientCurrentTime(new Date().getTime())
         this.apiUrl = apiUrl
@@ -7891,9 +8044,10 @@ class WsApiClient {
                     this.updateCurrentTime(frame.msg)
                     return
                 } else if (frame.name && frame.name === 'authenticated' && frame.msg === false) {
-                    for (const [, requestMetaData] of this.pendingRequests) {
+                    for (const [requestId, requestMetaData] of this.pendingRequests) {
                         if (requestMetaData.request instanceof Authenticate) {
                             requestMetaData.resolve(new Authenticated(false))
+                            this.finalizeRequest(requestId)
                         }
                     }
                 }
@@ -7903,13 +8057,13 @@ class WsApiClient {
                 try {
                     const isSuccessful = await this.authMethod.authenticateWsApiClient(this)
                     if (!isSuccessful) {
-                        this.disconnect()
-                        return reject(new Error('authentication is failed'))
+                        this.cleanUpFailedConnection()
+                        return reject(new AuthenticationFailedError())
                     }
 
                     const setOptionsResponse = await this.doRequest<Result>(new SetOptions(true))
                     if (!setOptionsResponse.success) {
-                        this.disconnect()
+                        this.cleanUpFailedConnection()
                         return reject(new Error('setOptions operation is failed'))
                     }
 
@@ -7918,6 +8072,7 @@ class WsApiClient {
                         const response = await this.doRequest<FeaturesV2>(new CallGetFeaturesV2());
                         for (const feature of response.features) {
                             if (feature.name === 'client-sdk' && feature.status === 'disabled') {
+                                this.cleanUpFailedConnection()
                                 return reject(new Error('platform does not support'))
                             }
                         }
@@ -7941,11 +8096,18 @@ class WsApiClient {
 
                     return resolve()
                 } catch (e) {
-                    this.clear()
+                    // Subscriptions are intentionally kept so they can be restored
+                    // by resubscribeAll() after a successful reconnect attempt.
+                    this.cleanUpFailedConnection()
                     return reject(e)
                 }
             }
         })
+    }
+
+    private cleanUpFailedConnection() {
+        this.stopTimeSyncMonitoring()
+        this.forceCloseConnection()
     }
 
     private createRequestError(status: number, details: any, request: Request<any>): Error {
@@ -8049,11 +8211,12 @@ class WsApiClient {
 
 
     reconnect() {
-        if (this.disconnecting || this.reconnecting) {
+        if (this.disconnecting || this.reconnecting || this.authenticationFailed) {
             return;
         }
 
         this.reconnecting = true;
+        this.consecutiveReauthFailures = 0;
         this.onConnectionStateChanged?.(WsConnectionStateEnum.Disconnected)
 
         const attemptReconnect = async () => {
@@ -8066,13 +8229,37 @@ class WsApiClient {
                 this.resubscribeAll();
                 this.reconnectTimeout = this.initialReconnectTimeout;
                 this.reconnecting = false;
-            }).catch(() => {
+            }).catch((err) => {
+                if (err instanceof AuthenticationFailedError) {
+                    this.consecutiveReauthFailures += 1;
+                    if (this.consecutiveReauthFailures >= this.maxConsecutiveReauthFailures) {
+                        this.terminateOnAuthenticationFailure();
+                        return;
+                    }
+                } else {
+                    this.consecutiveReauthFailures = 0;
+                }
+
                 this.reconnectTimeout = Math.min(this.reconnectTimeout * this.reconnectMultiplier, this.maxReconnectTimeout) + this.getJitter();
                 this.reconnectTimeoutHandle = setTimeout(attemptReconnect, this.reconnectTimeout);
             })
         };
 
         this.reconnectTimeoutHandle = setTimeout(attemptReconnect, this.reconnectTimeout);
+    }
+
+    private terminateOnAuthenticationFailure() {
+        this.authenticationFailed = true;
+        this.reconnecting = false;
+
+        if (this.reconnectTimeoutHandle) {
+            clearTimeout(this.reconnectTimeoutHandle);
+            this.reconnectTimeoutHandle = undefined;
+        }
+
+        this.stopTimeSyncMonitoring();
+        this.forceCloseConnection();
+        this.onConnectionStateChanged?.(WsConnectionStateEnum.AuthenticationFailed);
     }
 
     getJitter() {
@@ -8085,6 +8272,12 @@ class WsApiClient {
     }
 
     doRequest<T>(request: Request<T>): Promise<T> {
+        if (this.authenticationFailed) {
+            return Promise.reject(new AuthenticationFailedError(
+                'WebSocket client is terminated: re-authentication failed; session credentials are no longer accepted. Create a new ClientSdk instance with fresh credentials.'
+            ));
+        }
+
         if (this.isClosing || this.disconnecting) {
             return Promise.reject(new Error('WebSocket is closing; new requests are rejected'));
         }
