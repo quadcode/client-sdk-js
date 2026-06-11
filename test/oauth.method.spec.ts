@@ -35,13 +35,15 @@ describe("OAuthMethod constructor", () => {
 
     it("options object form is equivalent to the positional form", () => {
         const tokensStorage = new InMemoryTokensStorage();
+        // clientSecret is forbidden in browser environments, where this suite also runs
+        const clientSecret = typeof window !== "undefined" ? undefined : "secret";
 
         const positional = new OAuthMethod(
             "https://api.trade.example.com",
             42,
             "https://your.app/callback",
             "full offline_access",
-            "secret",
+            clientSecret,
             "access-token",
             "refresh-token",
             7,
@@ -55,7 +57,7 @@ describe("OAuthMethod constructor", () => {
             clientId: 42,
             redirectUri: "https://your.app/callback",
             scope: "full offline_access",
-            clientSecret: "secret",
+            clientSecret,
             accessToken: "access-token",
             refreshToken: "refresh-token",
             affId: 7,
@@ -86,7 +88,11 @@ describe("OAuthMethod constructor", () => {
     });
 
     it("rejects client secret in browser for both forms", () => {
-        vi.stubGlobal("window", {});
+        // In a real browser `window` already exists (and cannot be redefined);
+        // in Node it has to be stubbed to simulate the browser environment.
+        if (typeof window === "undefined") {
+            vi.stubGlobal("window", {});
+        }
 
         expect(() => new OAuthMethod({
             apiBaseUrl: "https://api.trade.example.com",
