@@ -57,12 +57,12 @@ export default defineConfig({
 import {ClientSdk, OAuthMethod} from '@quadcode-tech/client-sdk-js'
 
 async function startLogin() {
-	const oauth = new OAuthMethod(
-		'https://api.trade.example.com',          // local: use the same prod host (DO NOT use localhost) — this is the OAuth/Token server; redirects are handled by the provider, not via Vite proxy
-		CLIENT_ID,                                // your client ID (you can request CLIENT_ID and CLIENT_SECRET by creating an issue on GitHub)
-		'https://your.app/callback',              // redirect URI ( local: http://localhost:5173/callback )
-		'full'                                    // scope (e.g. 'full' or 'full offline_access')
-	)
+	const oauth = new OAuthMethod({
+		apiBaseUrl: 'https://api.trade.example.com', // local: use the same prod host (DO NOT use localhost) — this is the OAuth/Token server; redirects are handled by the provider, not via Vite proxy
+		clientId: CLIENT_ID,                         // your client ID (you can request CLIENT_ID and CLIENT_SECRET by creating an issue on GitHub)
+		redirectUri: 'https://your.app/callback',    // redirect URI ( local: http://localhost:5173/callback )
+		scope: 'full'                                // scope (e.g. 'full' or 'full offline_access')
+	})
 	const {url, codeVerifier} = await oauth.createAuthorizationUrl()
 	sessionStorage.setItem('pkce_verifier', codeVerifier)
 	window.location.href = url
@@ -97,19 +97,14 @@ async function handleCallback() {
 	if (!code) throw new Error('Missing ?code in callback URL');
 	if (!codeVerifier) throw new Error('Missing PKCE code_verifier');
 
-	const oauth = new OAuthMethod(
-		'https://api.trade.example.com', // local (dev via Vite proxy from the browser): http://localhost:5173/proxy/api
-		CLIENT_ID,
-		'https://your.app/callback',     // local: http://localhost:5173/callback
-		'full',
-		undefined,        // no clientSecret in browser
-		undefined,        // accessToken is managed by tokensStorage
-		undefined,        // refreshToken is managed by tokensStorage
-		undefined,
-		undefined,
-		undefined,
-		tokensStorage     // custom tokens storage to persist tokens in memory (or use localStorage/sessionStorage)
-	);
+	const oauth = new OAuthMethod({
+		apiBaseUrl: 'https://api.trade.example.com', // local (dev via Vite proxy from the browser): http://localhost:5173/proxy/api
+		clientId: CLIENT_ID,
+		redirectUri: 'https://your.app/callback',    // local: http://localhost:5173/callback
+		scope: 'full',
+		// NEVER put clientSecret in the browser; access/refresh tokens are managed by tokensStorage
+		tokensStorage // custom tokens storage to persist tokens in memory (or use localStorage/sessionStorage)
+	});
 
 	await oauth.issueAccessTokenWithAuthCode(code, codeVerifier);
 
@@ -130,12 +125,12 @@ async function handleCallback() {
 import {ClientSdk, OAuthMethod} from '@quadcode-tech/client-sdk-js'
 
 async function startLogin() {
-	const oauth = new OAuthMethod(
-		'https://api.trade.example.com',          // local: use the same prod host (DO NOT use localhost) — this is the OAuth/Token server; redirects are handled by the provider, not via Vite proxy
-		CLIENT_ID,                                // your client ID (you can request CLIENT_ID and CLIENT_SECRET by creating an issue on GitHub)
-		'https://your.app/callback',              // redirect URI
-		'full offline_access'                     // scope (e.g. 'full' or 'full offline_access')
-	)
+	const oauth = new OAuthMethod({
+		apiBaseUrl: 'https://api.trade.example.com', // local: use the same prod host (DO NOT use localhost) — this is the OAuth/Token server; redirects are handled by the provider, not via Vite proxy
+		clientId: CLIENT_ID,                         // your client ID (you can request CLIENT_ID and CLIENT_SECRET by creating an issue on GitHub)
+		redirectUri: 'https://your.app/callback',    // redirect URI
+		scope: 'full offline_access'                 // scope (e.g. 'full' or 'full offline_access')
+	})
 	const {url, codeVerifier} = await oauth.createAuthorizationUrl()
 	sessionStorage.setItem('pkce_verifier', codeVerifier)
 	window.location.href = url
@@ -155,19 +150,14 @@ app.post('/api/oauth/exchange', async (req, res) => {
 	const {code, codeVerifier} = req.body
 	if (!code || !codeVerifier) return res.status(400).json({error: 'Bad request'})
 
-	const oauth = new OAuthMethod(
-		'https://api.trade.example.com',
-		Number(process.env.CLIENT_ID),
-		'https://your.app/callback',
-		'full offline_access',
-		process.env.CLIENT_SECRET,                // SECRET: server-side only
-		undefined,                                // accessToken is managed by tokensStorage
-		undefined,                                // refreshToken is managed by tokensStorage
-		undefined,
-		undefined,
-		undefined,
-		tokensStorage                             // server-side tokens storage (DB/kv bound to user/session)
-	)
+	const oauth = new OAuthMethod({
+		apiBaseUrl: 'https://api.trade.example.com',
+		clientId: Number(process.env.CLIENT_ID),
+		redirectUri: 'https://your.app/callback',
+		scope: 'full offline_access',
+		clientSecret: process.env.CLIENT_SECRET, // SECRET: server-side only
+		tokensStorage                            // server-side tokens storage (DB/kv bound to user/session); manages access/refresh tokens
+	})
 
 	const {accessToken, refreshToken, expiresIn} = await oauth.issueAccessTokenWithAuthCode(code, codeVerifier)
 
@@ -180,19 +170,14 @@ app.post('/api/oauth/exchange', async (req, res) => {
 
 // Optional refresh endpoint (server uses stored refresh token)
 app.post('/api/oauth/refresh', async (req, res) => {
-	const oauth = new OAuthMethod(
-		'https://api.trade.example.com',
-		Number(process.env.CLIENT_ID),
-		'https://your.app/callback',
-		'full offline_access',
-		process.env.CLIENT_SECRET,
-		undefined,                                // accessToken is managed by tokensStorage
-		undefined,                                // refreshToken is managed by tokensStorage
-		undefined,
-		undefined,
-		undefined,
-		tokensStorage                             // server-side tokens storage (DB/kv bound to user/session)
-	)
+	const oauth = new OAuthMethod({
+		apiBaseUrl: 'https://api.trade.example.com',
+		clientId: Number(process.env.CLIENT_ID),
+		redirectUri: 'https://your.app/callback',
+		scope: 'full offline_access',
+		clientSecret: process.env.CLIENT_SECRET,
+		tokensStorage                            // server-side tokens storage (DB/kv bound to user/session); manages access/refresh tokens
+	})
 
 	const {accessToken, expiresIn} = await oauth.refreshAccessToken()
 
@@ -222,14 +207,13 @@ export async function handleCallbackAndStart() {
 	const sdk = await ClientSdk.create(
 		'wss://ws.trade.example.com/echo/websocket',  // local (dev via Vite proxy): ws://localhost:5173/proxy/ws/echo/websocket
 		82,
-		new OAuthMethod(
-			'https://api.trade.example.com',   // local (dev via Vite proxy from the browser): http://localhost:5173/proxy/api
-			CLIENT_ID,
-			'https://your.app/callback',       // local: http://localhost:5173/callback
-			'full offline_access',
-			undefined,         // NEVER put clientSecret in the browser
-			accessToken        // no refresh token in the browser
-		)
+		new OAuthMethod({
+			apiBaseUrl: 'https://api.trade.example.com', // local (dev via Vite proxy from the browser): http://localhost:5173/proxy/api
+			clientId: CLIENT_ID,
+			redirectUri: 'https://your.app/callback',    // local: http://localhost:5173/callback
+			scope: 'full offline_access',
+			accessToken // NEVER put clientSecret or a refresh token in the browser
+		})
 	)
 
 	// use SDK
@@ -246,14 +230,13 @@ The `ClientSdk.create` method accepts an optional fourth parameter for additiona
 const sdk = await ClientSdk.create(
 	'wss://ws.trade.example.com/echo/websocket',
 	82,
-	new OAuthMethod(
-		'https://api.trade.example.com',
-		CLIENT_ID,
-		'https://your.app/callback',
-		'full offline_access',
-		undefined,         // NEVER put clientSecret in the browser
-		accessToken        // no refresh token in the browser
-	),
+	new OAuthMethod({
+		apiBaseUrl: 'https://api.trade.example.com',
+		clientId: CLIENT_ID,
+		redirectUri: 'https://your.app/callback',
+		scope: 'full offline_access',
+		accessToken // NEVER put clientSecret or a refresh token in the browser
+	}),
 	{
 		// Optional: Override the default static files host
 		// Default: 'https://static.cdnroute.io/files'
@@ -264,6 +247,62 @@ const sdk = await ClientSdk.create(
 		host: 'https://trade.example.com'
 	}
 )
+```
+
+### Monitor connection state and recover from authentication failures
+
+The SDK reconnects automatically when the WebSocket connection drops. On every reconnect it
+re-authenticates with the credentials it was created with. If the server keeps rejecting
+authentication (for example, the session has expired or was invalidated), the SDK retries
+several times and then switches to the terminal `AuthenticationFailed` state. In this state
+the client will not reconnect anymore and every request is rejected with
+`AuthenticationFailedError`.
+
+**The recommended way to avoid this is `OAuthMethod` with a `tokensStorage`** (and, on the
+server side, a refresh token). When re-authentication fails on reconnect, the SDK refreshes
+the access token through the storage by itself and keeps the connection alive — without any
+extra code in your application:
+
+```js
+import {ClientSdk, OAuthMethod} from '@quadcode-tech/client-sdk-js'
+
+const sdk = await ClientSdk.create(
+	'wss://ws.trade.example.com/echo/websocket',
+	82,
+	new OAuthMethod({
+		apiBaseUrl: 'https://api.trade.example.com',
+		clientId: Number(process.env.CLIENT_ID),
+		redirectUri: 'https://your.app/callback',
+		scope: 'full offline_access',
+		clientSecret: process.env.CLIENT_SECRET, // SECRET: server-side only
+		tokensStorage                            // server-side tokens storage (DB/kv bound to user/session); manages access/refresh tokens
+	})
+)
+```
+
+`SsidAuthMethod` cannot refresh anything: an SSID is bound to a platform session, and once that
+session expires or is invalidated, the existing `ClientSdk` instance cannot recover on its own.
+If you authenticate with an SSID, subscribe to connection state changes and create a new
+instance with a freshly obtained SSID when the terminal state is reached:
+
+```js
+import {ClientSdk, SsidAuthMethod, WsConnectionStateEnum} from '@quadcode-tech/client-sdk-js'
+
+const wsConnectionState = await sdk.wsConnectionState()
+
+wsConnectionState.subscribeOnStateChanged(async (state) => {
+	if (state === WsConnectionStateEnum.AuthenticationFailed) {
+		// The session is no longer valid. Dispose of the old instance and
+		// create a new one with a freshly obtained SSID.
+		await sdk.shutdown()
+
+		sdk = await ClientSdk.create(
+			'wss://ws.trade.example.com/echo/websocket',
+			82,
+			new SsidAuthMethod(await obtainFreshSsid())
+		)
+	}
+})
 ```
 
 ### Get user's first real balance
