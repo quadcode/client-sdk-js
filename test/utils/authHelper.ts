@@ -5,19 +5,15 @@ import {getTokensForUser, setTokensForUser} from "./tokenSecrets.js";
 export function getOAuthMethod(user: User) {
     const options = IS_BROWSER ? {host: BASE_URL} : undefined;
     const clientSecret = IS_BROWSER ? undefined : CLIENT_SECRET;
-    const oauth = new OAuthMethod(
-        API_URL,
-        CLIENT_ID,
-        'http://localhost:5173/#/oauth/callback',
-        'full offline_access',
+
+    const oauth = new OAuthMethod({
+        apiBaseUrl: API_URL,
+        clientId: CLIENT_ID,
+        redirectUri: "http://localhost:5173/#/oauth/callback",
+        scope: "full offline_access",
         clientSecret,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        SecretsTokensStorage.for(user),
-    );
+        tokensStorage: SecretsTokensStorage.for(user)
+    });
     return {oauth, options};
 }
 
