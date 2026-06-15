@@ -135,7 +135,7 @@ describe('Margin Forex/CFD/Crypto', () => {
         it('should cancel stop price order', async () => {
             const instrument = await getUnderlyingInstrument();
             const currentQuoteAsk = (await getCurrentQuote(quotes, instrument.activeId)).ask;
-            const marginOrder = await openStopPriceOrder(instrument, MarginDirection.Buy, currentQuoteAsk! + 0.1);
+            const marginOrder = await openStopPriceOrder(instrument, MarginDirection.Buy, currentQuoteAsk! + 1.1);
             const order = await positionsHelper.waitForOrder(order => order.id === marginOrder.id);
             await order.cancel();
             expect(await waitForCondition(() => order.status === 'canceled', 20000),
@@ -152,7 +152,7 @@ describe('Margin Forex/CFD/Crypto', () => {
         it('should cancel limit price order', async () => {
             const instrument = await getUnderlyingInstrument();
             const currentQuoteAsk = (await getCurrentQuote(quotes, instrument.activeId)).ask;
-            const marginOrder = await openLimitPriceOrder(instrument, MarginDirection.Sell, currentQuoteAsk! + 0.1);
+            const marginOrder = await openLimitPriceOrder(instrument, MarginDirection.Sell, currentQuoteAsk! + 1.1);
             const order = await positionsHelper.waitForOrder(order => order.id === marginOrder.id);
             await order.cancel();
             expect(await waitForCondition(() => order.status === 'canceled', 20000),
@@ -266,7 +266,8 @@ describe('Margin Forex/CFD/Crypto', () => {
         it('should cancel limit price order', async () => {
             const instrument = await getUnderlyingInstrument();
             const currentQuoteAsk = (await getCurrentQuote(quotes, instrument.activeId)).ask;
-            const marginOrder = await openLimitPriceOrder(instrument, MarginDirection.Sell, currentQuoteAsk! + 0.1);
+            const marginOrder = await openLimitPriceOrder(instrument, MarginDirection.Sell, currentQuoteAsk! + 1.1);
+            expect(marginOrder.id, "Margin order id must be present").to.not.eq(undefined);
             const order = await positionsHelper.waitForOrder(order => order.id === marginOrder.id);
             await order.cancel();
             expect(await waitForCondition(() => order.status === 'canceled', 20000),
@@ -383,7 +384,7 @@ describe('Margin Forex/CFD/Crypto', () => {
         it('should cancel limit price order', async () => {
             const instrument = await getUnderlyingInstrument();
             const currentQuoteAsk = (await getCurrentQuote(quotes, instrument.activeId)).ask;
-            const marginOrder = await openLimitPriceOrder(instrument, MarginDirection.Sell, currentQuoteAsk! + 0.1);
+            const marginOrder = await openLimitPriceOrder(instrument, MarginDirection.Sell, currentQuoteAsk! + 1.1);
             const order = await positionsHelper.waitForOrder(order => order.id === marginOrder.id);
             await order.cancel();
             expect(await waitForCondition(() => order.status === 'canceled', 20000),
@@ -397,6 +398,6 @@ describe('Margin Forex/CFD/Crypto', () => {
             await position.sell();
             expect(await waitForCondition(() => position.status === "closed", 20000), "Position didn't close").to.eq(true)
             expect(position.closeProfit, "Close profit must be present after sell").to.not.eq(undefined)
-        });
-    });
-});
+        })
+    })
+})
