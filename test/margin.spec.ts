@@ -138,7 +138,8 @@ describe('Margin Forex/CFD/Crypto', () => {
             const marginOrder = await openStopPriceOrder(instrument, MarginDirection.Buy, currentQuoteAsk! + 0.1);
             const order = await positionsHelper.waitForOrder(order => order.id === marginOrder.id);
             await order.cancel();
-            expect(await waitForCondition(() => order.status === 'canceled', 20000), "Invalid order status, must be canceled").eq(true);
+            expect(await waitForCondition(() => order.status === 'canceled', 20000),
+                `Invalid order status, must be canceled, but was ${order.status}`).eq(true);
         });
 
         it('should open limit price order', async () => {
@@ -154,7 +155,8 @@ describe('Margin Forex/CFD/Crypto', () => {
             const marginOrder = await openLimitPriceOrder(instrument, MarginDirection.Sell, currentQuoteAsk! + 0.1);
             const order = await positionsHelper.waitForOrder(order => order.id === marginOrder.id);
             await order.cancel();
-            expect(await waitForCondition(() => order.status === 'canceled', 20000), "Invalid order status, must be canceled").eq(true);
+            expect(await waitForCondition(() => order.status === 'canceled', 20000),
+                `Invalid order status, must be canceled, but was ${order.status}`).eq(true);
         });
 
         it('should close order', async () => {
@@ -250,7 +252,8 @@ describe('Margin Forex/CFD/Crypto', () => {
             const marginOrder = await openStopPriceOrder(instrument, MarginDirection.Buy, currentQuoteAsk! + 0.1);
             const order = await positionsHelper.waitForOrder(order => order.id === marginOrder.id);
             await order.cancel()
-            expect(await waitForCondition(() => order.status === 'canceled', 20000), "Invalid order status, must be canceled").eq(true);
+            expect(await waitForCondition(() => order.status === 'canceled', 20000),
+                `Invalid order status, must be canceled, but was ${order.status}`).eq(true);
         });
 
         it('should open limit price order', async () => {
@@ -266,7 +269,8 @@ describe('Margin Forex/CFD/Crypto', () => {
             const marginOrder = await openLimitPriceOrder(instrument, MarginDirection.Sell, currentQuoteAsk! + 0.1);
             const order = await positionsHelper.waitForOrder(order => order.id === marginOrder.id);
             await order.cancel();
-            expect(await waitForCondition(() => order.status === 'canceled', 20000), "Invalid order status, must be canceled").eq(true);
+            expect(await waitForCondition(() => order.status === 'canceled', 20000),
+                `Invalid order status, must be canceled, but was ${order.status}`).eq(true);
         });
 
         it('should close order', async () => {
@@ -365,7 +369,8 @@ describe('Margin Forex/CFD/Crypto', () => {
             const marginOrder = await openStopPriceOrder(instrument, MarginDirection.Buy, currentQuoteAsk! + 0.1);
             const order = await positionsHelper.waitForOrder(order => order.id === marginOrder.id);
             await order.cancel()
-            expect(await waitForCondition(() => order.status === 'canceled', 20000), "Invalid order status, must be canceled").eq(true);
+            expect(await waitForCondition(() => order.status === 'canceled', 20000),
+                `Invalid order status, must be canceled, but was ${order.status}`).eq(true);
         });
 
         it('should open limit price order', async () => {
@@ -381,7 +386,8 @@ describe('Margin Forex/CFD/Crypto', () => {
             const marginOrder = await openLimitPriceOrder(instrument, MarginDirection.Sell, currentQuoteAsk! + 0.1);
             const order = await positionsHelper.waitForOrder(order => order.id === marginOrder.id);
             await order.cancel();
-            expect(await waitForCondition(() => order.status === 'canceled', 20000), "Invalid order status, must be canceled").eq(true);
+            expect(await waitForCondition(() => order.status === 'canceled', 20000),
+                `Invalid order status, must be canceled, but was ${order.status}`).eq(true);
         });
 
         it('should close order', async () => {
