@@ -381,7 +381,7 @@ const blitzOptions = await sdk.blitzOptions()
 
 const blitzOptionsActives = blitzOptions.getActives()
 
-const blitzOptionsFirstAvailableActive = blitzOptionsActives.find((active) => active.canBeBoughtAt(new Date()))
+const blitzOptionsFirstAvailableActive = blitzOptionsActives.find((active) => active.canBeBoughtAt(sdk.currentTime()))
 
 const callOption = await blitzOptions.buy(
 	blitzOptionsFirstAvailableActive,
@@ -455,13 +455,13 @@ console.log(position.sellProfit)
 ```js
 const turboOptions = await sdk.turboOptions()
 
-const actives = turboOptions.getActives().filter((active) => active.canBeBoughtAt(new Date()))
+const actives = turboOptions.getActives().filter((active) => active.canBeBoughtAt(sdk.currentTime()))
 
 const firstActive = actives[0]
 
 const firstActiveInstruments = await firstActive.instruments()
 
-const firstActiveAvailableInstruments = firstActiveInstruments.getAvailableForBuyAt(new Date())
+const firstActiveAvailableInstruments = firstActiveInstruments.getAvailableForBuyAt(sdk.currentTime())
 
 const firstInstrument = firstActiveAvailableInstruments[0]
 
@@ -492,13 +492,13 @@ positions.subscribeOnUpdatePosition((position) => {
 ```js
 const binaryOptions = await sdk.binaryOptions()
 
-const actives = binaryOptions.getActives().filter((active) => active.canBeBoughtAt(new Date()))
+const actives = binaryOptions.getActives().filter((active) => active.canBeBoughtAt(sdk.currentTime()))
 
 const firstActive = actives[0]
 
 const firstActiveInstruments = await firstActive.instruments()
 
-const firstActiveAvailableInstruments = firstActiveInstruments.getAvailableForBuyAt(new Date())
+const firstActiveAvailableInstruments = firstActiveInstruments.getAvailableForBuyAt(sdk.currentTime())
 
 const firstInstrument = firstActiveAvailableInstruments[0]
 const purchaseEndTime = firstInstrument.purchaseEndTime();
@@ -521,7 +521,7 @@ const firstActive = actives[0]
 
 const firstActiveInstruments = await firstActive.instruments()
 
-const firstActiveAvailableInstruments = firstActiveInstruments.getAvailableForBuyAt(new Date())
+const firstActiveAvailableInstruments = firstActiveInstruments.getAvailableForBuyAt(sdk.currentTime())
 
 const firstInstrument = firstActiveAvailableInstruments[0]
 
@@ -551,7 +551,7 @@ binaryOptionsPositions.subscribeOnUpdatePosition((position) => {
 ```js
 const digitalOptions = await sdk.digitalOptions()
 
-const underlyings = digitalOptions.getUnderlyingsAvailableForTradingAt(new Date())
+const underlyings = digitalOptions.getUnderlyingsAvailableForTradingAt(sdk.currentTime())
 
 const firstUnderlying = underlyings.find((u) => {
 	return u.activeId === 1
@@ -559,7 +559,7 @@ const firstUnderlying = underlyings.find((u) => {
 
 const firstUnderlyingInstruments = await firstUnderlying.instruments()
 
-const firstUnderlyingAvailableInstruments = firstUnderlyingInstruments.getAvailableForBuyAt(new Date())
+const firstUnderlyingAvailableInstruments = firstUnderlyingInstruments.getAvailableForBuyAt(sdk.currentTime())
 
 const firstInstrument = firstUnderlyingAvailableInstruments[0]
 
@@ -610,7 +610,7 @@ console.log(active.name) // Returns translated name
 ```js
 const marginCfd = await sdk.marginCfd() // or marginForex or marginCrypto
 
-const underlyings = marginCfd.getUnderlyingsAvailableForTradingAt(new Date())
+const underlyings = marginCfd.getUnderlyingsAvailableForTradingAt(sdk.currentTime())
 
 const firstUnderlying = underlyings.find((u) => {
 	return u.activeId === 1
@@ -618,7 +618,7 @@ const firstUnderlying = underlyings.find((u) => {
 
 const firstUnderlyingInstruments = await firstUnderlying.instruments()
 
-const firstUnderlyingAvailableInstruments = firstUnderlyingInstruments.getAvailableForBuyAt(new Date())
+const firstUnderlyingAvailableInstruments = firstUnderlyingInstruments.getAvailableForBuyAt(sdk.currentTime())
 
 const firstInstrument = firstUnderlyingAvailableInstruments[0]
 
@@ -627,6 +627,80 @@ console.log(callOption)
 
 const putOption = await marginCfd.buy(firstInstrument, Margin.Sell, 1, balance)
 console.log(putOption)
+```
+
+### Calculate required margin and pip value
+
+Use `calculateMargin()` to estimate the required margin and pip (point) value for a margin trade before
+opening it. It returns a refreshable object that recomputes automatically whenever the underlying quote,
+the exchange rate or the balance equity changes.
+
+```js
+const marginCfd = await sdk.marginCfd() // or marginCrypto
+
+const underlyings = marginCfd.getUnderlyingsAvailableForTradingAt(sdk.currentTime())
+const instruments = await underlyings[0].instruments()
+const instrument = instruments.getAvailableForBuyAt(sdk.currentTime())[0]
+
+// `count` is a quantity multiplied by the instrument lot size, the same value you pass to buy().
+// Use instrument.lotSize (Forex = 100000, CFD/Crypto = 1) instead of hard-coding the lot size.
+const count = instrument.minQty * instrument.lotSize
+
+// Direction is optional - omit it to price at the mid quote. Pass a pending price as the
+// 5th argument to price a pending (stop/limit) order.
+const calculation = await marginCfd.calculateMargin(instrument, count, balance, Margin.Buy)
+
+// margin and pipValue are expressed in the balance (account) currency. They are `undefined`
+// until the first quote / exchange-rate tick arrives, so read them via subscribeOnUpdate.
+calculation.subscribeOnUpdate((c) => {
+	console.log('margin:', c.margin, 'pip value:', c.pipValue)
+})
+```
+
+### Calculate margin for a Forex instrument
+
+Forex works the same way. `instrument.lotSize` returns 100000 for Forex (and 1 for CFD/Crypto), so the
+`count` expression is identical.
+
+```js
+const marginForex = await sdk.marginForex()
+
+const underlyings = marginForex.getUnderlyingsAvailableForTradingAt(sdk.currentTime())
+const instruments = await underlyings[0].instruments()
+const instrument = instruments.getAvailableForBuyAt(sdk.currentTime())[0]
+
+const count = instrument.minQty * instrument.lotSize
+
+const calculation = await marginForex.calculateMargin(instrument, count, balance, Margin.Buy)
+
+calculation.subscribeOnUpdate((c) => {
+	console.log('margin:', c.margin, 'pip value:', c.pipValue)
+})
+```
+
+### Calculate take-profit / stop-loss PnL
+
+`pnlForTPSL(openPrice, tpslPrice)` returns the PnL (in the account currency) the position would realise
+if the price reached the given trigger price. Both arguments are absolute prices: `openPrice` is the
+position open price and `tpslPrice` is the take-profit or stop-loss level. It relies on the live pip
+value, so call it from `subscribeOnUpdate` - it returns `undefined` until the first tick.
+
+```js
+const calculation = await marginForex.calculateMargin(instrument, count, balance, Margin.Buy)
+
+calculation.subscribeOnUpdate((c) => {
+	const openPrice = 1.2345 // position open (underlying) price
+
+	// Take-profit / stop-loss trigger prices. These are absolute prices, not deltas;
+	// here they are 0.0010 (10 pips on a 4-decimal pair) above / below the open price.
+	const takeProfitPrice = openPrice + 0.0010
+	const stopLossPrice = openPrice - 0.0010
+
+	// For a Buy, a take-profit above the open price yields a positive PnL,
+	// and a stop-loss below it yields a negative PnL (reversed for a Sell).
+	console.log('take-profit PnL:', c.pnlForTPSL(openPrice, takeProfitPrice))
+	console.log('stop-loss PnL:', c.pnlForTPSL(openPrice, stopLossPrice))
+})
 ```
 
 ---
