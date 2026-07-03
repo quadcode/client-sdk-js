@@ -10850,7 +10850,7 @@ class SubscribeQuoteGeneratedV2 implements SubscribeRequest<QuoteGeneratedV2> {
     }
 
     eventMicroserviceName() {
-        return 'quotes-ws'
+        return 'quotes'
     }
 
     eventName() {
