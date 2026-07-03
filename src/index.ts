@@ -7864,7 +7864,7 @@ class HttpApiClient {
             'Content-Type': 'application/json',
         }
         if (!this.isBrowser) {
-            headers['User-Agent'] = 'quadcode-client-sdk-js/1.3.23'
+            headers['User-Agent'] = 'quadcode-client-sdk-js/1.3.24'
         }
         const requestOptions = {
             method: request.method(),
@@ -7979,7 +7979,7 @@ class WsApiClient {
                     this.connection = new WebSocket(this.apiUrl, undefined, {
                         headers: {
                             'cookie': `platform=${this.platformId}`,
-                            'user-agent': 'quadcode-client-sdk-js/1.3.23'
+                            'user-agent': 'quadcode-client-sdk-js/1.3.24'
                         }
                     });
                 } else {
