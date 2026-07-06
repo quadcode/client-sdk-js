@@ -7118,7 +7118,9 @@ export class MarginForex {
     /**
      * Builds a refreshable margin calculation for the given instrument and balance.
      * @param instrument - The margin instrument to calculate for.
-     * @param count - Trade size (the same Count value passed to `buy`: already lot-multiplied).
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   the same already-lot-multiplied value you pass to buy(). A bare quantity makes the Forex margin
+     *   come out 100000x too small (e.g. 0.2 instead of 20000).
      * @param balance - Balance defining the account currency.
      * @param direction - Trade direction; if omitted, the mid price is used.
      * @param pendingPrice - Price for pending (stop/limit) orders; overrides the direction price.
@@ -7137,7 +7139,9 @@ export class MarginForex {
      * Makes request for buy margin active.
      * @param instrument - The instrument for which the option is purchased.
      * @param direction - Direction of price change.
-     * @param count
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   NOT a bare quantity; the same value accepted by calculateMargin(). A bare quantity makes a Forex
+     *   trade 100000x smaller than intended.
      * @param balance - The balance from which the initial investment will be written off and upon successful closing of the position, profit will be credited to this balance.
      * @param stopLoss
      * @param takeProfit
@@ -7170,7 +7174,9 @@ export class MarginForex {
      * If the stop order price is on the opposite side of the current market price, it will be converted to a limit order.
      * @param instrument
      * @param direction
-     * @param count
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   NOT a bare quantity; the same value accepted by calculateMargin(). A bare quantity makes a Forex
+     *   trade 100000x smaller than intended.
      * @param balance
      * @param stopPrice
      * @param takeProfit
@@ -7206,7 +7212,9 @@ export class MarginForex {
      * If the limit order price is on the opposite side of the current market price, it will be converted to a stop order.
      * @param instrument
      * @param direction
-     * @param count
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   NOT a bare quantity; the same value accepted by calculateMargin(). A bare quantity makes a Forex
+     *   trade 100000x smaller than intended.
      * @param balance
      * @param limitPrice
      * @param stopLoss
@@ -7334,7 +7342,9 @@ export class MarginCfd {
     /**
      * Builds a refreshable margin calculation for the given instrument and balance.
      * @param instrument - The margin instrument to calculate for.
-     * @param count - Trade size (the same Count value passed to `buy`: already lot-multiplied).
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   the same already-lot-multiplied value you pass to buy(). A bare quantity makes the Forex margin
+     *   come out 100000x too small (e.g. 0.2 instead of 20000).
      * @param balance - Balance defining the account currency.
      * @param direction - Trade direction; if omitted, the mid price is used.
      * @param pendingPrice - Price for pending (stop/limit) orders; overrides the direction price.
@@ -7353,7 +7363,9 @@ export class MarginCfd {
      * Makes request for buy margin active.
      * @param instrument - The instrument for which the option is purchased.
      * @param direction - Direction of price change.
-     * @param count
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   NOT a bare quantity; the same value accepted by calculateMargin(). A bare quantity makes a Forex
+     *   trade 100000x smaller than intended.
      * @param balance - The balance from which the initial investment will be written off and upon successful closing of the position, profit will be credited to this balance.
      * @param takeProfit
      * @param stopLoss
@@ -7386,7 +7398,9 @@ export class MarginCfd {
      * If the stop order price is on the opposite side of the current market price, it will be converted to a limit order.
      * @param instrument
      * @param direction
-     * @param count
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   NOT a bare quantity; the same value accepted by calculateMargin(). A bare quantity makes a Forex
+     *   trade 100000x smaller than intended.
      * @param balance
      * @param stopPrice
      * @param takeProfit
@@ -7422,7 +7436,9 @@ export class MarginCfd {
      * If the limit order price is on the opposite side of the current market price, it will be converted to a stop order.
      * @param instrument
      * @param direction
-     * @param count
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   NOT a bare quantity; the same value accepted by calculateMargin(). A bare quantity makes a Forex
+     *   trade 100000x smaller than intended.
      * @param balance
      * @param limitPrice
      * @param stopLoss
@@ -7550,7 +7566,9 @@ export class MarginCrypto {
     /**
      * Builds a refreshable margin calculation for the given instrument and balance.
      * @param instrument - The margin instrument to calculate for.
-     * @param count - Trade size (the same Count value passed to `buy`: already lot-multiplied).
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   the same already-lot-multiplied value you pass to buy(). A bare quantity makes the Forex margin
+     *   come out 100000x too small (e.g. 0.2 instead of 20000).
      * @param balance - Balance defining the account currency.
      * @param direction - Trade direction; if omitted, the mid price is used.
      * @param pendingPrice - Price for pending (stop/limit) orders; overrides the direction price.
@@ -7569,7 +7587,9 @@ export class MarginCrypto {
      * Makes request for buy margin active.
      * @param instrument - The instrument for which the option is purchased.
      * @param direction - Direction of price change.
-     * @param count
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   NOT a bare quantity; the same value accepted by calculateMargin(). A bare quantity makes a Forex
+     *   trade 100000x smaller than intended.
      * @param balance - The balance from which the initial investment will be written off and upon successful closing of the position, profit will be credited to this balance.
      * @param stopLoss
      * @param takeProfit
@@ -7602,7 +7622,9 @@ export class MarginCrypto {
      * If the stop order price is on the opposite side of the current market price, it will be converted to a limit order.
      * @param instrument
      * @param direction
-     * @param count
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   NOT a bare quantity; the same value accepted by calculateMargin(). A bare quantity makes a Forex
+     *   trade 100000x smaller than intended.
      * @param balance
      * @param stopPrice
      * @param takeProfit
@@ -7638,7 +7660,9 @@ export class MarginCrypto {
      * If the limit order price is on the opposite side of the current market price, it will be converted to a stop order.
      * @param instrument
      * @param direction
-     * @param count
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   NOT a bare quantity; the same value accepted by calculateMargin(). A bare quantity makes a Forex
+     *   trade 100000x smaller than intended.
      * @param balance
      * @param limitPrice
      * @param stopLoss
@@ -8193,7 +8217,7 @@ export class MarginCalculation {
     private constructor(
         private readonly instrument: MarginUnderlyingInstrument,
         private readonly pipScale: number,
-        private readonly count: number,
+        private readonly count: number, // = quantity * instrument.lotSize (Forex ×100000, CFD/Crypto ×1); already lot-multiplied, not a bare quantity
         private readonly balance: Balance,
         private readonly currentQuote: CurrentQuote,
         private readonly direction: MarginDirection | null,
@@ -8214,6 +8238,7 @@ export class MarginCalculation {
         instrument: MarginUnderlyingInstrument,
         quotes: Quotes,
         exchangeRates: ExchangeRates,
+        // `count` = quantity * instrument.lotSize (already lot-multiplied) — the same value the facade's buy()/calculateMargin() received.
         count: number,
         balance: Balance,
         direction: MarginDirection | null = null,

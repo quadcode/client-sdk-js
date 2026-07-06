@@ -622,10 +622,16 @@ const firstUnderlyingAvailableInstruments = firstUnderlyingInstruments.getAvaila
 
 const firstInstrument = firstUnderlyingAvailableInstruments[0]
 
-const callOption = await marginCfd.buy(firstInstrument, Margin.Buy, 1, balance)
+// The 3rd argument is `count` = quantity * instrument.lotSize, NOT a bare quantity.
+// instrument.lotSize is 100000 for Forex and 1 for CFD/Crypto, so for Forex a bare `1` means
+// 1 unit - 100000x smaller than 1 lot. The same `count` is expected by calculateMargin(),
+// buyStop() and buyLimit(), so always build it the same way.
+const count = firstInstrument.minQty * firstInstrument.lotSize
+
+const callOption = await marginCfd.buy(firstInstrument, Margin.Buy, count, balance)
 console.log(callOption)
 
-const putOption = await marginCfd.buy(firstInstrument, Margin.Sell, 1, balance)
+const putOption = await marginCfd.buy(firstInstrument, Margin.Sell, count, balance)
 console.log(putOption)
 ```
 
@@ -644,6 +650,8 @@ const instrument = instruments.getAvailableForBuyAt(sdk.currentTime())[0]
 
 // `count` is a quantity multiplied by the instrument lot size, the same value you pass to buy().
 // Use instrument.lotSize (Forex = 100000, CFD/Crypto = 1) instead of hard-coding the lot size.
+// Passing a bare quantity (forgetting * lotSize) makes the Forex margin come out 100000x too
+// small - e.g. 0.2 instead of 20000 - because CFD/Crypto lotSize is 1 but Forex lotSize is 100000.
 const count = instrument.minQty * instrument.lotSize
 
 // Direction is optional - omit it to price at the mid quote. Pass a pending price as the
