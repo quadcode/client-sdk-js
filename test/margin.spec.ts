@@ -11,7 +11,7 @@ import {
 } from "../src";
 import {getUserByTitle} from "./utils/userUtils";
 import {User, WS_URL} from "./vars";
-import {afterAll, beforeAll, describe, expect, it} from "vitest";
+import {afterAll, beforeAll, beforeEach, describe, expect, it} from "vitest";
 import {PositionsHelper} from "./utils/positionsHelper";
 import {justWait, waitForCondition} from "./utils/waiters";
 import {getCurrentQuote} from "./utils/utils";
@@ -424,7 +424,7 @@ describe('Margin Forex/CFD/Crypto', () => {
  * exercised if a non-USD-quoted instrument is available. The backend cross-check still validates the
  * total number in every case.
  */
-describe('Margin calculateMargin (real backend)', () => {
+describe('Calculate Margin (real backend)', () => {
     let sdk: ClientSdk;
     let user: User;
     let quotes: Quotes;
@@ -447,10 +447,13 @@ describe('Margin calculateMargin (real backend)', () => {
             sdk.marginCfd(),
             sdk.marginCrypto(),
         ]);
-        expect(await flattenDemoBook(30000),
-            'could not flatten demo book before calculateMargin suite').to.eq(true);
-        await demoBalance.resetDemoBalance();
     });
+
+    beforeEach(async () => {
+        expect(await flattenDemoBook(30000),
+            'could not flatten demo book before calculateMargin suite').to.eq(true)
+        await demoBalance.resetDemoBalance()
+    })
 
     afterAll(async () => {
         await sdk.shutdown();
@@ -502,9 +505,6 @@ describe('Margin calculateMargin (real backend)', () => {
             return;
         }
         const count = countFor(instrument);
-
-        expect(await flattenDemoBook(15000),
-            `${type}: demo book not flat before open`).to.eq(true);
 
         const calc = await facade.calculateMargin(instrument, count, demoBalance, MarginDirection.Buy);
         // calculateMargin resolves only once the first quote/rate tick has filled the numbers.

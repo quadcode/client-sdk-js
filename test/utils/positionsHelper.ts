@@ -19,7 +19,7 @@ export class PositionsHelper {
         this.orders = await sdk.orders();
     }
 
-    public async waitForOrder(condition: (order: Order) => boolean, timeout: number = 5000): Promise<Order> {
+    public async waitForOrder(condition: (order: Order) => boolean, timeout: number = 10000): Promise<Order> {
         return await new Promise((resolve, reject) => {
             setTimeout(() => {
                 reject(new Error("Order not found within timeout " + timeout));
