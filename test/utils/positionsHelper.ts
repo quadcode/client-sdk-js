@@ -84,4 +84,10 @@ export class PositionsHelper {
             await position.sell();
         }
     }
+
+    public async cancelAllOrders() {
+        for (const order of this.orders.getAllOrders()) {
+            await order.cancel();
+        }
+    }
 }

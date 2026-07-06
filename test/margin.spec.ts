@@ -35,6 +35,7 @@ describe('Margin Forex/CFD/Crypto', () => {
         realBalance = balances.getBalances().filter(value => value.type === "real")[0];
         positionsHelper = await PositionsHelper.create(sdk);
         await positionsHelper.closeOpenedPositions()
+        await positionsHelper.cancelAllOrders();
         await demoBalance.resetDemoBalance()
     });
 
@@ -384,7 +385,7 @@ describe('Margin Forex/CFD/Crypto', () => {
         it('should cancel limit price order', async () => {
             const instrument = await getUnderlyingInstrument();
             const currentQuoteAsk = (await getCurrentQuote(quotes, instrument.activeId)).ask;
-            const marginOrder = await openLimitPriceOrder(instrument, MarginDirection.Sell, currentQuoteAsk! + 1.1);
+            const marginOrder = await openLimitPriceOrder(instrument, MarginDirection.Sell, currentQuoteAsk! + 10.1);
             const order = await positionsHelper.waitForOrder(order => order.id === marginOrder.id);
             await order.cancel();
             expect(await waitForCondition(() => order.status === 'canceled', 20000),
@@ -485,6 +486,7 @@ describe('Calculate Margin (real backend)', () => {
         const endTime = Date.now() + timeoutMs;
         do {
             await positionsHelper.closeOpenedPositions();
+            await positionsHelper.cancelAllOrders();
             if ((demoBalance.margin ?? 0) === 0) {
                 return true;
             }
