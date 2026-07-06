@@ -71,6 +71,13 @@ export class ClientSdk {
     private currenciesPromise: Promise<Currencies> | undefined
 
     /**
+     * Exchange rates facade cache.
+     * @private
+     */
+    private exchangeRatesFacade: ExchangeRates | undefined
+    private exchangeRatesPromise: Promise<ExchangeRates> | undefined
+
+    /**
      * Blitz options facade cache.
      * @private
      */
@@ -344,6 +351,25 @@ export class ClientSdk {
     }
 
     /**
+     * Returns the shared exchange rates facade. Internal: exchange rates back the margin calculation
+     * and are not part of the public API surface.
+     * @internal
+     * @private
+     */
+    private async exchangeRates(): Promise<ExchangeRates> {
+        if (this.exchangeRatesFacade) return this.exchangeRatesFacade;
+        if (!this.exchangeRatesPromise) {
+            this.exchangeRatesPromise = (async () => {
+                const inst = new ExchangeRates(this.wsApiClient);
+                this.exchangeRatesFacade = inst;
+                this.exchangeRatesPromise = undefined;
+                return inst;
+            })();
+        }
+        return this.exchangeRatesPromise;
+    }
+
+    /**
      * Returns blitz options facade class.
      */
     public async blitzOptions(): Promise<BlitzOptions> {
@@ -457,7 +483,7 @@ export class ClientSdk {
                 if (!await this.marginForexIsAvailable()) {
                     throw new Error('Margin forex is not available');
                 }
-                const inst = await MarginForex.create(this.wsApiClient);
+                const inst = await MarginForex.create(this.wsApiClient, await this.quotes(), await this.exchangeRates());
                 this.marginForexFacade = inst;
                 this.marginForexPromise = undefined;
                 return inst;
@@ -483,7 +509,7 @@ export class ClientSdk {
                 if (!await this.marginCfdIsAvailable()) {
                     throw new Error('Margin CFD is not available');
                 }
-                const inst = await MarginCfd.create(this.wsApiClient);
+                const inst = await MarginCfd.create(this.wsApiClient, await this.quotes(), await this.exchangeRates());
                 this.marginCfdFacade = inst;
                 this.marginCfdPromise = undefined;
                 return inst;
@@ -509,7 +535,7 @@ export class ClientSdk {
                 if (!await this.marginCryptoIsAvailable()) {
                     throw new Error('Margin crypto is not available');
                 }
-                const inst = await MarginCrypto.create(this.wsApiClient);
+                const inst = await MarginCrypto.create(this.wsApiClient, await this.quotes(), await this.exchangeRates());
                 this.marginCryptoFacade = inst;
                 this.marginCryptoPromise = undefined;
                 return inst;
@@ -3090,6 +3116,145 @@ export class CurrentQuote {
  * Callback for handle current quote update.
  */
 export type CallbackForCurrentQuoteUpdate = (currentQuote: CurrentQuote) => void;
+
+/**
+ * Shared, de-duplicated exchange rates facade backing the margin calculation. Internal — not exposed
+ * on the public API. Guarantees at most one server subscription to the
+ * `exchange-rates.exchange-rate-generated` 2.0 stream per directed currency pair, regardless of how
+ * many callers (e.g. margin instruments) request the same pair.
+ * @internal
+ */
+class ExchangeRates {
+    /**
+     * Instance of WebSocket API client.
+     * @private
+     */
+    private wsApiClient: WsApiClient
+
+    /**
+     * Current exchange rates state, keyed by the directed pair `${base}/${quote}` (uppercased).
+     * @private
+     */
+    private currentExchangeRates: Map<string, CurrentExchangeRate> = new Map<string, CurrentExchangeRate>()
+
+    /**
+     * Creates class instance.
+     * @param wsApiClient - Instance of WebSocket API client.
+     * @internal
+     * @private
+     */
+    public constructor(wsApiClient: WsApiClient) {
+        this.wsApiClient = wsApiClient
+    }
+
+    /**
+     * Returns refreshable current exchange rate instance for the specified directed currency pair.
+     * The first caller for a pair subscribes to the server stream; subsequent callers for the same
+     * pair share the same {@link CurrentExchangeRate} instance and trigger no additional subscription.
+     * @param baseCurrency - Base currency code (ISO 4217), e.g. `EUR`.
+     * @param quoteCurrency - Quote currency code (ISO 4217), e.g. `USD`.
+     */
+    public async getCurrentExchangeRate(baseCurrency: string, quoteCurrency: string): Promise<CurrentExchangeRate> {
+        const base = baseCurrency.toUpperCase()
+        const quote = quoteCurrency.toUpperCase()
+        const key = `${base}/${quote}`
+
+        if (this.currentExchangeRates.has(key)) {
+            return this.currentExchangeRates.get(key)!
+        }
+
+        const currentExchangeRate = new CurrentExchangeRate()
+        // Registered synchronously, before the await below, so concurrent callers for the same pair
+        // hit the cache and never issue a second subscription.
+        this.currentExchangeRates.set(key, currentExchangeRate)
+
+        await this.wsApiClient.subscribe<ExchangeRateGeneratedV2>(
+            new SubscribeExchangeRateGeneratedV2(base, quote),
+            (event: ExchangeRateGeneratedV2) => {
+                if (event.baseCurrency !== base || event.quoteCurrency !== quote) {
+                    return
+                }
+                currentExchangeRate.update(event)
+            }
+        )
+
+        return currentExchangeRate
+    }
+}
+
+/**
+ * Refreshable current exchange rate for a directed currency pair (base/quote).
+ * @internal
+ */
+class CurrentExchangeRate {
+    /**
+     * Base currency code (ISO 4217).
+     */
+    public baseCurrency: string | undefined
+
+    /**
+     * Quote currency code (ISO 4217).
+     */
+    public quoteCurrency: string | undefined
+
+    /**
+     * Exchange rate ask (offer) price.
+     */
+    public ask: number | undefined
+
+    /**
+     * Exchange rate bid price.
+     */
+    public bid: number | undefined
+
+    /**
+     * Time the rate was last changed.
+     */
+    public changedAt: Date | undefined
+
+    /**
+     * Exchange rate updates observer.
+     * @private
+     */
+    private onUpdateObserver: Observable<CurrentExchangeRate> = new Observable<CurrentExchangeRate>()
+
+    /**
+     * Adds specified callback to exchange rate update subscribers' list.
+     * @param callback - Callback will be called for every change of the exchange rate.
+     */
+    public subscribeOnUpdate(callback: CallbackForCurrentExchangeRateUpdate): void {
+        this.onUpdateObserver.subscribe(callback)
+    }
+
+    /**
+     * Removes specified callback from exchange rate update subscribers' list.
+     * @param callback - Callback for remove.
+     */
+    public unsubscribeOnUpdate(callback: CallbackForCurrentExchangeRateUpdate): void {
+        this.onUpdateObserver.unsubscribe(callback)
+    }
+
+    /**
+     * Updates exchange rate from DTO.
+     * @param msg - Exchange rate data transfer object.
+     * @private
+     */
+    update(msg: ExchangeRateGeneratedV2): void {
+        this.baseCurrency = msg.baseCurrency
+        this.quoteCurrency = msg.quoteCurrency
+        this.ask = msg.ask
+        this.bid = msg.bid
+        this.changedAt = new Date(msg.changedAt)
+
+        this.onUpdateObserver.notify(this)
+    }
+}
+
+/**
+ * Callback for handle current exchange rate update.
+ * @internal
+ */
+type CallbackForCurrentExchangeRateUpdate = (currentExchangeRate: CurrentExchangeRate) => void;
 
 /**
  * Don't use this class directly from your code. Use the following methods instead:
@@ -6895,6 +7060,18 @@ export class MarginForex {
     private readonly wsApiClient: WsApiClient
 
     /**
+     * Shared quotes facade.
+     * @private
+     */
+    private readonly quotes: Quotes
+
+    /**
+     * Shared exchange rates facade.
+     * @private
+     */
+    private readonly exchangeRates: ExchangeRates
+
+    /**
      * Underlyings current state.
      * @private
      */
@@ -6904,11 +7081,15 @@ export class MarginForex {
      * Creates instance from DTO.
      * @param underlyingList - Underlyings data transfer object.
      * @param wsApiClient - Instance of WebSocket API client.
+     * @param quotes - Shared quotes facade.
+     * @param exchangeRates - Shared exchange rates facade.
      * @internal
      * @private
      */
-    private constructor(underlyingList: MarginInstrumentsUnderlyingListV1, wsApiClient: WsApiClient) {
+    private constructor(underlyingList: MarginInstrumentsUnderlyingListV1, wsApiClient: WsApiClient, quotes: Quotes, exchangeRates: ExchangeRates) {
         this.wsApiClient = wsApiClient
+        this.quotes = quotes
+        this.exchangeRates = exchangeRates
 
         for (const index in underlyingList.items) {
             const underlying = underlyingList.items[index]
@@ -6919,8 +7100,10 @@ export class MarginForex {
     /**
      * Subscribes on underlyings updates, requests current state of underlyings, puts the state into this class instance and returns it.
      * @param wsApiClient - Instance of WebSocket API client.
+     * @param quotes - Shared quotes facade.
+     * @param exchangeRates - Shared exchange rates facade.
      */
-    public static async create(wsApiClient: WsApiClient): Promise<MarginForex> {
+    public static async create(wsApiClient: WsApiClient, quotes: Quotes, exchangeRates: ExchangeRates): Promise<MarginForex> {
         const request = new SubscribeMarginInstrumentsUnderlyingListChangedV1("forex")
         await wsApiClient.subscribe<MarginInstrumentsUnderlyingListChangedV1>(request, (event) => {
             marginForexFacade.updateUnderlyings(event)
@@ -6928,15 +7111,37 @@ export class MarginForex {
         const underlyingList = await wsApiClient.doRequest<MarginInstrumentsUnderlyingListV1>(
             new CallMarginInstrumentsGetUnderlyingListV1("forex")
         )
-        const marginForexFacade = new MarginForex(underlyingList, wsApiClient)
+        const marginForexFacade = new MarginForex(underlyingList, wsApiClient, quotes, exchangeRates)
         return marginForexFacade
+    }
+
+    /**
+     * Builds a refreshable margin calculation for the given instrument and balance.
+     * @param instrument - The margin instrument to calculate for.
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   the same already-lot-multiplied value you pass to buy(). A bare quantity makes the Forex margin
+     *   come out 100000x too small (e.g. 0.2 instead of 20000).
+     * @param balance - Balance defining the account currency.
+     * @param direction - Trade direction; if omitted, the mid price is used.
+     * @param pendingPrice - Price for pending (stop/limit) orders; overrides the direction price.
+     */
+    public calculateMargin(
+        instrument: MarginUnderlyingInstrument,
+        count: number,
+        balance: Balance,
+        direction: MarginDirection | null = null,
+        pendingPrice: number | null = null,
+    ): Promise<MarginCalculation> {
+        return MarginCalculation.create(instrument, this.quotes, this.exchangeRates, count, balance, direction, pendingPrice)
     }
 
     /**
      * Makes request for buy margin active.
      * @param instrument - The instrument for which the option is purchased.
      * @param direction - Direction of price change.
-     * @param count
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   NOT a bare quantity; the same value accepted by calculateMargin(). A bare quantity makes a Forex
+     *   trade 100000x smaller than intended.
      * @param balance - The balance from which the initial investment will be written off and upon successful closing of the position, profit will be credited to this balance.
      * @param stopLoss
      * @param takeProfit
@@ -6969,7 +7174,9 @@ export class MarginForex {
      * If the stop order price is on the opposite side of the current market price, it will be converted to a limit order.
      * @param instrument
      * @param direction
-     * @param count
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   NOT a bare quantity; the same value accepted by calculateMargin(). A bare quantity makes a Forex
+     *   trade 100000x smaller than intended.
      * @param balance
      * @param stopPrice
      * @param takeProfit
@@ -7005,7 +7212,9 @@ export class MarginForex {
      * If the limit order price is on the opposite side of the current market price, it will be converted to a stop order.
      * @param instrument
      * @param direction
-     * @param count
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   NOT a bare quantity; the same value accepted by calculateMargin(). A bare quantity makes a Forex
+     *   trade 100000x smaller than intended.
      * @param balance
      * @param limitPrice
      * @param stopLoss
@@ -7075,6 +7284,18 @@ export class MarginCfd {
     private readonly wsApiClient: WsApiClient
 
     /**
+     * Shared quotes facade.
+     * @private
+     */
+    private readonly quotes: Quotes
+
+    /**
+     * Shared exchange rates facade.
+     * @private
+     */
+    private readonly exchangeRates: ExchangeRates
+
+    /**
      * Underlyings current state.
      * @private
      */
@@ -7084,11 +7305,15 @@ export class MarginCfd {
      * Creates instance from DTO.
      * @param underlyingList - Underlyings data transfer object.
      * @param wsApiClient - Instance of WebSocket API client.
+     * @param quotes - Shared quotes facade.
+     * @param exchangeRates - Shared exchange rates facade.
      * @internal
      * @private
      */
-    private constructor(underlyingList: MarginInstrumentsUnderlyingListV1, wsApiClient: WsApiClient) {
+    private constructor(underlyingList: MarginInstrumentsUnderlyingListV1, wsApiClient: WsApiClient, quotes: Quotes, exchangeRates: ExchangeRates) {
         this.wsApiClient = wsApiClient
+        this.quotes = quotes
+        this.exchangeRates = exchangeRates
 
         for (const index in underlyingList.items) {
             const underlying = underlyingList.items[index]
@@ -7099,8 +7324,10 @@ export class MarginCfd {
     /**
      * Subscribes on underlyings updates, requests current state of underlyings, puts the state into this class instance and returns it.
      * @param wsApiClient - Instance of WebSocket API client.
+     * @param quotes - Shared quotes facade.
+     * @param exchangeRates - Shared exchange rates facade.
      */
-    public static async create(wsApiClient: WsApiClient): Promise<MarginCfd> {
+    public static async create(wsApiClient: WsApiClient, quotes: Quotes, exchangeRates: ExchangeRates): Promise<MarginCfd> {
         const request = new SubscribeMarginInstrumentsUnderlyingListChangedV1("cfd")
         await wsApiClient.subscribe<MarginInstrumentsUnderlyingListChangedV1>(request, (event) => {
             marginForexFacade.updateUnderlyings(event)
@@ -7108,15 +7335,37 @@ export class MarginCfd {
         const underlyingList = await wsApiClient.doRequest<MarginInstrumentsUnderlyingListV1>(
             new CallMarginInstrumentsGetUnderlyingListV1("cfd")
         )
-        const marginForexFacade = new MarginCfd(underlyingList, wsApiClient)
+        const marginForexFacade = new MarginCfd(underlyingList, wsApiClient, quotes, exchangeRates)
         return marginForexFacade
+    }
+
+    /**
+     * Builds a refreshable margin calculation for the given instrument and balance.
+     * @param instrument - The margin instrument to calculate for.
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   the same already-lot-multiplied value you pass to buy(). A bare quantity makes the Forex margin
+     *   come out 100000x too small (e.g. 0.2 instead of 20000).
+     * @param balance - Balance defining the account currency.
+     * @param direction - Trade direction; if omitted, the mid price is used.
+     * @param pendingPrice - Price for pending (stop/limit) orders; overrides the direction price.
+     */
+    public calculateMargin(
+        instrument: MarginUnderlyingInstrument,
+        count: number,
+        balance: Balance,
+        direction: MarginDirection | null = null,
+        pendingPrice: number | null = null,
+    ): Promise<MarginCalculation> {
+        return MarginCalculation.create(instrument, this.quotes, this.exchangeRates, count, balance, direction, pendingPrice)
     }
 
     /**
      * Makes request for buy margin active.
      * @param instrument - The instrument for which the option is purchased.
      * @param direction - Direction of price change.
-     * @param count
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   NOT a bare quantity; the same value accepted by calculateMargin(). A bare quantity makes a Forex
+     *   trade 100000x smaller than intended.
      * @param balance - The balance from which the initial investment will be written off and upon successful closing of the position, profit will be credited to this balance.
      * @param takeProfit
      * @param stopLoss
@@ -7149,7 +7398,9 @@ export class MarginCfd {
      * If the stop order price is on the opposite side of the current market price, it will be converted to a limit order.
      * @param instrument
      * @param direction
-     * @param count
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   NOT a bare quantity; the same value accepted by calculateMargin(). A bare quantity makes a Forex
+     *   trade 100000x smaller than intended.
      * @param balance
      * @param stopPrice
      * @param takeProfit
@@ -7185,7 +7436,9 @@ export class MarginCfd {
      * If the limit order price is on the opposite side of the current market price, it will be converted to a stop order.
      * @param instrument
      * @param direction
-     * @param count
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   NOT a bare quantity; the same value accepted by calculateMargin(). A bare quantity makes a Forex
+     *   trade 100000x smaller than intended.
      * @param balance
      * @param limitPrice
      * @param stopLoss
@@ -7255,6 +7508,18 @@ export class MarginCrypto {
     private readonly wsApiClient: WsApiClient
 
     /**
+     * Shared quotes facade.
+     * @private
+     */
+    private readonly quotes: Quotes
+
+    /**
+     * Shared exchange rates facade.
+     * @private
+     */
+    private readonly exchangeRates: ExchangeRates
+
+    /**
      * Underlyings current state.
      * @private
      */
@@ -7264,11 +7529,15 @@ export class MarginCrypto {
      * Creates instance from DTO.
      * @param underlyingList - Underlyings data transfer object.
      * @param wsApiClient - Instance of WebSocket API client.
+     * @param quotes - Shared quotes facade.
+     * @param exchangeRates - Shared exchange rates facade.
      * @internal
      * @private
      */
-    private constructor(underlyingList: MarginInstrumentsUnderlyingListV1, wsApiClient: WsApiClient) {
+    private constructor(underlyingList: MarginInstrumentsUnderlyingListV1, wsApiClient: WsApiClient, quotes: Quotes, exchangeRates: ExchangeRates) {
         this.wsApiClient = wsApiClient
+        this.quotes = quotes
+        this.exchangeRates = exchangeRates
 
         for (const index in underlyingList.items) {
             const underlying = underlyingList.items[index]
@@ -7279,8 +7548,10 @@ export class MarginCrypto {
     /**
      * Subscribes on underlyings updates, requests current state of underlyings, puts the state into this class instance and returns it.
      * @param wsApiClient - Instance of WebSocket API client.
+     * @param quotes - Shared quotes facade.
+     * @param exchangeRates - Shared exchange rates facade.
      */
-    public static async create(wsApiClient: WsApiClient): Promise<MarginCrypto> {
+    public static async create(wsApiClient: WsApiClient, quotes: Quotes, exchangeRates: ExchangeRates): Promise<MarginCrypto> {
         const request = new SubscribeMarginInstrumentsUnderlyingListChangedV1("crypto")
         await wsApiClient.subscribe<MarginInstrumentsUnderlyingListChangedV1>(request, (event) => {
             marginForexFacade.updateUnderlyings(event)
@@ -7288,15 +7559,37 @@ export class MarginCrypto {
         const underlyingList = await wsApiClient.doRequest<MarginInstrumentsUnderlyingListV1>(
             new CallMarginInstrumentsGetUnderlyingListV1("crypto")
         )
-        const marginForexFacade = new MarginCrypto(underlyingList, wsApiClient)
+        const marginForexFacade = new MarginCrypto(underlyingList, wsApiClient, quotes, exchangeRates)
         return marginForexFacade
+    }
+
+    /**
+     * Builds a refreshable margin calculation for the given instrument and balance.
+     * @param instrument - The margin instrument to calculate for.
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   the same already-lot-multiplied value you pass to buy(). A bare quantity makes the Forex margin
+     *   come out 100000x too small (e.g. 0.2 instead of 20000).
+     * @param balance - Balance defining the account currency.
+     * @param direction - Trade direction; if omitted, the mid price is used.
+     * @param pendingPrice - Price for pending (stop/limit) orders; overrides the direction price.
+     */
+    public calculateMargin(
+        instrument: MarginUnderlyingInstrument,
+        count: number,
+        balance: Balance,
+        direction: MarginDirection | null = null,
+        pendingPrice: number | null = null,
+    ): Promise<MarginCalculation> {
+        return MarginCalculation.create(instrument, this.quotes, this.exchangeRates, count, balance, direction, pendingPrice)
     }
 
     /**
      * Makes request for buy margin active.
      * @param instrument - The instrument for which the option is purchased.
      * @param direction - Direction of price change.
-     * @param count
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   NOT a bare quantity; the same value accepted by calculateMargin(). A bare quantity makes a Forex
+     *   trade 100000x smaller than intended.
      * @param balance - The balance from which the initial investment will be written off and upon successful closing of the position, profit will be credited to this balance.
      * @param stopLoss
      * @param takeProfit
@@ -7329,7 +7622,9 @@ export class MarginCrypto {
      * If the stop order price is on the opposite side of the current market price, it will be converted to a limit order.
      * @param instrument
      * @param direction
-     * @param count
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   NOT a bare quantity; the same value accepted by calculateMargin(). A bare quantity makes a Forex
+     *   trade 100000x smaller than intended.
      * @param balance
      * @param stopPrice
      * @param takeProfit
@@ -7365,7 +7660,9 @@ export class MarginCrypto {
      * If the limit order price is on the opposite side of the current market price, it will be converted to a stop order.
      * @param instrument
      * @param direction
-     * @param count
+     * @param count - Trade size = quantity * instrument.lotSize (Forex lotSize = 100000, CFD/Crypto = 1),
+     *   NOT a bare quantity; the same value accepted by calculateMargin(). A bare quantity makes a Forex
+     *   trade 100000x smaller than intended.
      * @param balance
      * @param limitPrice
      * @param stopLoss
@@ -7571,11 +7868,25 @@ export class MarginUnderlyingInstruments {
     private instruments: Map<string, MarginUnderlyingInstrument> = new Map<string, MarginUnderlyingInstrument>()
 
     /**
+     * Margin instrument type (cfd/crypto/forex).
+     * @private
+     */
+    private readonly marginInstrumentType: string
+
+    /**
+     * Instance of WebSocket API client.
+     * @private
+     */
+    private readonly wsApiClient: WsApiClient
+
+    /**
      * Just private constructor. Use {@link MarginUnderlyingInstruments.create create} instead.
      * @internal
      * @private
      */
-    private constructor() {
+    private constructor(marginInstrumentType: string, wsApiClient: WsApiClient) {
+        this.marginInstrumentType = marginInstrumentType
+        this.wsApiClient = wsApiClient
     }
 
     /**
@@ -7585,7 +7896,7 @@ export class MarginUnderlyingInstruments {
      * @param wsApiClient
      */
     public static async create(activeId: number, marginInstrumentType: string, wsApiClient: WsApiClient): Promise<MarginUnderlyingInstruments> {
-        const instrumentsFacade = new MarginUnderlyingInstruments()
+        const instrumentsFacade = new MarginUnderlyingInstruments(marginInstrumentType, wsApiClient)
 
         const instruments = await wsApiClient.doRequest<MarginInstrumentsInstrumentsListV1>(
             new CallMarginInstrumentsGetInstrumentsListV1(activeId, marginInstrumentType)
@@ -7637,7 +7948,7 @@ export class MarginUnderlyingInstruments {
      */
     private syncInstrumentFromResponse(msg: MarginInstrumentsInstrumentsListV1Item) {
         if (!this.instruments.has(msg.id)) {
-            this.instruments.set(msg.id, new MarginUnderlyingInstrument(msg))
+            this.instruments.set(msg.id, new MarginUnderlyingInstrument(msg, this.marginInstrumentType, this.wsApiClient))
         } else {
             this.instruments.get(msg.id)!.sync(msg)
         }
@@ -7704,12 +8015,31 @@ export class MarginUnderlyingInstrument {
     public dynamicLeverageProfiles: MarginInstrumentsInstrumentsListV1DynamicLeverageProfile[]
 
     /**
+     * Margin instrument type (cfd/crypto/forex). Determines the lot size and the margin currency side.
+     */
+    public readonly marginInstrumentType: string
+
+    /**
+     * Instance of WebSocket API client.
+     * @private
+     */
+    private readonly wsApiClient: WsApiClient
+
+    /**
+     * Cached underlying active metadata (pip scale, currency pair), lazily loaded.
+     * @private
+     */
+    private activeMetaPromise: Promise<ActiveV5> | undefined
+
+    /**
      * Creates instance from DTO.
      * @param msg - Instrument data transfer object.
+     * @param marginInstrumentType - Margin instrument type (cfd/crypto/forex).
+     * @param wsApiClient - Instance of WebSocket API client.
      * @internal
      * @private
      */
-    public constructor(msg: MarginInstrumentsInstrumentsListV1Item) {
+    public constructor(msg: MarginInstrumentsInstrumentsListV1Item, marginInstrumentType: string, wsApiClient: WsApiClient) {
         this.id = msg.id
         this.activeId = msg.activeId
         this.allowLongPosition = msg.allowLongPosition
@@ -7721,6 +8051,8 @@ export class MarginUnderlyingInstrument {
         this.qtyStep = parseFloat(msg.qtyStep)
         this.tradable = new MarginUnderlyingInstrumentTradable(msg.tradable.from, msg.tradable.to)
         this.dynamicLeverageProfiles = msg.dynamicLeverageProfile
+        this.marginInstrumentType = marginInstrumentType
+        this.wsApiClient = wsApiClient
     }
 
     /**
@@ -7785,6 +8117,41 @@ export class MarginUnderlyingInstrument {
 
         return this.dynamicLeverageProfiles[this.dynamicLeverageProfiles.length - 1].leverage
     }
+
+    /**
+     * Lot size for the instrument's margin type (Forex = 100000, CFD/Crypto = 1). Multiply a quantity
+     * by this to build the `count` accepted by {@link MarginForex.buy} and
+     * {@link MarginForex.calculateMargin}.
+     */
+    public get lotSize(): number {
+        return this.marginInstrumentType === 'forex' ? 100000 : 1
+    }
+
+    /**
+     * Returns the instrument's pip scale (from the underlying active).
+     */
+    public async getPipScale(): Promise<number> {
+        return (await this.activeMeta()).pipScale
+    }
+
+    /**
+     * Returns the instrument's currency pair (base = left side, quote = right side).
+     */
+    public async getCurrencyPair(): Promise<{ base: string, quote: string }> {
+        const meta = await this.activeMeta()
+        return {base: meta.currencyLeftSide, quote: meta.currencyRightSide}
+    }
+
+    /**
+     * Lazily loads and caches the underlying active metadata.
+     * @private
+     */
+    private activeMeta(): Promise<ActiveV5> {
+        if (!this.activeMetaPromise) {
+            this.activeMetaPromise = this.wsApiClient.doRequest<ActiveV5>(new CallGetActiveV5(this.activeId))
+        }
+        return this.activeMetaPromise
+    }
 }
 
 class MarginUnderlyingInstrumentTradable {
@@ -7808,6 +8175,269 @@ class MarginUnderlyingInstrumentTradable {
         this.to = new Date(toTs * 1000)
     }
 }
+
+/**
+ * Refreshable margin calculation for a margin instrument.
+ *
+ * Margin and pip value are expressed in the balance/account currency and are recomputed whenever the
+ * underlying quote, the exchange rate(s) or the balance equity change. Build it via
+ * {@link MarginForex.calculateMargin} (or the {@link MarginCfd}/{@link MarginCrypto} equivalents).
+ */
+export class MarginCalculation {
+    /**
+     * Upper bound the {@link create} promise waits for the first quote/rate tick before resolving anyway.
+     * Populated numbers normally arrive within a second; the cap only guards a silent (e.g. closed) market.
+     * @private
+     */
+    private static readonly READY_TIMEOUT_MS = 10000
+
+    /**
+     * Required margin in the balance/account currency. Populated by the time the {@link create} promise
+     * resolves; stays `undefined` only if the streams never ticked within {@link READY_TIMEOUT_MS}.
+     */
+    public margin: number | undefined
+
+    /**
+     * Pip (point) value in the balance/account currency. Populated by the time the {@link create} promise
+     * resolves; stays `undefined` only if the streams never ticked within {@link READY_TIMEOUT_MS}.
+     */
+    public pipValue: number | undefined
+
+    /**
+     * Margin calculation updates observer.
+     * @private
+     */
+    private onUpdateObserver: Observable<MarginCalculation> = new Observable<MarginCalculation>()
+
+    /**
+     * Use {@link MarginCalculation.create} instead.
+     * @internal
+     * @private
+     */
+    private constructor(
+        private readonly instrument: MarginUnderlyingInstrument,
+        private readonly pipScale: number,
+        private readonly count: number, // = quantity * instrument.lotSize (Forex ×100000, CFD/Crypto ×1); already lot-multiplied, not a bare quantity
+        private readonly balance: Balance,
+        private readonly currentQuote: CurrentQuote,
+        private readonly direction: MarginDirection | null,
+        private readonly pendingPrice: number | null,
+        private readonly marginRate: CurrentExchangeRate | null,
+        private readonly pipRate: CurrentExchangeRate | null,
+    ) {
+        this.recompute()
+    }
+
+    /**
+     * Resolves the live inputs (quote and 0..2 exchange-rate pairs) from the shared facades, wires
+     * recomputation on every input tick, and returns the calculation.
+     * @internal
+     * @private
+     */
+    public static async create(
+        instrument: MarginUnderlyingInstrument,
+        quotes: Quotes,
+        exchangeRates: ExchangeRates,
+        // `count` = quantity * instrument.lotSize (already lot-multiplied) — the same value the facade's buy()/calculateMargin() received.
+        count: number,
+        balance: Balance,
+        direction: MarginDirection | null = null,
+        pendingPrice: number | null = null,
+    ): Promise<MarginCalculation> {
+        const pipScale = await instrument.getPipScale()
+        const {base, quote} = await instrument.getCurrencyPair()
+        const account = balance.currency.toUpperCase()
+        const baseCurrency = base.toUpperCase()
+        const quoteCurrency = quote.toUpperCase()
+        const isForex = instrument.marginInstrumentType === 'forex'
+
+        const currentQuote = await quotes.getCurrentQuoteForActive(instrument.activeId)
+
+        // Pip value / PnL conversion: quote -> account via the account/quote pair (divide by ASK).
+        // Skipped when the account currency already equals the quote currency.
+        const pipRate = account === quoteCurrency
+            ? null
+            : await exchangeRates.getCurrentExchangeRate(account, quoteCurrency)
+
+        let marginRate: CurrentExchangeRate | null
+        if (isForex) {
+            // Margin is computed in the BASE currency; convert base -> account via base/account (multiply by BID).
+            // Skipped when the account currency equals the base currency.
+            marginRate = account === baseCurrency
+                ? null
+                : await exchangeRates.getCurrentExchangeRate(baseCurrency, account)
+        } else {
+            // CFD/Crypto: margin is computed in the QUOTE currency; convert quote -> account using the SAME
+            // account/quote pair as pip value (divide by ASK). One shared subscription, never two inverse ones.
+            marginRate = pipRate
+        }
+
+        const calculation = new MarginCalculation(
+            instrument, pipScale, count, balance, currentQuote, direction, pendingPrice, marginRate, pipRate,
+        )
+
+        currentQuote.subscribeOnUpdate(() => calculation.update())
+        balance.subscribeOnUpdate(() => calculation.update())
+        if (pipRate !== null) {
+            pipRate.subscribeOnUpdate(() => calculation.update())
+        }
+        if (marginRate !== null && marginRate !== pipRate) {
+            marginRate.subscribeOnUpdate(() => calculation.update())
+        }
+
+        // Don't hand back a half-built calculation: exchange-rate/quote streams push only on change and
+        // carry no initial snapshot, so wait for the first tick that fills margin/pipValue before resolving.
+        await calculation.waitUntilReady(MarginCalculation.READY_TIMEOUT_MS)
+
+        return calculation
+    }
+
+    /**
+     * Resolves once both {@link margin} and {@link pipValue} hold a value, or after `timeoutMs` if the
+     * quote/exchange-rate streams stay silent (e.g. a closed market) — the calculation keeps updating
+     * afterwards either way.
+     * @private
+     */
+    private waitUntilReady(timeoutMs: number): Promise<void> {
+        if (this.isReady()) {
+            return Promise.resolve()
+        }
+
+        return new Promise<void>((resolve) => {
+            const listener = () => {
+                if (this.isReady()) {
+                    clearTimeout(timer)
+                    this.unsubscribeOnUpdate(listener)
+                    resolve()
+                }
+            }
+
+            const timer = setTimeout(() => {
+                this.unsubscribeOnUpdate(listener)
+                resolve()
+            }, timeoutMs)
+
+            this.subscribeOnUpdate(listener)
+        })
+    }
+
+    /**
+     * Whether both outputs have been computed from at least one input tick each.
+     * @private
+     */
+    private isReady(): boolean {
+        return this.margin !== undefined && this.pipValue !== undefined
+    }
+
+    /**
+     * Computes the PnL of a take-profit / stop-loss order at the given trigger price.
+     * @param openPrice - Position open (underlying) price.
+     * @param tpslPrice - Take-profit / stop-loss trigger price.
+     * @returns PnL in the balance/account currency, or `undefined` if the pip value is not yet available.
+     */
+    public pnlForTPSL(openPrice: number, tpslPrice: number): number | undefined {
+        if (this.pipValue === undefined) {
+            return undefined
+        }
+        const pip = Math.pow(10, -this.pipScale)
+        const sign = this.direction === MarginDirection.Sell ? -1 : 1
+        const quoteDiff = sign * (tpslPrice - openPrice)
+        const points = quoteDiff / pip
+        return points * this.pipValue
+    }
+
+    /**
+     * Adds a callback to the calculation update subscribers' list.
+     * @param callback - Called on every recomputation (quote/rate/equity tick).
+     */
+    public subscribeOnUpdate(callback: CallbackForMarginCalculationUpdate): void {
+        this.onUpdateObserver.subscribe(callback)
+    }
+
+    /**
+     * Removes a callback from the calculation update subscribers' list.
+     * @param callback - Callback to remove.
+     */
+    public unsubscribeOnUpdate(callback: CallbackForMarginCalculationUpdate): void {
+        this.onUpdateObserver.unsubscribe(callback)
+    }
+
+    /**
+     * Recomputes the calculation and notifies subscribers.
+     * @private
+     */
+    private update(): void {
+        this.recompute()
+        this.onUpdateObserver.notify(this)
+    }
+
+    /**
+     * Recomputes margin and pip value from the current input snapshots.
+     * @private
+     */
+    private recompute(): void {
+        const pip = Math.pow(10, -this.pipScale)
+        const count = this.count
+        const leverage = this.instrument.calculateLeverageProfile(this.balance)
+
+        const pipValueQuote = pip * count
+        if (this.pipRate === null) {
+            this.pipValue = pipValueQuote
+        } else if (this.pipRate.ask === undefined) {
+            this.pipValue = undefined
+        } else {
+            this.pipValue = pipValueQuote / this.pipRate.ask
+        }
+
+        if (this.instrument.marginInstrumentType === 'forex') {
+            const marginBase = count / leverage
+            if (this.marginRate === null) {
+                this.margin = marginBase
+            } else if (this.marginRate.bid === undefined) {
+                this.margin = undefined
+            } else {
+                this.margin = marginBase * this.marginRate.bid
+            }
+        } else {
+            const quotePrice = this.quotePriceByDirection()
+            if (quotePrice === undefined) {
+                this.margin = undefined
+            } else {
+                const marginQuote = (count / leverage) * quotePrice
+                if (this.marginRate === null) {
+                    this.margin = marginQuote
+                } else if (this.marginRate.ask === undefined) {
+                    this.margin = undefined
+                } else {
+                    this.margin = marginQuote / this.marginRate.ask
+                }
+            }
+        }
+    }
+
+    /**
+     * Selects the quote price used for margin per direction: ASK (buy), BID (sell), the pending price
+     * (pending order) or the mid value (unknown direction).
+     * @private
+     */
+    private quotePriceByDirection(): number | undefined {
+        if (this.pendingPrice !== null) {
+            return this.pendingPrice
+        }
+        if (this.direction === MarginDirection.Buy) {
+            return this.currentQuote.ask
+        }
+        if (this.direction === MarginDirection.Sell) {
+            return this.currentQuote.bid
+        }
+        return this.currentQuote.value
+    }
+}
+
+/**
+ * Callback for handle margin calculation update.
+ */
+export type CallbackForMarginCalculationUpdate = (marginCalculation: MarginCalculation) => void;
 
 // Common classes
 
@@ -9522,6 +10152,22 @@ class QuoteGeneratedV2 {
     }
 }
 
+class ExchangeRateGeneratedV2 {
+    baseCurrency: string
+    quoteCurrency: string
+    ask: number
+    bid: number
+    changedAt: number
+
+    constructor(data: any) {
+        this.baseCurrency = data.base_currency
+        this.quoteCurrency = data.quote_currency
+        this.ask = parseFloat(data.ask)
+        this.bid = parseFloat(data.bid)
+        this.changedAt = data.changed_at
+    }
+}
+
 class CandleGeneratedV1 {
     id: number
     activeId: number
@@ -10859,6 +11505,42 @@ class SubscribeQuoteGeneratedV2 implements SubscribeRequest<QuoteGeneratedV2> {
 
     createEvent(data: any): QuoteGeneratedV2 {
         return new QuoteGeneratedV2(data)
+    }
+}
+
+class SubscribeExchangeRateGeneratedV2 implements SubscribeRequest<ExchangeRateGeneratedV2> {
+    constructor(private readonly baseCurrency: string, private readonly quoteCurrency: string) {
+    }
+
+    messageName() {
+        return 'subscribeMessage'
+    }
+
+    messageBody() {
+        return {
+            // Dotted, microservice-prefixed form is required by exchange-rates 2.0 (NOT the bare
+            // event name used by SubscribeQuoteGeneratedV2). A bare name silently never starts the stream.
+            name: `${this.eventMicroserviceName()}.${this.eventName()}`,
+            version: '2.0',
+            params: {
+                routingFilters: {
+                    base_currency: this.baseCurrency,
+                    quote_currency: this.quoteCurrency,
+                }
+            }
+        }
+    }
+
+    eventMicroserviceName() {
+        return 'exchange-rates'
+    }
+
+    eventName() {
+        return 'exchange-rate-generated'
+    }
+
+    createEvent(data: any): ExchangeRateGeneratedV2 {
+        return new ExchangeRateGeneratedV2(data)
     }
 }
 
