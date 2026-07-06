@@ -8161,12 +8161,21 @@ class MarginUnderlyingInstrumentTradable {
  */
 export class MarginCalculation {
     /**
-     * Required margin in the balance/account currency. `undefined` until the first quote/rate tick arrives.
+     * Upper bound the {@link create} promise waits for the first quote/rate tick before resolving anyway.
+     * Populated numbers normally arrive within a second; the cap only guards a silent (e.g. closed) market.
+     * @private
+     */
+    private static readonly READY_TIMEOUT_MS = 10000
+
+    /**
+     * Required margin in the balance/account currency. Populated by the time the {@link create} promise
+     * resolves; stays `undefined` only if the streams never ticked within {@link READY_TIMEOUT_MS}.
      */
     public margin: number | undefined
 
     /**
-     * Pip (point) value in the balance/account currency. `undefined` until the first quote/rate tick arrives.
+     * Pip (point) value in the balance/account currency. Populated by the time the {@link create} promise
+     * resolves; stays `undefined` only if the streams never ticked within {@link READY_TIMEOUT_MS}.
      */
     public pipValue: number | undefined
 
@@ -8251,7 +8260,48 @@ export class MarginCalculation {
             marginRate.subscribeOnUpdate(() => calculation.update())
         }
 
+        // Don't hand back a half-built calculation: exchange-rate/quote streams push only on change and
+        // carry no initial snapshot, so wait for the first tick that fills margin/pipValue before resolving.
+        await calculation.waitUntilReady(MarginCalculation.READY_TIMEOUT_MS)
+
         return calculation
+    }
+
+    /**
+     * Resolves once both {@link margin} and {@link pipValue} hold a value, or after `timeoutMs` if the
+     * quote/exchange-rate streams stay silent (e.g. a closed market) — the calculation keeps updating
+     * afterwards either way.
+     * @private
+     */
+    private waitUntilReady(timeoutMs: number): Promise<void> {
+        if (this.isReady()) {
+            return Promise.resolve()
+        }
+
+        return new Promise<void>((resolve) => {
+            const listener = () => {
+                if (this.isReady()) {
+                    clearTimeout(timer)
+                    this.unsubscribeOnUpdate(listener)
+                    resolve()
+                }
+            }
+
+            const timer = setTimeout(() => {
+                this.unsubscribeOnUpdate(listener)
+                resolve()
+            }, timeoutMs)
+
+            this.subscribeOnUpdate(listener)
+        })
+    }
+
+    /**
+     * Whether both outputs have been computed from at least one input tick each.
+     * @private
+     */
+    private isReady(): boolean {
+        return this.margin !== undefined && this.pipValue !== undefined
     }
 
     /**
