@@ -447,7 +447,8 @@ describe('Margin calculateMargin (real backend)', () => {
             sdk.marginCfd(),
             sdk.marginCrypto(),
         ]);
-        await positionsHelper.closeOpenedPositions();
+        expect(await flattenDemoBook(30000),
+            'could not flatten demo book before calculateMargin suite').to.eq(true);
         await demoBalance.resetDemoBalance();
     });
 
@@ -471,6 +472,24 @@ describe('Margin calculateMargin (real backend)', () => {
         return instrument.minQty * instrument.lotSize;
     }
 
+    // Force the demo book flat and wait until the account margin is actually released. The suite above
+    // (Margin Forex/CFD/Crypto) opens market positions on the shared `margin_user` account and never
+    // closes them; a freshly-created positionsHelper may not have loaded the open-positions snapshot yet,
+    // and `sell()` resolves on request-ack (not on margin release). So retry closing until Balance.margin
+    // reaches 0 instead of assuming one close call — otherwise the cross-check races and flaps on
+    // `demo book not flat before open`.
+    async function flattenDemoBook(timeoutMs: number): Promise<boolean> {
+        const endTime = Date.now() + timeoutMs;
+        do {
+            await positionsHelper.closeOpenedPositions();
+            if ((demoBalance.margin ?? 0) === 0) {
+                return true;
+            }
+            await justWait(500);
+        } while (Date.now() < endTime);
+        return (demoBalance.margin ?? 0) === 0;
+    }
+
     // Opens one market Buy on a flat demo book and asserts the backend-reserved account margin
     // (Balance.margin, only meaningful with a single open position) matches calc.margin within 3%.
     async function backendCrossCheck(
@@ -484,7 +503,7 @@ describe('Margin calculateMargin (real backend)', () => {
         }
         const count = countFor(instrument);
 
-        expect(await waitForCondition(() => (demoBalance.margin ?? 0) === 0, 10000),
+        expect(await flattenDemoBook(15000),
             `${type}: demo book not flat before open`).to.eq(true);
 
         const calc = await facade.calculateMargin(instrument, count, demoBalance, MarginDirection.Buy);
@@ -507,7 +526,8 @@ describe('Margin calculateMargin (real backend)', () => {
         }
 
         const order = await facade.buy(instrument, MarginDirection.Buy, count, demoBalance);
-        const placedOrder = await positionsHelper.waitForOrder(o => o.id === order.id);
+        // Real-backend fill events can lag past the 5s default under load — give the order room to fill.
+        const placedOrder = await positionsHelper.waitForOrder(o => o.id === order.id, 15000);
         expect(placedOrder.status, `${type}: order not filled`).to.eq('filled');
         const position = await positionsHelper.waitForPosition(p => p.orderIds.includes(order.id));
         expect(position, `${type}: position missing`).to.not.eq(undefined);
@@ -521,9 +541,10 @@ describe('Margin calculateMargin (real backend)', () => {
 
         await justWait(1000);
         await position.sell();
-        expect(await waitForCondition(() => position.status === 'closed', 20000),
+        // Backend close + margin release settle asynchronously and can occasionally exceed 20s under load.
+        expect(await waitForCondition(() => position.status === 'closed', 30000),
             `${type}: position did not close`).to.eq(true);
-        expect(await waitForCondition(() => (demoBalance.margin ?? 0) === 0, 20000),
+        expect(await waitForCondition(() => (demoBalance.margin ?? 0) === 0, 30000),
             `${type}: account margin did not return to 0`).to.eq(true);
     }
 
@@ -578,15 +599,15 @@ describe('Margin calculateMargin (real backend)', () => {
 
     it('forex: backend-reserved account margin matches calc.margin', async () => {
         await backendCrossCheck(marginForex, 'forex');
-    }, 60000);
+    }, 90000);
 
     it('cfd: backend-reserved account margin matches calc.margin', async () => {
         await backendCrossCheck(marginCfd, 'cfd');
-    }, 60000);
+    }, 90000);
 
     it('crypto: backend-reserved account margin matches calc.margin', async () => {
         await backendCrossCheck(marginCrypto, 'crypto');
-    }, 60000);
+    }, 90000);
 
     it('forex: subscribeOnUpdate fires and margin stays finite and positive across a tick', async () => {
         const instrument = await tryFirstInstrument(marginForex);
