@@ -59,7 +59,7 @@ import {ClientSdk, OAuthMethod} from '@quadcode-tech/client-sdk-js'
 async function startLogin() {
 	const oauth = new OAuthMethod({
 		apiBaseUrl: 'https://api.trade.example.com', // local: use the same prod host (DO NOT use localhost) — this is the OAuth/Token server; redirects are handled by the provider, not via Vite proxy
-		clientId: CLIENT_ID,                         // your client ID (you can request CLIENT_ID and CLIENT_SECRET by creating an issue on GitHub)
+		clientId: CLIENT_ID,                         // your client ID (you can request CLIENT_ID and CLIENT_SECRET via form: https://forms.gle/J8NQxxMQWKXggWet6)
 		redirectUri: 'https://your.app/callback',    // redirect URI ( local: http://localhost:5173/callback )
 		scope: 'full'                                // scope (e.g. 'full' or 'full offline_access')
 	})
@@ -127,7 +127,7 @@ import {ClientSdk, OAuthMethod} from '@quadcode-tech/client-sdk-js'
 async function startLogin() {
 	const oauth = new OAuthMethod({
 		apiBaseUrl: 'https://api.trade.example.com', // local: use the same prod host (DO NOT use localhost) — this is the OAuth/Token server; redirects are handled by the provider, not via Vite proxy
-		clientId: CLIENT_ID,                         // your client ID (you can request CLIENT_ID and CLIENT_SECRET by creating an issue on GitHub)
+		clientId: CLIENT_ID,                         // your client ID (you can request CLIENT_ID and CLIENT_SECRET via form: https://forms.gle/J8NQxxMQWKXggWet6)
 		redirectUri: 'https://your.app/callback',    // redirect URI
 		scope: 'full offline_access'                 // scope (e.g. 'full' or 'full offline_access')
 	})
