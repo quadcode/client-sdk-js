@@ -1228,6 +1228,7 @@ export class UserProfile {
     public readonly userId: number
     public readonly firstName: string
     public readonly lastName: string
+    public readonly email: string
 
     /**
      * Creates instance of class {@link UserProfile}.
@@ -1239,6 +1240,7 @@ export class UserProfile {
         this.userId = profile.userId
         this.firstName = profile.firstName
         this.lastName = profile.lastName
+        this.email = profile.email
     }
 
     /**
@@ -9112,17 +9114,20 @@ class CoreProfileV1 {
     userId: number
     firstName: string
     lastName: string
+    email: string
 
     constructor(data: {
         result: {
             user_id: number
             first_name: string
             last_name: string
+            email: string
         }
     }) {
         this.userId = data.result.user_id
         this.firstName = data.result.first_name
         this.lastName = data.result.last_name
+        this.email = data.result.email
     }
 }
 
